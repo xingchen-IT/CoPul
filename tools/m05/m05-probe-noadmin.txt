@@ -1,0 +1,66 @@
+﻿================ CoPul M0.5 采集路径验证 ================
+时间        : 2026-10-27 00:28:16
+提权        : 否  ← MSR / NVMe 大概率全部失败
+进程架构    : X64
+逻辑处理器  : 20
+
+[A] PawnIO 驱动 + IntelMSR 模块
+    背景：LHM 0.9.6 已从 WinRing0 迁移到 PawnIO，模块以 .bin 内嵌在程序集里
+          入口 = LibreHardwareMonitor.PawnIo.IntelMsr（public，无参构造）
+    new IntelMsr() 成功，耗时 4.75 ms
+    PawnIo.IsInstalled = True
+    PawnIo.Version     = 2.2.0.0
+    实例 IsLoaded      = False
+    试读 MSR 0x1A2 = 0x00000000  -> 可用
+
+[B] MSR 温度
+    0x1A2 = 0x00000000  ->  TjMax = 0 °C
+    !! TjMax=0 不在合理区间，该 MSR 可能被虚拟化层拦截
+    封装 0x1B1 = 0x00000000  valid=False  readout=0  ->  0 °C
+    每核（SetThreadAffinityMask 逐核）:
+      [-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --]
+      有效 0/20
+
+[C] MSR RAPL 功耗
+    0x606 = 0x00000000  ESU=0  1 count = 1.0000E+000 J
+    1 秒计数差 0  ->  封装功耗 ≈ 0.0 W
+    判定 : 数值不合理（RAPL 未启用或被锁）
+
+[D] MSR 频率（APERF / MPERF 差分）
+    !! MPERF 未增长（dm=0）
+
+[E] NVMe 温度（IOCTL_STORAGE_QUERY_PROPERTY + Log Page 0x02）
+  -- PhysicalDrive0
+     header@8: 失败 err=CreateFile=5
+     header@12: 失败 err=CreateFile=5
+     该盘未能读取
+  -- PhysicalDrive1
+     header@8: 失败 err=CreateFile=5
+     header@12: 失败 err=CreateFile=5
+     该盘未能读取
+    !! 全部失败
+
+[F] 单次采集耗时与 T1 预算推算
+    单条 MSR 读         :      0.06 µs
+    封装温度读          :      0.06 µs
+    RAPL 能量读         :      0.08 µs
+    51 条连续读（模拟 Cpu.Update）: 0.00 ms    ← M0 实测 LHM 为 218.10 ms
+    全核温度一轮（20 核含切核）: 1.24 ms
+    T1 一轮合计           : 1.24 ms
+
+    预算推算（成本/秒 → 单核占用%，1000ms = 100%）:
+      floor  200 ms : 每秒     6.2 ms  ->   0.62% 单核
+      floor  500 ms : 每秒     2.5 ms  ->   0.25% 单核
+      floor 1000 ms : 每秒     1.2 ms  ->   0.12% 单核
+    NVMe 温度读（0 号盘）: 0.02 ms / 次
+      floor 2000 ms      : 每秒   0.01 ms  ->   0.00% 单核
+
+
+================ 结论 ================
+  通过 2 / 6 项
+
+  判读口径：
+    A 通过 = PawnIO 驱动与 IntelMSR 模块可用（不必自己写驱动）
+    B/C/D 通过 = MSR 可直读，CPU 温度/功耗/频率已脱离 Cpu.Update()
+    E 通过 = 硬盘温度可自研读 NVMe Log Page
+    F 只输出耗时与预算推算，不做判定
