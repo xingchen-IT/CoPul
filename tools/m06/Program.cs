@@ -446,7 +446,13 @@ internal static class Program
     /// </summary>
     private static void Section3b_SteadyState(int interval)
     {
-        if (_scheduler == null) return;
+        // --steady-only 模式下第 3 段没跑，调度器还不存在，这里自建一个。
+        if (_scheduler == null)
+        {
+            _scheduler = new SampleScheduler(Providers, new SampleSchedulerOptions { UserIntervalMs = interval });
+            _scheduler.Start();
+            Thread.Sleep(800);
+        }
 
         const int seconds = 60;
 
