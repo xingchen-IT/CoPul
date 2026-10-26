@@ -6,8 +6,11 @@ namespace CoPul.Collector.Scheduling;
 
 public sealed class SampleSchedulerOptions
 {
-    /// <summary>用户挡位（ms）。50 / 100 / 500 / 1000 / 2000，Q-17 指定。</summary>
+    /// <summary>用户挡位（ms）。100 / 500 / 1000 / 2000，Q-17 指定（50ms 挡 v0.6 砍掉）。</summary>
     public int UserIntervalMs { get; set; } = 1000;
+
+    /// <summary>可选挡位白名单。配置读入后必须用它校验，防止旧配置文件里的 50 生效。</summary>
+    public static readonly int[] AllowedIntervalsMs = { 100, 500, 1000, 2000 };
 
     /// <summary>省电模式：实际挡位不低于 1s，且 T1 放宽到 1s（P-07 / P-09）。</summary>
     public bool PowerSaving { get; set; }

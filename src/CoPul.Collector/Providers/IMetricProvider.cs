@@ -6,7 +6,7 @@ namespace CoPul.Collector.Providers;
 /// </summary>
 public enum Tier
 {
-    /// <summary>占用率、显存、内存、磁盘/网络速率。PDH + NVML + 内存计数，floor 50ms。</summary>
+    /// <summary>GPU 占用/显存、内存。NVML + 内存计数，单次约 0.06ms，floor 100ms。</summary>
     T0 = 0,
 
     /// <summary>封装温度、CPU 功耗、频率、GPU 温度/功耗。MSR / NVML 寄存器级，floor 200ms。</summary>
@@ -38,7 +38,9 @@ public static class TierInfo
 {
     public static int FloorMs(Tier tier) => tier switch
     {
-        Tier.T0 => 50,
+        // 100ms 而非 50ms：50ms 挡位已于 v0.6 砍掉（只有 T0 两项真能跑 20Hz，
+        // 而 50ms 档 2.185% 已贴 2.6% 上限、无余量）。floor 与最小可选挡位对齐。
+        Tier.T0 => 100,
         Tier.T1 => 200,
         Tier.T1b => 500,
         Tier.T2 => 1000,

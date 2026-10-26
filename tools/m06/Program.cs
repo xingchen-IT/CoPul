@@ -18,6 +18,13 @@ internal static class Program
         Console.OutputEncoding = Encoding.UTF8;
         string outFile = args.Length > 0 ? args[0] : "m06-report.txt";
 
+        // 稳态段挡位可指定：0.1s 挡位成为最短可选挡位后，必须能对它单独跑 60 秒。
+        int steadyInterval = 1000;
+        if (args.Length > 1 && int.TryParse(args[1], out int iv) && iv >= 100) steadyInterval = iv;
+
+        // 只跑稳态段：日常复核某个挡位时不必等完 170 秒全套。
+        bool steadyOnly = args.Any(a => a == "--steady-only");
+
         W("================ CoPul M0.6 Provider 落地与 T0 补测 ================");
         W($"时间       : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         W($"提权       : {(IsAdministrator() ? "是" : "否")}");
@@ -28,14 +35,21 @@ internal static class Program
         {
             BuildProviders();
 
-            Section1_ProviderInit();
-            Section2_T0Diagnostics();
-            Section2b_CounterCostBreakdown();
-            Section2c_CpuLoadAlternative();
-            Section3_SchedulerByInterval();
-            Section3b_SteadyState();
-            Section4_SnapshotDump();
-            Section5_Conclusion();
+            if (steadyOnly)
+            {
+                Section3b_SteadyState(steadyInterval);
+            }
+            else
+            {
+                Section1_ProviderInit();
+                Section2_T0Diagnostics();
+                Section2b_CounterCostBreakdown();
+                Section2c_CpuLoadAlternative();
+                Section3_SchedulerByInterval();
+                Section3b_SteadyState(steadyInterval);
+                Section4_SnapshotDump();
+                Section5_Conclusion();
+            }
         }
         catch (Exception ex)
         {
@@ -156,6 +170,7 @@ internal static class Program
         W($"    {"间隔",6} {"次数",5} {"CPU值",7} {"磁盘值",7} {"网络值",7} {"平均ms",8} {"最大ms",8}  说明");
         W($"    {new string('-', 6)} {new string('-', 5)} {new string('-', 7)} {new string('-', 7)} {new string('-', 7)} {new string('-', 8)} {new string('-', 8)}  {new string('-', 24)}");
 
+        // 50ms 已于 v0.6 从产品挡位中砍掉，此处保留以便复现 M0.6 的历史数据。
         foreach (int interval in new[] { 50, 100, 500, 1000 })
         {
             int n = interval >= 500 ? 10 : 20;
@@ -429,14 +444,13 @@ internal static class Program
     /// 10 秒窗口下进程 CPU 的分辨率只有 15.6ms/10s = 0.156%，不足以判断 0.2–0.5% 的目标；
     /// 60 秒窗口把分辨率提到 0.026%，这是唯一能给「第 11 章性能目标是否达标」下结论的数据。
     /// </summary>
-    private static void Section3b_SteadyState()
+    private static void Section3b_SteadyState(int interval)
     {
         if (_scheduler == null) return;
 
-        const int interval = 1000;
         const int seconds = 60;
 
-        W($"[3b] 默认挡位稳态实测（{interval}ms，{seconds} 秒）");
+        W($"[3b] 稳态实测（{interval}ms，{seconds} 秒）");
         W($"    目的：10 秒窗口的分辨率 ±0.156% 不足以分辨 0.2% 与 0.5%，这里拉到 {seconds} 秒 → ±{15.6 / seconds / 1000 * 100:F3}%。");
         W();
 
