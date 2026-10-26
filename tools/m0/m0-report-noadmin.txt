@@ -1,0 +1,248 @@
+﻿================================================================
+  CoPul M0 传感器能力验证
+================================================================
+时间        : 2026-10-27 00:07:31
+操作系统    : Microsoft Windows NT 10.0.26200.0
+运行时      : .NET 8.0.11  (x64)
+管理员权限  : 否  <-- 温度/功耗类大概率读不到
+CPU 逻辑核  : 20
+
+[OK]   Computer.Open() 成功，耗时 453.9 ms
+
+---------------- 1. 硬件树 ----------------
+- [0] Motherboard  ASUS FX607JV   (id=/motherboard)
+- [0] Cpu  13th Gen Intel Core i7-13650HX   (id=/intelcpu/0)
+- [0] Memory  Virtual Memory   (id=/vram)
+- [0] Memory  Total Memory   (id=/ram)
+- [0] GpuNvidia  NVIDIA GeForce RTX 4060 Laptop GPU   (id=/gpu-nvidia/0)
+- [0] GpuIntel  Intel(R) UHD Graphics   (id=/gpu-intel-integrated/%5C%5C%3F%5CPCI%23VEN_8086%26DEV_A78B%26SUBSYS_35581043%26REV_04%233%2611583659%260%2610%23%7B1ca05180-a699-450a-9a0c-de4fbe3ddd89%7D)
+
+---------------- 2. 各硬件 Update() 耗时（20 次） ----------------
+这一列是 4.0 分级的关键数据：LHM 的 Update 以硬件为单位，无法只更新单个传感器。
+
+Motherboard  ASUS FX607JV                 首次    0.01 ms | 最小   0.00 | 中位   0.00 | 平均   0.00 | 最大    0.00   => T0 可承受 20Hz
+Cpu          13th Gen Intel Core i7-13…   首次    2.46 ms | 最小   1.38 | 中位   1.93 | 平均   2.43 | 最大    6.65   => T1 建议 >=500ms
+Memory       Virtual Memory               首次    0.53 ms | 最小   0.00 | 中位   0.00 | 平均   0.00 | 最大    0.01   => T0 可承受 20Hz
+Memory       Total Memory                 首次    0.14 ms | 最小   0.00 | 中位   0.00 | 平均   0.00 | 最大    0.00   => T0 可承受 20Hz
+GpuNvidia    NVIDIA GeForce RTX 4060 L…   首次   77.91 ms | 最小  61.18 | 中位  76.64 | 平均  74.11 | 最大   93.34   => T2 建议 >=1000ms
+GpuIntel     Intel(R) UHD Graphics        首次   71.42 ms | 最小   0.17 | 中位   0.42 | 平均   0.34 | 最大    0.47   => T0 可承受 20Hz
+
+---------------- 3. 传感器清单（现状快照） ----------------
+
+[Motherboard] ASUS FX607JV  传感器数 0
+    (无)
+
+[Cpu] 13th Gen Intel Core i7-13650HX  传感器数 71
+    Power        CPU Package                             0.00 W
+    Power        CPU Cores                               0.00 W
+    Power        CPU Memory                              0.00 W
+    Power        CPU Platform                            0.00 W
+    Clock        P-Core #1                               null MHz
+    Clock        P-Core #2                               null MHz
+    Clock        P-Core #3                               null MHz
+    Clock        P-Core #4                               null MHz
+    Clock        P-Core #5                               null MHz
+    Clock        P-Core #6                               null MHz
+    Clock        E-Core #1                               null MHz
+    Clock        E-Core #2                               null MHz
+    Clock        E-Core #3                               null MHz
+    Clock        E-Core #4                               null MHz
+    Clock        E-Core #5                               null MHz
+    Clock        E-Core #6                               null MHz
+    Clock        E-Core #7                               null MHz
+    Clock        E-Core #8                               null MHz
+    Temperature  Core Max                                null °C
+    Temperature  Core Average                            null °C
+    Temperature  P-Core #1                               null °C
+    Temperature  P-Core #2                               null °C
+    Temperature  P-Core #3                               null °C
+    Temperature  P-Core #4                               null °C
+    Temperature  P-Core #5                               null °C
+    Temperature  P-Core #6                               null °C
+    Temperature  E-Core #1                               null °C
+    Temperature  E-Core #2                               null °C
+    Temperature  E-Core #3                               null °C
+    Temperature  E-Core #4                               null °C
+    Temperature  E-Core #5                               null °C
+    Temperature  E-Core #6                               null °C
+    Temperature  E-Core #7                               null °C
+    Temperature  E-Core #8                               null °C
+    Temperature  CPU Package                             null °C
+    Temperature  P-Core #1 Distance to TjMax             null °C
+    Temperature  P-Core #2 Distance to TjMax             null °C
+    Temperature  P-Core #3 Distance to TjMax             null °C
+    Temperature  P-Core #4 Distance to TjMax             null °C
+    Temperature  P-Core #5 Distance to TjMax             null °C
+    Temperature  P-Core #6 Distance to TjMax             null °C
+    Temperature  E-Core #1 Distance to TjMax             null °C
+    Temperature  E-Core #2 Distance to TjMax             null °C
+    Temperature  E-Core #3 Distance to TjMax             null °C
+    Temperature  E-Core #4 Distance to TjMax             null °C
+    Temperature  E-Core #5 Distance to TjMax             null °C
+    Temperature  E-Core #6 Distance to TjMax             null °C
+    Temperature  E-Core #7 Distance to TjMax             null °C
+    Temperature  E-Core #8 Distance to TjMax             null °C
+    Load         CPU Total                              10.00 %
+    Load         CPU Core Max                          100.00 %
+    Load         CPU Core #1 Thread #1                   0.00 %
+    Load         CPU Core #1 Thread #2                   0.00 %
+    Load         CPU Core #2 Thread #1                   0.00 %
+    Load         CPU Core #2 Thread #2                   0.00 %
+    Load         CPU Core #3 Thread #1                   0.00 %
+    Load         CPU Core #3 Thread #2                   0.00 %
+    Load         CPU Core #4 Thread #1                   0.00 %
+    Load         CPU Core #4 Thread #2                   0.00 %
+    Load         CPU Core #5 Thread #1                   0.00 %
+    Load         CPU Core #5 Thread #2                   0.00 %
+    Load         CPU Core #6 Thread #1                   0.00 %
+    Load         CPU Core #6 Thread #2                   0.00 %
+    Load         CPU Core #7                             0.00 %
+    Load         CPU Core #8                           100.00 %
+    Load         CPU Core #9                             0.00 %
+    Load         CPU Core #10                          100.00 %
+    Load         CPU Core #11                            0.00 %
+    Load         CPU Core #12                            0.00 %
+    Load         CPU Core #13                            0.00 %
+    Load         CPU Core #14                            0.00 %
+
+[Memory] Virtual Memory  传感器数 3
+    Load         Memory                                 73.06 %
+    Data         Memory Used                            39.94 GB
+    Data         Memory Available                       14.72 GB
+
+[Memory] Total Memory  传感器数 3
+    Load         Memory                                 73.36 %
+    Data         Memory Used                            23.20 GB
+    Data         Memory Available                        8.43 GB
+
+[GpuNvidia] NVIDIA GeForce RTX 4060 Laptop GPU  传感器数 33
+    Voltage      GPU Core Voltage                        0.62 V
+    Power        GPU Package                            11.72 W
+    Clock        GPU Core                              255.00 MHz
+    Clock        GPU Memory                           6000.98 MHz
+    Temperature  GPU Core                               51.00 °C
+    Temperature  GPU Hot Spot                           59.50 °C
+    Temperature  GPU Memory Junction                    62.00 °C
+    Load         GPU Core                               23.00 %
+    Load         GPU Memory Controller                   8.00 %
+    Load         GPU Video Engine                       20.00 %
+    Load         GPU Bus                                 0.00 %
+    Load         GPU Memory                             37.38 %
+    Load         D3D 3D                                  8.29 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Copy                                0.06 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Optical Flow Accelerator 0          0.00 %
+    Load         D3D Overlay                             0.00 %
+    Load         D3D Security                            0.00 %
+    Load         D3D Security_1                          0.00 %
+    Load         D3D VR                                  0.00 %
+    Load         D3D Video Decode                       19.70 %
+    Load         D3D Video Encode                        0.00 %
+    SmallData    GPU Memory Free                      5127.00 MB
+    SmallData    GPU Memory Used                      3060.00 MB
+    SmallData    GPU Memory Total                     8188.00 MB
+    SmallData    D3D Dedicated Memory Used            2839.38 MB
+    SmallData    D3D Shared Memory Used                140.05 MB
+    Throughput   GPU PCIe Rx                        13649920.00 MB/s
+    Throughput   GPU PCIe Tx                        4999168.00 MB/s
+
+[GpuIntel] Intel(R) UHD Graphics  传感器数 19
+    Voltage      GPU Core                                0.30 V
+    Power        GPU Power                               0.00 W
+    Clock        GPU Core                              700.00 MHz
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D                                     0.00 %
+    Load         D3D 3D                                  0.00 %
+    Load         D3D Copy                                0.00 %
+    Load         D3D Overlay                             0.00 %
+    Load         D3D Video Decode                        0.00 %
+    Load         D3D Video Processing                    0.00 %
+    SmallData    D3D Shared Memory Used                 43.99 MB
+    SmallData    D3D Shared Memory Free              16149.57 MB
+    SmallData    D3D Shared Memory Total             16193.56 MB
+
+---------------- 4. 指标覆盖核对（对照需求文档 ID） ----------------
+格式: ID  指标名  ->  值  (来源传感器 / 缺失原因)
+
+  C01 CPU 型号         ->  13th Gen Intel Core i7-13650HX   (来源 Hardware.Name)
+  C02  CPU 总占用率         ->  10.00 %          (CPU Total)
+  C04  CPU 封装温度         ->  null           (Core Average 存在但无值)
+  C05  CPU 核心温度         ->  null           (P-Core #1 存在但无值)
+  C06  CPU 当前频率         ->  null           (P-Core #1 存在但无值)
+  C07  CPU 封装功耗         ->  0.00 W           (CPU Package)
+  C09  CPU 风扇转速         ->  —              (缺 Fan 传感器)
+  -- GPU: NVIDIA GeForce RTX 4060 Laptop GPU
+  G02  GPU 占用率          ->  23.00 %          (GPU Core)
+  G03  显存占用率            ->  37.37            %          (由 G04 计算)
+  G04  显存使用/总量          ->  3060 / 8188 MB      (GPU Memory Used / Total)
+  G05  GPU 温度           ->  51.00 °C         (GPU Core)
+  G06  GPU 核心频率         ->  255.00 MHz       (GPU Core)
+  G07  GPU 显存频率         ->  6000.98 MHz      (GPU Memory)
+  G08  GPU 功耗           ->  11.72 W          (GPU Package)
+  G10  GPU 风扇           ->  —              (缺 Control 传感器)
+  -- GPU: Intel(R) UHD Graphics
+  G02  GPU 占用率          ->  —              (缺 Load 传感器)
+  G03  显存占用率            ->  —              (显存传感器缺失)
+  G04  显存使用/总量          ->  —              (显存传感器缺失)
+  G05  GPU 温度           ->  —              (缺 Temperature 传感器)
+  G06  GPU 核心频率         ->  700.00 MHz       (GPU Core)
+  G07  GPU 显存频率         ->  —              (缺 Clock 传感器)
+  G08  GPU 功耗           ->  —              (缺 Power 传感器)
+  G10  GPU 风扇           ->  —              (缺 Control 传感器)
+  M01  内存占用率            ->  73.36 %          (Memory)
+  M02  内存使用/总量          ->  23.20 GB         (Memory Used)
+  M05  提交量              ->  —              (无对应硬件)
+  -- 存储: 未枚举到任何 Storage 硬件（LHM 访问 SMART 需要管理员权限 + 内核驱动）
+  -- 主板: ASUS FX607JV  (子硬件 0 个)
+
+---------------- 5. 内存（P/Invoke GlobalMemoryStatusEx） ----------------
+  M01 占用率      : 74 %
+  M02 使用/总量   : 23.5 / 31.6 GB
+  M03 可用        : 8.2 GB
+  M06 页面文件    : 40.2 / 54.7 GB
+  单次耗时        : 0.154 ms  => 可归入 T0
+
+---------------- 6. 网络（计数器差分 + ICMP） ----------------
+  活动网卡 2 个:
+    WLAN                           type=Wireless80211    收 9387.4 MB  发 417.1 MB
+    vEthernet (Default Switch)     type=Ethernet         收 0.0 MB  发 0.8 MB
+
+  N01 上行速率    : 10.5 KB/s   (采样 WLAN)
+  N02 下行速率    : 4.5 KB/s
+  计数器单次耗时  : 0.082 ms  => 可归入 T0
+
+  N03 延迟 223.5.5.5    : 14 ms            单次阻塞 20.7 ms
+  N03 延迟 8.8.8.8      : 200 ms           单次阻塞 200.4 ms
+  注意：ICMP 单次耗时包含网络往返，属阻塞调用，必须异步化。
+
+---------------- 7. NVML 直连对照（绕过 LHM） ----------------
+  NVML 设备数: 1
+  设备 0: NVIDIA GeForce RTX 4060 Laptop GPU
+  单次四项全读: 中位 0.004 ms / 最小 0.004 / 最大 0.035  (n=55)
+  折算: 20Hz 需 ≤50ms，实测中位 0.004 ms => 可承受 20Hz
+  样本值: 占用 7% / 显存 2829 of 8188 MB / 温度 53°C / 功耗 16.0 W
+
+---------------- 8. 结论 ----------------
+  判定口径：不仅看传感器是否存在，还看是否读出了非空值。存在但无值 = 驱动未生效。
+
+  CPU 温度   : 存在  31 个 / 有值   0 个   => 传感器在但全为 null，驱动未生效
+  CPU 功耗   : 存在   4 个 / 有值   4 个   => 可用
+  GPU 温度   : 存在   3 个 / 有值   3 个   => 可用
+  GPU 功耗   : 存在   1 个 / 有值   1 个   => 可用
+  存储枚举   : ** 完全为空 **
+  硬盘温度   : 存在   0 个 / 有值   0 个   => 传感器缺失
+
+  风扇转速   : 存在   0 个 / 有值   0 个   => 传感器缺失
+
+  提示：本次为非管理员运行。上述 null / 0 值不能代表硬件不支持，必须提权重跑后再下结论。
+  未验证项：FPS（需 PresentMon，本次未引入）、整机功耗（无传感器，只能建模估算）。

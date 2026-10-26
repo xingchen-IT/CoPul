@@ -1,0 +1,23 @@
+# .NET 构建产物
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# 本地工具链（用户级 SDK / 包缓存，不进仓库）
+.tools/
+.guser/
+
+# NuGet 本地包
+*.nupkg
+*.snupkg
+
+# 日志与临时文件
+*.log
+*.tmp
+Thumbs.db
+desktop.ini
+
+# 工作区记忆（本地工具数据）
+.workbuddy/
