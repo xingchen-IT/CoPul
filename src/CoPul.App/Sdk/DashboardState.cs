@@ -357,10 +357,31 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     public Brush StatusBrush => Palette.Brush(_statusWarn ? "BrushWarn" : "BrushTextTertiary");
 
+    // ---- 顶部运行状态灯 ----
+    // 与 StatusText 分开维护：StatusText 是一长串降级原因（底部状态栏用），
+    // 标题栏只放得下两三个字，所以这里是独立的三态，不做字符串截断。
+
+    /// <summary>运行状态文字：初始化 / 运行中 / 降级运行。</summary>
+    public string RunStateText => _runState switch
+    {
+        RunState.Running => "运行中",
+        RunState.Degraded => "降级运行",
+        _ => "初始化"
+    };
+
+    /// <summary>指示灯与状态文字共用的颜色。悬停提示（ToolTip）绑 StatusText 看详细原因。</summary>
+    public Brush RunStateBrush => Palette.Brush(_runState switch
+    {
+        RunState.Running => "BrushOk",
+        RunState.Degraded => "BrushWarn",
+        _ => "BrushTextTertiary"
+    });
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private string _infoNote = "";
     private bool _statusWarn;
+    private RunState _runState = RunState.Starting;
 
     /// <summary>临时提示（比如点了尚未实现的设置入口）。不弹对话框，避免打断监控。</summary>
     public void ShowHint(string text) => StatusText = text;
@@ -377,8 +398,18 @@ public sealed class DashboardState : INotifyPropertyChanged
             .ToList();
 
         _statusWarn = degraded.Count > 0;
+        SetRunState(degraded.Count > 0 ? RunState.Degraded : RunState.Running);
         StatusText = JoinNotes(_infoNote, degraded.Count > 0 ? "降级 " + string.Join("；", degraded) : "");
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusBrush)));
+    }
+
+    /// <summary>三态切换。只在值变化时通知——InfoReady 可能重复触发，没必要每帧刷灯。</summary>
+    private void SetRunState(RunState state)
+    {
+        if (_runState == state) return;
+        _runState = state;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateBrush)));
     }
 
     private static string JoinNotes(params string[] parts)
@@ -649,4 +680,23 @@ public sealed class DashboardState : INotifyPropertyChanged
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
+}
+
+/// <summary>
+/// 顶部指示灯的运行状态。
+///
+/// 为什么不用「运行 / 停止」两态：本程序不存在"停止但还在显示"的情形
+/// （窗口关掉进程就退了），真正需要区分的是**降级**——没提权时温度类全空、
+/// 但监控仍在跑。把它和"正常运行"画成同一个绿灯，等于对 4.2「不得静默降级」失守。
+/// </summary>
+public enum RunState
+{
+    /// <summary>采集器还没报出第一帧，通常只存在几十毫秒。</summary>
+    Starting,
+
+    /// <summary>全部 Provider 就绪。</summary>
+    Running,
+
+    /// <summary>部分 Provider 不可用（最常见的是没提权），但采集仍在继续。</summary>
+    Degraded
 }

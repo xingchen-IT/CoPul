@@ -33,4 +33,8 @@
     <SolidColorBrush x:Key="BrushWarn"   Color="#E0A44A" />
     <SolidColorBrush x:Key="BrushDanger" Color="#D95C5C" />
 
+    <!-- 运行状态（顶部指示灯）。绿色只给「一切正常」，降级仍用 BrushWarn，
+         避免出现「黄灯也好看」的错觉：10.3 要求低饱和，这里不用霓虹绿。 -->
+    <SolidColorBrush x:Key="BrushOk"     Color="#63A96D" />
+
 </ResourceDictionary>

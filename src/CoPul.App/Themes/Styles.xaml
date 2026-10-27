@@ -27,6 +27,13 @@
         <Setter Property="Margin" Value="8,0,0,0" />
     </Style>
 
+    <!-- 顶部运行状态文字。Foreground 不在此设：由 RunStateBrush 绑定决定，随状态变色 -->
+    <Style x:Key="TextRunState" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <Style x:Key="TextBlockTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="13" />
