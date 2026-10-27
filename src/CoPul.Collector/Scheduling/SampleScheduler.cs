@@ -6,11 +6,18 @@ namespace CoPul.Collector.Scheduling;
 
 public sealed class SampleSchedulerOptions
 {
-    /// <summary>用户挡位（ms）。100 / 500 / 1000 / 2000，Q-17 指定（50ms 挡 v0.6 砍掉）。</summary>
-    public int UserIntervalMs { get; set; } = 1000;
+    /// <summary>
+    /// 用户挡位（ms）。v1 只开放 <b>500ms</b>（Q-23：其余挡位后续酌情添加）。
+    /// 调度器本身不校验，config 层读入后必须用 <see cref="AllowedIntervalsMs"/> 过滤，
+    /// 防止旧配置文件里的 50 / 1000 直接生效。
+    /// </summary>
+    public int UserIntervalMs { get; set; } = 500;
 
-    /// <summary>可选挡位白名单。配置读入后必须用它校验，防止旧配置文件里的 50 生效。</summary>
-    public static readonly int[] AllowedIntervalsMs = { 100, 500, 1000, 2000 };
+    /// <summary>
+    /// 可选挡位白名单（v1 只上 0.5s）。历史挡位 50 / 100 / 1000 / 2000 仍可用在基准程序与
+    /// 后续版本中——<c>SampleScheduler</c> 不依赖该数组，它只是 config 层的校验依据。
+    /// </summary>
+    public static readonly int[] AllowedIntervalsMs = { 500 };
 
     /// <summary>省电模式：实际挡位不低于 1s，且 T1 放宽到 1s（P-07 / P-09）。</summary>
     public bool PowerSaving { get; set; }
@@ -59,6 +66,13 @@ public sealed class TierStat
 /// </summary>
 public sealed class SampleScheduler : IDisposable
 {
+    /// <summary>
+    /// 调度循环单次最长睡眠（ms）。取值需 <b>小于最短 tier floor</b>，否则会错过 tick；
+    /// 同时要足够大，避免高频空转。0.5s 挡位下最小 floor 是 500（T0/T0b/T1/T1b 全被钳到 500），
+    /// 因此取 500 —— 正好一个 tick，醒来即到点。R17 的前后对比见 docs/M0.6 报告 9.4 节。
+    /// </summary>
+    private const int MaxWaitMs = 500;
+
     private readonly IReadOnlyList<IMetricProvider> _providers;
     private readonly List<TierState> _tiers = new();
     private readonly SampleSchedulerOptions _options;
@@ -116,6 +130,7 @@ public sealed class SampleScheduler : IDisposable
             if (value == _options.UserIntervalMs) return;
             _options.UserIntervalMs = value;
             _tierDirty = true;   // P-05：下一个 tick 生效
+            if (_running) _stop.Set();   // 立即唤醒，否则最坏要等 MaxWaitMs 才生效
         }
     }
 
@@ -127,6 +142,7 @@ public sealed class SampleScheduler : IDisposable
             if (value == _options.PowerSaving) return;
             _options.PowerSaving = value;
             _tierDirty = true;
+            if (_running) _stop.Set();
         }
     }
 
@@ -215,8 +231,15 @@ public sealed class SampleScheduler : IDisposable
                 if (wait < minWait) minWait = wait;
             }
 
-            if (minWait == long.MaxValue) minWait = 10;
-            _stop.Wait((int)Math.Clamp(minWait, 1, 20));
+            if (minWait == long.MaxValue) minWait = MaxWaitMs;
+
+            // R17：原实现把等待上限钳到 20ms，于是不论挡位多少，每秒都要唤醒约 60 次
+            // （0.5s 挡位下 60 秒约 3600 次）。每次醒来都要遍历全部 tier 才发现没事可做，
+            // 实测 150–190ms / 60s 的 CPU 全耗在这上面 —— 这是与挡位无关的固定开销，
+            // 正是 1s 与 2s 两档中位完全相同（0.417%）的原因。
+            // 上限放到 MaxWaitMs 后唤醒次数降一个数量级；挡位变更与停止由 _stop.Set() 立即打断。
+            _stop.Wait((int)Math.Clamp(minWait, 1, MaxWaitMs));
+            _stop.Reset();   // 清掉本次唤醒标志供下一轮使用（停止时 _running 已为 false，不会漏)
         }
     }
 

@@ -25,6 +25,13 @@ internal static class Program
         // 只跑稳态段：日常复核某个挡位时不必等完 170 秒全套。
         bool steadyOnly = args.Any(a => a == "--steady-only");
 
+        // 同一挡位重复多轮。R17 这类 0.2% 量级的差异必须重复取最坏值，
+        // 且必须在同一进程内连续跑 —— 连续弹多次 UAC 后续请求会被系统丢弃。
+        int steadyRepeat = 1;
+        int rpIdx = Array.IndexOf(args, "--repeat");
+        if (rpIdx >= 0 && rpIdx + 1 < args.Length && int.TryParse(args[rpIdx + 1], out int rp) && rp > 0)
+            steadyRepeat = rp;
+
         W("================ CoPul M0.6 Provider 落地与 T0 补测 ================");
         W($"时间       : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         W($"提权       : {(IsAdministrator() ? "是" : "否")}");
@@ -37,7 +44,7 @@ internal static class Program
 
             if (steadyOnly)
             {
-                Section3b_SteadyState(steadyInterval);
+                Section3b_SteadyState(steadyInterval, steadyRepeat);
             }
             else
             {
@@ -46,7 +53,7 @@ internal static class Program
                 Section2b_CounterCostBreakdown();
                 Section2c_CpuLoadAlternative();
                 Section3_SchedulerByInterval();
-                Section3b_SteadyState(steadyInterval);
+                Section3b_SteadyState(steadyInterval, steadyRepeat);
                 Section4_SnapshotDump();
                 Section5_Conclusion();
             }
@@ -444,7 +451,7 @@ internal static class Program
     /// 10 秒窗口下进程 CPU 的分辨率只有 15.6ms/10s = 0.156%，不足以判断 0.2–0.5% 的目标；
     /// 60 秒窗口把分辨率提到 0.026%，这是唯一能给「第 11 章性能目标是否达标」下结论的数据。
     /// </summary>
-    private static void Section3b_SteadyState(int interval)
+    private static void Section3b_SteadyState(int interval, int repeat)
     {
         // --steady-only 模式下第 3 段没跑，调度器还不存在，这里自建一个。
         if (_scheduler == null)
@@ -454,9 +461,20 @@ internal static class Program
             Thread.Sleep(800);
         }
 
+        // 重复测量必须留在同一个进程里：① 一次提权只能起一个提权 exe，
+        // 连续弹 UAC 后续几次会被系统静默丢弃（进程不起、退出码 0，伪装成"跑完了"）；
+        // ② 第一轮之后 JIT 已收敛，后续轮次不必再花 15 秒预热。
+        for (int run = 1; run <= repeat; run++)
+            Section3b_OneRun(interval, warmup: run == 1, run, repeat);
+    }
+
+    private static void Section3b_OneRun(int interval, bool warmup, int run, int repeat)
+    {
         const int seconds = 60;
 
-        W($"[3b] 稳态实测（{interval}ms，{seconds} 秒）");
+        if (_scheduler == null) { W("    !! 调度器未建立，跳过"); return; }
+
+        W($"[3b] 稳态实测 第 {run}/{repeat} 轮（{interval}ms，{seconds} 秒）");
         W($"    目的：10 秒窗口的分辨率 ±0.156% 不足以分辨 0.2% 与 0.5%，这里拉到 {seconds} 秒 → ±{15.6 / seconds / 1000 * 100:F3}%。");
         W();
 
@@ -467,12 +485,16 @@ internal static class Program
         // 当成"稳态开销"。实测同一挡位三次跑出 0.521/0.521/0.182%，而三次的 tier
         // 统计几乎一致 —— 差异全部来自采样之外的进程内活动，就是 JIT + 首次 GC。
         // 先空跑 15 秒让 JIT 收敛，再强制一次完整 GC 清掉启动垃圾，之后才开始计时。
-        W($"    预热 15 秒（等待 tiered JIT 收敛与首次 GC）…");
-        Thread.Sleep(15000);
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-        W($"    预热完成。");
+        // 重复测量时第一轮已预热过，后续轮次跳过。
+        if (warmup)
+        {
+            W($"    预热 15 秒（等待 tiered JIT 收敛与首次 GC）…");
+            Thread.Sleep(15000);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            W($"    预热完成。");
+        }
 
         _scheduler.ResetStats();
         Thread.Sleep(300);
