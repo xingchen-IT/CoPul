@@ -58,6 +58,8 @@ public partial class MainWindow : Window
 
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             _state.ApplySnapshot(snap);
+            // N05 网卡名 / N03 探测目标不在快照里（字符串），走旁路；无变化时内部会跳过通知
+            _state.ApplyNetworkContext(_host.ActiveNicName, _host.PingTarget);
             ApplyTotalMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0
                             / System.Diagnostics.Stopwatch.Frequency;
             ApplyCount++;

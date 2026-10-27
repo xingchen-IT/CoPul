@@ -159,6 +159,8 @@ public sealed class DashboardState : INotifyPropertyChanged
     private string _diskSummary = "";
     private string _partitionText = "";
     private string _gpuExtraText = "";
+    private string _netAdapter = "读取中…";
+    private string _netTargetText = "";
     private string _statusText = "正在初始化采集器…";
 
     public DashboardState()
@@ -173,12 +175,19 @@ public sealed class DashboardState : INotifyPropertyChanged
         GpuPower = new MetricCell("板卡功耗", "W", "AccentPower");
         GpuMem = new MetricCell("显存", "GB", "AccentVram");
         GpuClock = new MetricCell("核心频率", "MHz", "AccentGpu");
-        GpuFan = new MetricCell("风扇", "%", "AccentGpu");
+        // 风扇格已移除：移动版 GPU 的风扇归笔记本 EC/BIOS 管，NVML 不暴露转速
+        // （nvidia-smi 同样报 N/A），永远不会出数，见 R26。
 
         MemLoad = new MetricCell("占用率", "%", "AccentRam");
         MemUsed = new MetricCell("已用", "GB", "AccentRam");
         MemCommit = new MetricCell("提交", "GB", "AccentRam");
         MemCached = new MetricCell("已缓存", "GB", "AccentRam");
+
+        // 网络四项：速率单位由 Fmt.RateAuto 在 KB/s 与 MB/s 间自适应，构造时给个初始值即可
+        NetDown = new MetricCell("下行", "MB/s", "AccentNet");
+        NetUp = new MetricCell("上行", "MB/s", "AccentNet");
+        NetLatency = new MetricCell("延迟", "ms", "AccentNet");
+        NetLoss = new MetricCell("丢包率", "%", "AccentNet");
     }
 
     // ---- 数值格 ----
@@ -192,12 +201,16 @@ public sealed class DashboardState : INotifyPropertyChanged
     public MetricCell GpuPower { get; }
     public MetricCell GpuMem { get; }
     public MetricCell GpuClock { get; }
-    public MetricCell GpuFan { get; }
 
     public MetricCell MemLoad { get; }
     public MetricCell MemUsed { get; }
     public MetricCell MemCommit { get; }
     public MetricCell MemCached { get; }
+
+    public MetricCell NetDown { get; }
+    public MetricCell NetUp { get; }
+    public MetricCell NetLatency { get; }
+    public MetricCell NetLoss { get; }
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
@@ -205,9 +218,10 @@ public sealed class DashboardState : INotifyPropertyChanged
     public BlockState CpuBlock { get; } = new("cpu");
     public BlockState GpuBlock { get; } = new("gpu");
     public BlockState MemBlock { get; } = new("mem");
+    public BlockState NetBlock { get; } = new("net");
     public BlockState DiskBlock { get; } = new("disk");
 
-    public IEnumerable<BlockState> Blocks => new[] { CpuBlock, GpuBlock, MemBlock, DiskBlock };
+    public IEnumerable<BlockState> Blocks => new[] { CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock };
 
     /// <summary>按 id 找区块。恢复配置时用，避免开一串 switch。</summary>
     public BlockState? Block(string id) => Blocks.FirstOrDefault(b => b.Id == id);
@@ -222,6 +236,13 @@ public sealed class DashboardState : INotifyPropertyChanged
     public string DiskSummary { get => _diskSummary; private set => Set(ref _diskSummary, value); }
     public string PartitionText { get => _partitionText; private set => Set(ref _partitionText, value); }
     public string GpuExtraText { get => _gpuExtraText; private set => Set(ref _gpuExtraText, value); }
+
+    /// <summary>N05 活动网卡名。字符串指标不在 MetricSnapshot（那里只装 double），由 CollectorHost 旁路传入。</summary>
+    public string NetAdapter { get => _netAdapter; private set => Set(ref _netAdapter, value); }
+
+    /// <summary>延迟探测目标，让「延迟」这一格知道自己在测谁。</summary>
+    public string NetTargetText { get => _netTargetText; private set => Set(ref _netTargetText, value); }
+
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
 
     public Brush StatusBrush => Palette.Brush(_statusWarn ? "BrushWarn" : "BrushTextTertiary");
@@ -294,7 +315,19 @@ public sealed class DashboardState : INotifyPropertyChanged
         if (!CpuBlock.Collapsed) ApplyCpu(snap);
         if (!GpuBlock.Collapsed) ApplyGpu(snap);
         if (!MemBlock.Collapsed) ApplyMemory(snap);
+        if (!NetBlock.Collapsed) ApplyNetwork(snap);
         if (!DiskBlock.Collapsed) ApplyDisk(snap);
+    }
+
+    /// <summary>
+    /// N05 网卡名与探测目标。两者是字符串，<see cref="MetricSnapshot"/> 装不下（只存 double），
+    /// 所以由 CollectorHost 每帧旁路带过来。无变化时 <see cref="Set"/> 直接返回，没有额外绑定刷新。
+    /// </summary>
+    public void ApplyNetworkContext(string adapter, string target)
+    {
+        // 空表示还没采到（PDH 首次 Collect 前），不能断言"没有网卡"，所以显示 `—`
+        NetAdapter = string.IsNullOrWhiteSpace(adapter) ? Fmt.Dash : adapter;
+        NetTargetText = string.IsNullOrWhiteSpace(target) ? "" : $"探测 {target}";
     }
 
     private void ApplyCpu(MetricSnapshot snap)
@@ -325,7 +358,6 @@ public sealed class DashboardState : INotifyPropertyChanged
         SetCell(GpuTemp, snap, MetricId.GpuTemp, Fmt.Temp, Severity.Temp);
         SetCell(GpuPower, snap, MetricId.GpuPowerW, Fmt.Watts);
         SetCell(GpuClock, snap, MetricId.GpuClockCoreMhz, Fmt.Mhz);
-        SetCell(GpuFan, snap, MetricId.GpuFanPct, Fmt.Pct);
 
         double? memUsed = Value(snap, MetricId.GpuMemUsedMb);
         double? memTotal = Value(snap, MetricId.GpuMemTotalMb);
@@ -366,6 +398,46 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         double? pageFile = Value(snap, MetricId.RamPageFileMb);
         MemDetail = pageFile.HasValue ? $"页面文件 ~{pageFile.Value / 1024:F1} GB（推算值）" : "";
+    }
+
+    private void ApplyNetwork(MetricSnapshot snap)
+    {
+        // ---------------- 网络 ----------------
+        // 速率单位自适应（4.5：KB/s 或 MB/s，1 位小数）。没有数据时单位保持上次的值，
+        // 值显示 `—` —— 不能因为读不到就先把单位改成 MB/s，那会让下次出数时闪一下。
+        SetRateCell(NetDown, snap, MetricId.NetDownBytesPerSec);
+        SetRateCell(NetUp, snap, MetricId.NetUpBytesPerSec);
+
+        SetCell(NetLatency, snap, MetricId.NetLatencyMs, Fmt.Pct);
+
+        // N04 丢包率：滚动 10 次探测的成功率。0% 是正常值，不是"无数据"，
+        // 所以有样本就正常显示；样本不足一个窗口时也显示，只是波动大。
+        double? loss = Value(snap, MetricId.NetPacketLossPercent);
+        if (loss.HasValue)
+        {
+            Level level = loss.Value > 5 ? Level.Danger
+                : loss.Value > 0 ? Level.Warn
+                : Level.Normal;
+            NetLoss.Apply(loss.Value.ToString("F0"), level);
+        }
+        else
+        {
+            NetLoss.Unavailable();
+        }
+    }
+
+    /// <summary>速率格：数值与单位一起换，避免出现"1024.0 KB/s"这种跨量级读数。</summary>
+    private static void SetRateCell(MetricCell cell, MetricSnapshot snap, MetricId id)
+    {
+        if (!snap.TryGet(id, out var s) || !s.IsUsable)
+        {
+            cell.Unavailable();
+            return;
+        }
+
+        string text = Fmt.RateAuto(s.Value, out string unit);
+        cell.SetUnit(unit);
+        cell.Apply(text, Level.Normal);
     }
 
     private void ApplyDisk(MetricSnapshot snap)

@@ -29,4 +29,24 @@ internal static class Fmt
         double mb = bytesPerSec / 1024.0 / 1024.0;
         return mb.ToString("F1", CultureInfo.InvariantCulture);
     }
+
+    /// <summary>
+    /// 网络速率 → 自适应单位（N01/N02，需求 4.5「KB/s 或 MB/s，1 位小数，自适应单位」）。
+    ///
+    /// 分界取 1 MB/s：低于它用 KB/s 才读得出 0.3 这种低流量细节；高于它若还用 KB/s
+    /// 会变成 4 位数（10240.0 KB/s），一眼看不出量级。单位由调用方写回单元格，
+    /// 因为 <see cref="MetricCell"/> 的单位是展示属性，不在采集层决定。
+    /// </summary>
+    public static string RateAuto(double bytesPerSec, out string unit)
+    {
+        double kb = bytesPerSec / 1024.0;
+        if (kb < 1024)
+        {
+            unit = "KB/s";
+            return kb.ToString("F1", CultureInfo.InvariantCulture);
+        }
+
+        unit = "MB/s";
+        return (kb / 1024.0).ToString("F1", CultureInfo.InvariantCulture);
+    }
 }

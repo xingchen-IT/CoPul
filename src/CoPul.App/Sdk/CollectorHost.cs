@@ -60,6 +60,16 @@ public sealed class CollectorHost : IDisposable
     /// <summary>静态信息。到货前为 null，UI 必须容忍（显示"读取中…"）。</summary>
     public SystemInfo? Info { get; private set; }
 
+    /// <summary>
+    /// N05 活动网卡名。字符串装不进 <see cref="MetricSnapshot"/>（只有 double），
+    /// 所以单独开一条旁路给 UI，每帧读一次属性即可（无锁，写入方是采集线程，
+    /// 引用赋值在 .NET 上是原子的，读到旧值最多晚 0.5 秒）。
+    /// </summary>
+    public string ActiveNicName => _os.ActiveNicName;
+
+    /// <summary>N03 延迟探测目标，界面用来标注"延迟测的是谁"。</summary>
+    public string PingTarget => _os.PingTarget;
+
     public long SnapshotCount => _scheduler.SnapshotCount;
 
     /// <summary>一帧新数据，<b>已在 UI 线程</b>。第二参数可能为 null（静态信息还没读完）。</summary>

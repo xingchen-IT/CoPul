@@ -50,6 +50,13 @@ public sealed class OsProvider : IMetricProvider
     private double _cachedLatencyMs = double.NaN;
     private int _pingFailStreak;
 
+    /// <summary>N04：最近若干次探测结果（true = 收到回复）。PingLoop 线程写、采集线程读，靠锁互斥。</summary>
+    private readonly Queue<bool> _pingWindow = new();
+    private readonly object _pingLock = new();
+
+    /// <summary>丢包率统计窗口（4.5 写"滚动 10 次"）。</summary>
+    private const int PingWindowSize = 10;
+
     // ---- C10 负载均值状态 ----
     private ulong _lastIdle, _lastKernel, _lastUser;
     private long _lastLoadAvgTs;
@@ -94,6 +101,12 @@ public sealed class OsProvider : IMetricProvider
 
     /// <summary>延迟探测目标。默认国内 DNS（Q-09），8.8.8.8 实测 186 ms 不适合做基准。</summary>
     public string PingTarget { get; set; } = "223.5.5.5";
+
+    /// <summary>
+    /// N05 当前活动网卡名（流量最大的物理网卡）。字符串进不了 <see cref="MetricSnapshot"/>
+    /// （那里只装 double），由 UI 经 CollectorHost 旁路读取。
+    /// </summary>
+    public string ActiveNicName { get; private set; } = "";
 
     /// <summary>延迟探测间隔。N03 的 floor 是 1000ms（P-04：高频 ICMP 会抬高被测量值）。</summary>
     public int PingIntervalMs { get; set; } = 1000;
@@ -187,6 +200,17 @@ public sealed class OsProvider : IMetricProvider
         int open = counterPath.IndexOf('(');
         int close = counterPath.LastIndexOf(')');
         return open >= 0 && close > open ? counterPath[(open + 1)..close] : "";
+    }
+
+    /// <summary>
+    /// PDH 实例名里不能出现 <c>® ™ ©</c>（会与计数器路径语法冲突），Windows 用
+    /// <c>[R] [TM] [C]</c> 转义。原样显示会得到「Intel[R] Wi-Fi 6 AX201」这种半截商标，
+    /// 所以在送进界面前还原。只处理这三个已知转义，不猜别的方括号。
+    /// </summary>
+    private static string CleanNicName(string name)
+    {
+        if (name.IndexOf('[') < 0) return name;
+        return name.Replace("[R]", "®").Replace("[TM]", "™").Replace("[C]", "©");
     }
 
     /// <summary>
@@ -386,6 +410,7 @@ public sealed class OsProvider : IMetricProvider
         {
             sink.Set(MetricId.NetDownBytesPerSec, bestRx);
             sink.Set(MetricId.NetUpBytesPerSec, bestTx);
+            ActiveNicName = CleanNicName(bestName);
         }
     }
 
@@ -459,6 +484,11 @@ public sealed class OsProvider : IMetricProvider
     /// </summary>
     private void SampleLatency(MetricSnapshot sink)
     {
+        // N04 先算：它在延迟无效（目标完全不可达）时恰好是最有意义的那一项，
+        // 不能跟着下面的早退一起丢掉。
+        double loss = PacketLossPercent();
+        if (!double.IsNaN(loss)) sink.Set(MetricId.NetPacketLossPercent, loss);
+
         double v = _cachedLatencyMs;
         if (double.IsNaN(v))
         {
@@ -469,6 +499,17 @@ public sealed class OsProvider : IMetricProvider
         sink.Set(MetricId.NetLatencyMs, v,
             _pingFailStreak >= 2 ? MetricState.Stale : MetricState.Ok,
             note: _pingFailStreak >= 2 ? $"连续 {_pingFailStreak} 次探测失败" : null);
+    }
+
+    /// <summary>最近 <see cref="PingWindowSize"/> 次探测的丢包百分比；还没有样本时返回 NaN。</summary>
+    private double PacketLossPercent()
+    {
+        lock (_pingLock)
+        {
+            if (_pingWindow.Count == 0) return double.NaN;
+            int lost = _pingWindow.Count(ok => !ok);
+            return lost * 100.0 / _pingWindow.Count;
+        }
     }
 
     private void PingLoop()
@@ -487,10 +528,12 @@ public sealed class OsProvider : IMetricProvider
                 {
                     _cachedLatencyMs = reply.RoundtripTime;
                     _pingFailStreak = 0;
+                    RecordPing(ok: true);
                 }
                 else
                 {
                     _pingFailStreak++;
+                    RecordPing(ok: false);
                 }
             }
             catch
@@ -498,11 +541,22 @@ public sealed class OsProvider : IMetricProvider
                 sw.Stop();
                 LastPingMs = sw.Elapsed.TotalMilliseconds;
                 _pingFailStreak++;
+                RecordPing(ok: false);
             }
 
             // 失败时退避到 2s，避免目标不可达时每秒打一个超时包
             int wait = _pingFailStreak > 0 ? 2000 : PingIntervalMs;
             if (_stopPing.Wait(wait)) break;
+        }
+    }
+
+    /// <summary>记一次探测结果，只保留最近 <see cref="PingWindowSize"/> 次。</summary>
+    private void RecordPing(bool ok)
+    {
+        lock (_pingLock)
+        {
+            _pingWindow.Enqueue(ok);
+            while (_pingWindow.Count > PingWindowSize) _pingWindow.Dequeue();
         }
     }
 

@@ -140,6 +140,9 @@ public sealed class NvmlGpuProvider : IMetricProvider
         if (Nvml.GetClockInfo(_device, Nvml.NVML_CLOCK_MEM, out uint memMhz) == Nvml.NVML_SUCCESS)
             sink.Set(MetricId.GpuClockMemMhz, memMhz);
 
+        // 风扇：移动版 GPU 由笔记本 EC/BIOS 管控，NVML 返回 NOT_SUPPORTED（nvidia-smi 亦为 N/A），
+        // 本机永远拿不到，UI 已移除该格（R26）。采集保留：成本约 4µs/次，且台式机独显仍可读到，
+        // 将来恢复显示时不必改采集层。
         if (Nvml.GetFanSpeed(_device, out uint fan) == Nvml.NVML_SUCCESS)
             sink.Set(MetricId.GpuFanPct, fan);
 

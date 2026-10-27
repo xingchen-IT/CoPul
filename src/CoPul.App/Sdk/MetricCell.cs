@@ -29,16 +29,22 @@ public sealed class MetricCell : INotifyPropertyChanged
     private double _bar;
     private Visibility _barVisibility = Visibility.Collapsed;
     private Level _level = Level.Muted;
+    private string _unit;
 
     public MetricCell(string title, string unit, string accentKey)
     {
         Title = title;
-        Unit = unit;
+        _unit = unit;
         AccentKey = accentKey;
     }
 
     public string Title { get; }
-    public string Unit { get; }
+
+    /// <summary>
+    /// 单位。除网络速率外都是固定的；网络速率在 KB/s 与 MB/s 间自适应，
+    /// 用 <see cref="SetUnit"/> 改。
+    /// </summary>
+    public string Unit => _unit;
     public string AccentKey { get; }
 
     public string Value => _value;
@@ -90,6 +96,17 @@ public sealed class MetricCell : INotifyPropertyChanged
 
     /// <summary>标记为不可用。文案统一为 `—`，不要写"0"，A-13 明确禁止把无值当 0。</summary>
     public void Unavailable(string? sub = null) => Apply(Fmt.Dash, Level.Muted, sub);
+
+    /// <summary>
+    /// 改单位。只在真的变了时发通知——网络速率每帧都会调，单位却极少切换，
+    /// 不做去重等于每帧多刷两次绑定。
+    /// </summary>
+    public void SetUnit(string unit)
+    {
+        if (_unit == unit) return;
+        _unit = unit;
+        Raise(nameof(Unit));
+    }
 
     private static string BrushKeyFor(Level level, string accentKey) => level switch
     {
