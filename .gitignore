@@ -8,6 +8,8 @@ obj/
 # 本地工具链（用户级 SDK / 包缓存，不进仓库）
 .tools/
 .guser/
+# dotnet-install.ps1 是为修运行时手工下载的官方安装脚本，属本机工具，不进仓库
+tools/dotnet-install.ps1
 
 # NuGet 本地包
 *.nupkg

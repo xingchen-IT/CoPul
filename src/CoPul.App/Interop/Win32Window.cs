@@ -8,12 +8,34 @@ namespace CoPul.App.Interop;
 /// 为什么必须有：<c>WindowStyle=None</c> 的窗口最大化时，系统按**整个屏幕**而不是工作区算尺寸，
 /// 结果就是盖住任务栏——这是自绘标题栏最常见的一个缺陷。需求 5.4 要求"拖边缘改尺寸、双击最大化"，
 /// 所以这里不是可选项。
+///
+/// 另外附带圆角的两条路（A-31）：Win11 走 DWM 属性（系统裁剪 + 抗锯齿，零成本），
+/// Win10 没有这个属性，只能退到 <c>SetWindowRgn</c>（锯齿但能看）。
 /// </summary>
 internal static class Win32Window
 {
     public const int WM_GETMINMAXINFO = 0x0024;
 
     private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    /// <summary>DWMWA_WINDOW_CORNER_PREFERENCE，Win11 22000 起支持。</summary>
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+
+    /// <summary>DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND。</summary>
+    private const int DWMWCP_ROUND = 2;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom,
+                                                    int widthEllipse, int heightEllipse);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
@@ -118,5 +140,45 @@ internal static class Win32Window
 
         Marshal.StructureToPtr(mmi, lParam, true);
         return true;
+    }
+
+    /// <summary>
+    /// 让 Win11 的 DWM 给窗口裁圆角。成功时系统自己按当前 DPI 处理半径并做抗锯齿，
+    /// 我们不需要再碰 Region；最大化时 DWM 也会自动恢复直角，不用额外判断。
+    /// </summary>
+    /// <returns>false = 这张系统不认识该属性（Win10 及更早），调用方应退到 <see cref="ApplyRoundRegion"/>。</returns>
+    public static bool TryEnableDwmRoundCorners(IntPtr hwnd)
+    {
+        int preference = DWMWCP_ROUND;
+        return DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference,
+                                     sizeof(int)) == 0;
+    }
+
+    /// <summary>
+    /// 旧系统的圆角兜底：直接把窗口区域裁成圆角矩形。
+    ///
+    /// 代价说明：Region 是 1 位掩码，**没有抗锯齿**，8px 半径下边缘会有轻微锯齿；
+    /// 换来的是不需要 <c>AllowsTransparency</c>（那个会关掉硬件加速，与 1.5% CPU 预算直接冲突）。
+    /// 只在 Win10 上走到这里，Win11 走 DWM 不受影响。
+    /// </summary>
+    /// <param name="round">false = 恢复成完整矩形（最大化时用）。</param>
+    public static void ApplyRoundRegion(IntPtr hwnd, int widthPx, int heightPx, int radiusPx, bool round)
+    {
+        if (hwnd == IntPtr.Zero || widthPx <= 0 || heightPx <= 0) return;
+
+        if (!round)
+        {
+            // 传 IntPtr.Zero 表示取消区域限制，窗口回到完整矩形
+            SetWindowRgn(hwnd, IntPtr.Zero, true);
+            return;
+        }
+
+        // CreateRoundRectRgn 的右/下是开区间，+1 才不会切掉最后一列像素；
+        // 椭圆参数是**直径**，所以要 2×半径。
+        IntPtr region = CreateRoundRectRgn(0, 0, widthPx + 1, heightPx + 1, radiusPx * 2, radiusPx * 2);
+        if (region == IntPtr.Zero) return;
+
+        // 成功时系统接管 region 的所有权；失败时得自己删，否则每次改尺寸漏一个 GDI 对象
+        if (SetWindowRgn(hwnd, region, true) == 0) DeleteObject(region);
     }
 }

@@ -18,6 +18,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        InstallCrashLog();
         _uiThreadId = GetCurrentThreadId();
 
         var window = new MainWindow();
@@ -72,6 +73,55 @@ public partial class App : Application
             }
         };
         timer.Start();
+    }
+
+    /// <summary>
+    /// 崩溃日志（A-29）。常驻型程序最怕"窗口一闪就没"——没有堆栈就只能靠猜。
+    /// 任何未处理异常都写一份到 <c>%LOCALAPPDATA%\CoPul\crash-*.log</c>，
+    /// UI 线程和非 UI 线程各挂一个钩子；写完不拦截，程序该退还是退（坏了的程序留着更危险）。
+    /// </summary>
+    private void InstallCrashLog()
+    {
+        // 注意：DispatcherUnhandledException 是实例事件，必须挂在 this 上（写 App. 会编译不过）
+        DispatcherUnhandledException += (_, a) => WriteCrash("ui", a.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, a) =>
+            WriteCrash("app", a.ExceptionObject as Exception ?? new Exception(a.ExceptionObject?.ToString() ?? "未知异常"));
+    }
+
+    private static void WriteCrash(string kind, Exception? ex)
+    {
+        try
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CoPul");
+            Directory.CreateDirectory(dir);
+
+            string file = System.IO.Path.Combine(dir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}-{kind}.log");
+            File.WriteAllText(file,
+                $"时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
+                $"版本: {typeof(App).Assembly.GetName().Version}{Environment.NewLine}" +
+                $"命令行: {Environment.CommandLine}{Environment.NewLine}" +
+                $"工作目录: {Environment.CurrentDirectory}{Environment.NewLine}" +
+                $"管理员: {IsElevated()}{Environment.NewLine}{Environment.NewLine}{ex}");
+        }
+        catch
+        {
+            // 写日志本身失败也不能再抛，否则会把原始异常盖掉
+        }
+    }
+
+    private static bool IsElevated()
+    {
+        try
+        {
+            var id = System.Security.Principal.WindowsIdentity.GetCurrent();
+            return new System.Security.Principal.WindowsPrincipal(id)
+                .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string? ArgValue(string[] args, string name)

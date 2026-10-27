@@ -302,6 +302,13 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// <summary>CPU / GPU 使用率历史。120 点 × 0.5s = 近 60 秒。</summary>
     public TrendSeries Trend { get; } = new(120);
 
+    /// <summary>
+    /// CPU / GPU 温度历史（M1.4b）。与占用率分开一张图：
+    /// 两条曲线画在一起时，占用率抖到 100% 会把 70°C 的温升压成一条平线，
+    /// 而温度恰恰是慢变量，要看的是趋势不是瞬时值。量程 0–100°C。
+    /// </summary>
+    public TrendSeries TrendTemp { get; } = new(120);
+
     // ---- 折叠状态（5.4，持久化到 config.json） ----
     public BlockState CpuBlock { get; } = new("cpu");
     public BlockState GpuBlock { get; } = new("gpu");
@@ -309,11 +316,12 @@ public sealed class DashboardState : INotifyPropertyChanged
     public BlockState NetBlock { get; } = new("net");
     public BlockState DiskBlock { get; } = new("disk");
     public BlockState TrendBlock { get; } = new("trend");
+    public BlockState TempBlock { get; } = new("temp");
     public BlockState ProcBlock { get; } = new("proc");
 
     public IEnumerable<BlockState> Blocks => new[]
     {
-        CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock, TrendBlock, ProcBlock
+        CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock, TrendBlock, TempBlock, ProcBlock
     };
 
     /// <summary>按 id 找区块。恢复配置时用，避免开一串 switch。</summary>
@@ -341,6 +349,9 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     /// <summary>趋势图副标题。写明窗口长度与量程，省掉纵轴刻度文字。</summary>
     public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
+
+    /// <summary>温度图副标题。温度要管理员权限，读不到时整张图是空的，先说清楚。</summary>
+    public string TempSubtitle { get; } = "近 60 秒 · 0–100°C · 需管理员";
 
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
 
@@ -453,6 +464,15 @@ public sealed class DashboardState : INotifyPropertyChanged
     public void PushTrend(MetricSnapshot snap)
         => Trend.Push(Value(snap, MetricId.CpuTotalLoad) ?? double.NaN,
                       Value(snap, MetricId.GpuLoad) ?? double.NaN);
+
+    /// <summary>
+    /// 往温度图追加一个采样点。温度只在 T1/T2 层刷新（1s / 5s），
+    /// 而这里每 0.5s 调一次 —— 同一个值会被写两次，画出来是小阶梯，
+    /// 比"缺一半点"看起来更真实。读不到写 NaN（非管理员就是这样）。
+    /// </summary>
+    public void PushTrendTemp(MetricSnapshot snap)
+        => TrendTemp.Push(Value(snap, MetricId.CpuPackageTemp) ?? double.NaN,
+                          Value(snap, MetricId.GpuTemp) ?? double.NaN);
 
     private void ApplyCpu(MetricSnapshot snap)
     {

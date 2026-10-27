@@ -23,8 +23,8 @@ public sealed class AppConfig
     public double WindowTop { get; set; } = double.NaN;
     public double WindowWidth { get; set; } = 820;
 
-    /// <summary>默认高 860：M1.3 加了网络区块后 760 会截断硬盘区。</summary>
-    public double WindowHeight { get; set; } = 1080;
+    /// <summary>默认高 1230：M1.4b 加了第二张趋势图（温度）后 1080 会把进程表推到滚动区外。</summary>
+    public double WindowHeight { get; set; } = 1230;
     public bool WindowMaximized { get; set; }
 
     /// <summary>折叠的区块 id：<c>"cpu"</c> / <c>"gpu"</c> / <c>"mem"</c> / <c>"disk"</c>（5.4 要求持久化）。</summary>

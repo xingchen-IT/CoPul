@@ -31,6 +31,14 @@ public partial class MainWindow : Window
     /// <summary>自测用：暂停把快照写进界面，用于分离「WPF 渲染静态窗口」与「每次更新的布局成本」。</summary>
     public bool Paused { get; set; }
 
+    /// <summary>圆角半径（DIP）。与 XAML 里外层 Border 的 CornerRadius 必须一致，否则描边会露角。</summary>
+    private const double CornerRadiusDip = 8;
+
+    /// <summary>true = 已交给 Win11 的 DWM 处理圆角，不用再自己维护窗口 Region。</summary>
+    private bool _dwmRoundCorners;
+
+    private IntPtr _hwnd;
+
     public CollectorHost Host => _host;
 
     /// <summary>自测用：允许外部改展示层的自测开关。</summary>
@@ -47,6 +55,7 @@ public partial class MainWindow : Window
 
         _host = new CollectorHost(Dispatcher);
         TrendView.Series = _state.Trend;
+        TempView.Series = _state.TrendTemp;   // 量程与单位在 XAML 里给了：0–100°C
 
         // 进程采集是全部采集里最贵的一组（一轮约 20ms），启动时这块若已折叠就别采
         _host.ProcessSamplingEnabled = !_state.ProcBlock.Collapsed;
@@ -66,7 +75,7 @@ public partial class MainWindow : Window
             // N05 网卡名 / N03 探测目标不在快照里（字符串），走旁路；无变化时内部会跳过通知
             _state.ApplyNetworkContext(_host.ActiveNicName, _host.PingTarget);
 
-            // 进程表与趋势图：折叠时整段跳过（趋势图连采样都不记，省一半成本）
+            // 进程表与两张趋势图：折叠时整段跳过（趋势图连采样都不记，省一半成本）
             if (!_state.ProcBlock.Collapsed)
                 _state.ApplyProcesses(_host.TopProcesses, _host.ProcessGpuAvailable);
 
@@ -74,6 +83,12 @@ public partial class MainWindow : Window
             {
                 _state.PushTrend(snap);
                 TrendView.Refresh();
+            }
+
+            if (!_state.TempBlock.Collapsed)
+            {
+                _state.PushTrendTemp(snap);
+                TempView.Refresh();
             }
 
             ApplyTotalMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0
@@ -205,8 +220,39 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
 
         // 无边框窗口最大化会盖住任务栏，必须自己把尺寸钳到工作区
-        var handle = new WindowInteropHelper(this).Handle;
-        HwndSource.FromHwnd(handle)?.AddHook(WndProc);
+        _hwnd = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
+
+        // 圆角优先交给系统：DWM 会按当前 DPI 裁切并抗锯齿，且最大化时自动恢复直角。
+        // Win10 没有这个属性，退到 Region 兜底（锯齿但可用），由尺寸变化维持。
+        _dwmRoundCorners = Win32Window.TryEnableDwmRoundCorners(_hwnd);
+        if (!_dwmRoundCorners)
+        {
+            ApplyRoundRegion();
+            SizeChanged += (_, _) => ApplyRoundRegion();
+        }
+
+        StateChanged += (_, _) =>
+        {
+            // Region 路径下最大化必须是直角，否则任务栏边缘会缺一小块
+            if (!_dwmRoundCorners) ApplyRoundRegion();
+        };
+    }
+
+    /// <summary>
+    /// Win10 兜底路径：按当前 DPI 换算成物理像素再裁 Region。
+    /// 不换算会在 150% 缩放下裁出一个明显偏小的圆角（Region 只认物理像素）。
+    /// </summary>
+    private void ApplyRoundRegion()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+
+        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        Win32Window.ApplyRoundRegion(_hwnd,
+            (int)Math.Round(ActualWidth * scale),
+            (int)Math.Round(ActualHeight * scale),
+            (int)Math.Round(CornerRadiusDip * scale),
+            round: WindowState != WindowState.Maximized);
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
