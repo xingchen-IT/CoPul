@@ -1,0 +1,80 @@
+﻿=== M1.0 字段验收 ===
+time  : 2026-10-27 17:04:08
+admin : False
+
+静态信息 第1次 :  229.88 ms  (GPU  40.35 / 盘 186.85)
+静态信息 第2次 :    2.50 ms  (GPU   1.43 / 盘   0.21)
+
+C03 每核占用   : 开
+进程 CPU       : 2.080% 单核 = 0.1040% 整机  (窗口 6.0s)
+
+--- 静态信息 SystemInfo ---
+C01 CPU 型号     : 13th Gen Intel(R) Core(TM) i7-13650HX
+G01 GPU 型号     : NVIDIA GeForce RTX 4060 Laptop GPU  [NVML]
+逻辑核数         : 20
+OS               : Microsoft Windows 10.0.26200
+读取耗时         : 2.42 ms  (CPU名 0.09 / GPU名 1.18 / 物理盘 0.21 / 分区 0.93)
+GPU 适配器（DXGI，已按型号键去重）:
+    [NVIDIA   ] NVIDIA GeForce RTX 4060 Laptop GPU  7.8 GB  vid=0x10DE did=0x28E0 luid=0x00000000000106ED
+    [Intel    ] Intel(R) UHD Graphics  0.1 GB  vid=0x8086 did=0xA78B luid=0x0000000000011A5F
+    [Microsoft] Microsoft Basic Render Driver  0.0 GB  vid=0x1414 did=0x008C luid=0x00000000000119E9  (软件渲染)
+D01 物理盘       :
+    #0 [NVMe] NVMe SAMSUNG MZVL81T0HELB-00BTW  953.9 GB
+    #1 [NVMe] NVMe Predator SSD GM7 1TB  953.9 GB
+D04 分区         :
+    C:   88.7%  266.2/300.2 GB  NTFS
+    D:   77.5%  483.9/624.0 GB  NTFS
+    E:   51.0%  486.9/953.9 GB  NTFS
+
+--- R19 G01 来源对比 ---
+  DXGI 兜底         : NVIDIA GeForce RTX 4060 Laptop GPU
+  NVML 原始值       : NVIDIA GeForce RTX 4060 Laptop GPU
+  最终 G01 / 来源   : NVIDIA GeForce RTX 4060 Laptop GPU / NVML  (NVML 覆盖=True)
+  模拟非 NVIDIA     : 关
+
+--- 标量（M1.0 新增项标 ★）---
+  ★ CpuLoadAvg1                   37.88  Ok
+  ★ CpuLoadAvg5                   37.88  Ok
+  ★ CpuLoadAvg15                  37.88  Ok
+  ★ RamCachedMb                 4928.57  Ok
+  ★ RamCommitUsedMb            41303.09  Ok
+  ★ RamCommitLimitMb           57987.12  Ok
+  ★ RamPageFileMb               8915.98  Ok  // 推算值（提交量 − 物理总量），非页面文件独立读数
+    CpuTotalLoad                  56.85  Ok
+    CpuPackageTemp                 (缺失)  ——
+    CpuClockGhz                    (缺失)  ——
+    CpuPackagePowerW               (缺失)  ——
+    GpuLoad                       40.00  Ok
+    GpuMemUsedMb                3028.56  Ok
+    GpuTemp                       61.00  Ok
+    GpuPowerW                     18.68  Ok
+    RamLoad                       75.11  Ok
+    RamUsedMb                  24327.23  Ok
+    RamTotalMb                 32387.12  Ok
+    DiskReadBytesPerSec            0.00  Ok
+    DiskWriteBytesPerSec       41482.78  Ok
+    NetDownBytesPerSec         13277.33  Ok
+    NetLatencyMs                  16.00  Ok
+
+--- 数组（★ = M1.0 新增）---
+  ★ CpuCoreLoad [20] Ok
+       74  18  78   8  73  74  65  81  50  20  58  22  49  48  58  61  70  67  78  82
+  CpuCoreTemp: （缺失）
+  DiskTemperature: （缺失）
+
+--- 诊断 ---
+  Os.PDH 计数器总数   : 29（其中每核 20）
+  Os.Perf 单次 Collect: 4.730 ms   rc=0
+  网卡（纳入统计）    : Realtek PCIe GbE Family Controller, Intel[R] Wi-Fi 6 AX201 160MHz
+  NVML       Ready          init=  42.54 ms  
+  OS / PDH   Ready          init= 736.90 ms  
+  MSR / PawnIO Failed         init=   4.25 ms  读取 CPU 温度需要管理员权限（PawnIO 驱动句柄被拒）。
+  NVMe SMART Failed         init=   0.44 ms  读取硬盘温度需要管理员权限（物理磁盘句柄被拒）。
+  快照数              : 48
+  各层实际间隔：
+    T0               设定  500 ms  实际   500.8 ms  平均tick   0.217 ms  最大   2.257 ms  13 次
+    T1               设定  500 ms  实际   500.8 ms  平均tick   0.136 ms  最大   1.695 ms  13 次
+    T2               设定 1000 ms  实际  1001.5 ms  平均tick   0.483 ms  最大   1.622 ms  7 次
+    T2Slow           设定 5000 ms  实际  5017.0 ms  平均tick   0.482 ms  最大   0.511 ms  2 次
+    T0b              设定  500 ms  实际   500.8 ms  平均tick   3.220 ms  最大   5.153 ms  13 次
+

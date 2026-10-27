@@ -27,6 +27,17 @@ internal static class Program
         Console.WriteLine($"admin : {IsAdministrator()}");
         Console.WriteLine();
 
+        // 静态信息里 DXGI 的首次调用要加载 dxgi.dll，想知道「一次性成本」到底是多少，
+        // 就在同一进程里连读两次，第 2 次即稳态值。
+        if (args.Any(a => a == "--static-twice"))
+        {
+            var s1 = SystemInfo.Collect();
+            var s2 = SystemInfo.Collect();
+            Console.WriteLine($"静态信息 第1次 : {s1.CollectMs,7:F2} ms  (GPU {s1.GpuNameMs,6:F2} / 盘 {s1.DisksMs,6:F2})");
+            Console.WriteLine($"静态信息 第2次 : {s2.CollectMs,7:F2} ms  (GPU {s2.GpuNameMs,6:F2} / 盘 {s2.DisksMs,6:F2})");
+            Console.WriteLine();
+        }
+
         // 静态信息：M1 会放进后台线程（A-12），这里同步调用来量耗时
         var info = SystemInfo.Collect();
 
@@ -40,7 +51,11 @@ internal static class Program
             new SampleSchedulerOptions { UserIntervalMs = 500 });
 
         sched.Start();
-        info.GpuName = nvml.DeviceName;
+
+        // R19 验收：先记下纯 DXGI 的兜底结果，再让 NVML 覆盖，两条都打印出来。
+        // --no-nvml 用来模拟"非 NVIDIA 机器 / nvmlInit 失败"：不许 NVML 覆盖，看 G01 是否仍有值。
+        string dxgiName = info.GpuName;
+        bool usedNvml = args.Any(a => a == "--no-nvml") ? false : info.ApplyNvmlGpuName(nvml.DeviceName);
 
         // 进程 CPU 用 TotalProcessorTime 增量算；60 秒窗口误差 ±0.026%（M0.6 结论），
         // 这里只有几秒，只能看量级，用于「开/关 C03」的相对对比。
@@ -60,6 +75,12 @@ internal static class Program
         Console.WriteLine();
 
         DumpSystemInfo(info);
+        Console.WriteLine("--- R19 G01 来源对比 ---");
+        Console.WriteLine($"  DXGI 兜底         : {N(dxgiName)}");
+        Console.WriteLine($"  NVML 原始值       : {N(nvml.DeviceName)}");
+        Console.WriteLine($"  最终 G01 / 来源   : {N(info.GpuName)} / {(info.GpuSource == "" ? "(空)" : info.GpuSource)}  (NVML 覆盖={usedNvml})");
+        Console.WriteLine($"  模拟非 NVIDIA     : {(args.Any(a => a == "--no-nvml") ? "开（禁止 NVML 覆盖）" : "关")}");
+        Console.WriteLine();
         DumpScalars(snap);
         DumpSeries(snap);
         DumpDiagnostics(os, nvml, msr, nvme, sched);
@@ -72,10 +93,15 @@ internal static class Program
     {
         Console.WriteLine("--- 静态信息 SystemInfo ---");
         Console.WriteLine($"C01 CPU 型号     : {N(i.CpuName)}");
-        Console.WriteLine($"G01 GPU 型号     : {N(i.GpuName)}");
+        Console.WriteLine($"G01 GPU 型号     : {N(i.GpuName)}  [{N(i.GpuSource)}]");
         Console.WriteLine($"逻辑核数         : {i.LogicalCores}");
         Console.WriteLine($"OS               : {i.OsVersion}");
-        Console.WriteLine($"读取耗时         : {i.CollectMs:F2} ms  (CPU名 {i.CpuNameMs:F2} / 物理盘 {i.DisksMs:F2} / 分区 {i.PartitionsMs:F2})");
+        Console.WriteLine($"读取耗时         : {i.CollectMs:F2} ms  (CPU名 {i.CpuNameMs:F2} / GPU名 {i.GpuNameMs:F2} / 物理盘 {i.DisksMs:F2} / 分区 {i.PartitionsMs:F2})");
+        Console.WriteLine("GPU 适配器（DXGI，已按型号键去重）:");
+        foreach (var a in i.GpuAdapters)
+            Console.WriteLine($"    [{a.Vendor,-9}] {a.Description}  {a.DedicatedVramGb:F1} GB  " +
+                              $"vid=0x{a.VendorId:X4} did=0x{a.DeviceId:X4} luid=0x{a.Luid:X16}{(a.IsSoftware ? "  (软件渲染)" : "")}");
+        if (i.GpuAdapters.Count == 0) Console.WriteLine("    （空）");
         Console.WriteLine("D01 物理盘       :");
         foreach (var d in i.Disks)
             Console.WriteLine($"    #{d.Index} [{d.Bus,-4}] {d.Model}  {d.CapacityGb:F1} GB");
