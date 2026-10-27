@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>M13Probe</AssemblyName>
+    <RootNamespace>CoPul.M13</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\CoPul.Collector\CoPul.Collector.csproj" />
+  </ItemGroup>
+
+</Project>

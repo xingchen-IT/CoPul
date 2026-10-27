@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:CoPul.App.Controls"
-        Title="CoPul 芯脉" Width="820" Height="860" MinWidth="640" MinHeight="480"
+        Title="CoPul 芯脉" Width="820" Height="1080" MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BrushBg}" FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
@@ -121,6 +121,36 @@
                                 <controls:MetricTile Grid.Row="1" Grid.Column="3" Grid.ColumnSpan="3"
                                                      Margin="0,0,0,0" DataContext="{Binding GpuClock}" />
                             </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--
+                        趋势区块（M1.4）：CPU / GPU 使用率折线。
+                        纵轴固定 0–100%，不做自动缩放 —— 占用率本来就有上界，
+                        自动缩放会把 5% 的抖动画成满载。
+                    -->
+                    <Border Style="{StaticResource BlockCard}">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="trend"
+                                            Content="{Binding TrendBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
+                                    <TextBlock Text="趋势" Style="{StaticResource TextBlockTitle}"
+                                               Foreground="{StaticResource AccentCpu}" />
+                                    <TextBlock Text="{Binding TrendSubtitle}" Style="{StaticResource TextBlockModel}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="CPU" Style="{StaticResource TextBody}"
+                                               Foreground="{StaticResource AccentCpu}" Margin="0,0,12,0" />
+                                    <TextBlock Text="GPU" Style="{StaticResource TextBody}"
+                                               Foreground="{StaticResource AccentGpu}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <controls:TrendChart x:Name="TrendView" Height="104" Margin="0,10,0,0"
+                                                 Visibility="{Binding TrendBlock.BodyVisibility}" />
                         </StackPanel>
                     </Border>
 
@@ -254,6 +284,84 @@
 
                                 <TextBlock Text="{Binding PartitionText}" Style="{StaticResource TextBody}"
                                            TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!--
+                        进程区块（M1.4）：占用最高的 8 个进程，5 秒刷新。
+                        排序取 CPU 与 GPU 的较大者 —— 只按 CPU 排的话，
+                        正在硬解码 / 跑游戏但主逻辑很闲的进程永远排不上来。
+                    -->
+                    <Border Style="{StaticResource BlockCard}">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="proc"
+                                            Content="{Binding ProcBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
+                                    <TextBlock Text="进程" Style="{StaticResource TextBlockTitle}"
+                                               Foreground="{StaticResource AccentFps}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ProcSubtitle}" Style="{StaticResource TextBody}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <StackPanel Visibility="{Binding ProcBlock.BodyVisibility}">
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="54" />
+                                        <ColumnDefinition Width="56" />
+                                        <ColumnDefinition Width="56" />
+                                        <ColumnDefinition Width="76" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="进程" Style="{StaticResource TextLabel}" />
+                                    <TextBlock Grid.Column="1" Text="PID" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="2" Text="CPU %" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="3" Text="GPU %" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="4" Text="内存" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                </Grid>
+
+                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,4,0,0" />
+
+                                <ItemsControl ItemsSource="{Binding Processes}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,4,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="54" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="76" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                                           Style="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{StaticResource BrushTextPrimary}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding PidText}"
+                                                           Style="{StaticResource TextBody}"
+                                                           HorizontalAlignment="Right"
+                                                           Foreground="{StaticResource BrushTextTertiary}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding CpuText}"
+                                                           Style="{StaticResource TextMonoRow}"
+                                                           HorizontalAlignment="Right"
+                                                           Foreground="{Binding CpuBrush}" />
+                                                <TextBlock Grid.Column="3" Text="{Binding GpuText}"
+                                                           Style="{StaticResource TextMonoRow}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="4" Text="{Binding MemText}"
+                                                           Style="{StaticResource TextMonoRow}"
+                                                           HorizontalAlignment="Right" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
                     </Border>

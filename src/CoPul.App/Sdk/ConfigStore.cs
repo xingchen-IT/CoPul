@@ -24,7 +24,7 @@ public sealed class AppConfig
     public double WindowWidth { get; set; } = 820;
 
     /// <summary>默认高 860：M1.3 加了网络区块后 760 会截断硬盘区。</summary>
-    public double WindowHeight { get; set; } = 860;
+    public double WindowHeight { get; set; } = 1080;
     public bool WindowMaximized { get; set; }
 
     /// <summary>折叠的区块 id：<c>"cpu"</c> / <c>"gpu"</c> / <c>"mem"</c> / <c>"disk"</c>（5.4 要求持久化）。</summary>

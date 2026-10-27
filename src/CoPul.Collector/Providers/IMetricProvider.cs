@@ -31,7 +31,14 @@ public enum Tier
     /// 所以把 T0 拆成「便宜的 T0」与「贵的 T0b」，避免为了 CPU 占用率把
     /// 内存/显存也一起拖到 200ms。
     /// </summary>
-    T0b = 6
+    T0b = 6,
+
+    /// <summary>
+    /// 进程列表与每进程 GPU。M1.4 实测：NtQuerySystemInformation 一次 10.5ms（460 进程）、
+    /// GPU Engine 计数器一轮 9.6ms（456 实例），合计约 20ms 一轮，固定 5000ms。
+    /// 不放进 T2（1000ms）的理由很直接：20ms / 1s = 2% 单核，是整窗预算的两倍。
+    /// </summary>
+    T2b = 7
 }
 
 public static class TierInfo
@@ -52,6 +59,7 @@ public static class TierInfo
         Tier.T2Slow => 5000,
         Tier.T3 => 10000,
         Tier.T0b => 200,
+        Tier.T2b => 5000,
         _ => 1000
     };
 
@@ -64,6 +72,7 @@ public static class TierInfo
         Tier.T2Slow => "T2s 硬盘温度",
         Tier.T3 => "T3 极低频",
         Tier.T0b => "T0b PDH 重活",
+        Tier.T2b => "T2b 进程/GPU",
         _ => tier.ToString()
     };
 }

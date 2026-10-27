@@ -46,6 +46,11 @@ public partial class MainWindow : Window
         RestoreLayout(_config);
 
         _host = new CollectorHost(Dispatcher);
+        TrendView.Series = _state.Trend;
+
+        // 进程采集是全部采集里最贵的一组（一轮约 20ms），启动时这块若已折叠就别采
+        _host.ProcessSamplingEnabled = !_state.ProcBlock.Collapsed;
+
         _host.InfoReady += info =>
         {
             _state.ApplyInfo(info);
@@ -60,6 +65,17 @@ public partial class MainWindow : Window
             _state.ApplySnapshot(snap);
             // N05 网卡名 / N03 探测目标不在快照里（字符串），走旁路；无变化时内部会跳过通知
             _state.ApplyNetworkContext(_host.ActiveNicName, _host.PingTarget);
+
+            // 进程表与趋势图：折叠时整段跳过（趋势图连采样都不记，省一半成本）
+            if (!_state.ProcBlock.Collapsed)
+                _state.ApplyProcesses(_host.TopProcesses, _host.ProcessGpuAvailable);
+
+            if (!_state.TrendBlock.Collapsed)
+            {
+                _state.PushTrend(snap);
+                TrendView.Refresh();
+            }
+
             ApplyTotalMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0
                             / System.Diagnostics.Stopwatch.Frequency;
             ApplyCount++;
@@ -132,8 +148,11 @@ public partial class MainWindow : Window
         else
         {
             // 没有配置，或上次的位置已经不在任何显示器上（拔了副屏 / 改了分辨率）
+            // 高度还要再钳一次工作区：新增趋势与进程两个区块后默认高 1080，
+            // 在 1080p 屏上会顶出屏幕外（主屏工作区通常不足 1040 DIP）。
+            double workH = SystemParameters.WorkArea.Height;
             Width = w;
-            Height = h;
+            Height = Math.Min(h, workH);
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
 
@@ -174,6 +193,10 @@ public partial class MainWindow : Window
         if (block is null) return;
 
         block.Toggle();
+
+        // 折叠进程区块时顺手把最贵的两组采集关掉（见 CollectorHost.ProcessSamplingEnabled）
+        if (block == _state.ProcBlock) _host.ProcessSamplingEnabled = !block.Collapsed;
+
         SaveLayout();   // 折叠状态按 5.4 持久化
     }
 

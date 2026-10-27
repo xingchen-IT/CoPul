@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
@@ -83,6 +84,86 @@ public sealed class DiskRow : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>
+/// 进程表里的一行（M1.4）。
+///
+/// 复用 <see cref="DiskRow"/> 的套路：行对象常驻、只改字段，不整表重建。
+/// 进程每 5 秒刷新一次，若每次都清空 ObservableCollection 再 Add，WPF 会销毁重建
+/// 全部视觉元素，行高、选中态、滚动位置都会跳。
+/// </summary>
+public sealed class ProcessRow : INotifyPropertyChanged
+{
+    private string _name = "";
+    private string _pidText = "";
+    private string _cpuText = Fmt.Dash;
+    private string _gpuText = Fmt.Dash;
+    private string _memText = Fmt.Dash;
+    private Level _cpuLevel = Level.Muted;
+
+    public string Name { get => _name; private set => SetStr(ref _name, value); }
+    public string PidText { get => _pidText; private set => SetStr(ref _pidText, value); }
+
+    /// <summary>CPU 占用率。首次采样算不出差分时显示 `—`，不写 0（A-13）。</summary>
+    public string CpuText { get => _cpuText; private set => SetStr(ref _cpuText, value); }
+
+    /// <summary>GPU 占用率。WDDM 显卡拿不到每进程 GPU 数据时整列是 `—`。</summary>
+    public string GpuText { get => _gpuText; private set => SetStr(ref _gpuText, value); }
+
+    public string MemText { get => _memText; private set => SetStr(ref _memText, value); }
+
+    public Brush CpuBrush => Palette.Brush(_cpuLevel switch
+    {
+        Level.Warn => "BrushWarn",
+        Level.Danger => "BrushDanger",
+        Level.Muted => "BrushTextSecondary",
+        _ => "AccentCpu"
+    });
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void Apply(ProcessStat s)
+    {
+        Name = s.Name.Length > 0 ? s.Name : "(未知)";
+        PidText = s.Pid.ToString(CultureInfo.InvariantCulture);
+
+        if (double.IsNaN(s.CpuPct))
+        {
+            CpuText = Fmt.Dash;
+            SetLevel(Level.Muted);
+        }
+        else
+        {
+            // 占用率低于 10% 时给一位小数，否则整数 —— 0.3% 与 0% 的差别要看得出
+            CpuText = s.CpuPct < 10
+                ? s.CpuPct.ToString("F1", CultureInfo.InvariantCulture)
+                : s.CpuPct.ToString("F0", CultureInfo.InvariantCulture);
+            SetLevel(Severity.Load(s.CpuPct));
+        }
+
+        GpuText = double.IsNaN(s.GpuPct)
+            ? Fmt.Dash
+            : s.GpuPct.ToString("F0", CultureInfo.InvariantCulture);
+
+        MemText = s.MemMb >= 1024
+            ? $"{s.MemMb / 1024:F1} GB"
+            : $"{s.MemMb:F0} MB";
+    }
+
+    private void SetLevel(Level level)
+    {
+        if (_cpuLevel == level) return;
+        _cpuLevel = level;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuBrush)));
+    }
+
+    private void SetStr(ref string field, string value, [CallerMemberName] string? name = null)
+    {
+        if (field == value) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+}
+
 /// <summary>阈值判定。数字来自需求 10.3，改这里等于改全局配色行为，别散落到各处。</summary>
 public static class Severity
 {
@@ -161,6 +242,7 @@ public sealed class DashboardState : INotifyPropertyChanged
     private string _gpuExtraText = "";
     private string _netAdapter = "读取中…";
     private string _netTargetText = "";
+    private string _procSubtitle = "";
     private string _statusText = "正在初始化采集器…";
 
     public DashboardState()
@@ -214,14 +296,25 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
+    /// <summary>进程表行。行对象复用，只改字段。</summary>
+    public ObservableCollection<ProcessRow> Processes { get; } = new();
+
+    /// <summary>CPU / GPU 使用率历史。120 点 × 0.5s = 近 60 秒。</summary>
+    public TrendSeries Trend { get; } = new(120);
+
     // ---- 折叠状态（5.4，持久化到 config.json） ----
     public BlockState CpuBlock { get; } = new("cpu");
     public BlockState GpuBlock { get; } = new("gpu");
     public BlockState MemBlock { get; } = new("mem");
     public BlockState NetBlock { get; } = new("net");
     public BlockState DiskBlock { get; } = new("disk");
+    public BlockState TrendBlock { get; } = new("trend");
+    public BlockState ProcBlock { get; } = new("proc");
 
-    public IEnumerable<BlockState> Blocks => new[] { CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock };
+    public IEnumerable<BlockState> Blocks => new[]
+    {
+        CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock, TrendBlock, ProcBlock
+    };
 
     /// <summary>按 id 找区块。恢复配置时用，避免开一串 switch。</summary>
     public BlockState? Block(string id) => Blocks.FirstOrDefault(b => b.Id == id);
@@ -242,6 +335,12 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     /// <summary>延迟探测目标，让「延迟」这一格知道自己在测谁。</summary>
     public string NetTargetText { get => _netTargetText; private set => Set(ref _netTargetText, value); }
+
+    /// <summary>进程区块右侧的说明：刷新节奏 + 每进程 GPU 在这台机器上能不能拿到。</summary>
+    public string ProcSubtitle { get => _procSubtitle; private set => Set(ref _procSubtitle, value); }
+
+    /// <summary>趋势图副标题。写明窗口长度与量程，省掉纵轴刻度文字。</summary>
+    public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
 
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
 
@@ -329,6 +428,31 @@ public sealed class DashboardState : INotifyPropertyChanged
         NetAdapter = string.IsNullOrWhiteSpace(adapter) ? Fmt.Dash : adapter;
         NetTargetText = string.IsNullOrWhiteSpace(target) ? "" : $"探测 {target}";
     }
+
+    /// <summary>
+    /// 进程表（M1.4）。行对象复用：多出来的行删掉、缺的行补上，已有的行只改字段，
+    /// 避免每 5 秒把整张表的视觉元素重建一遍。
+    /// </summary>
+    public void ApplyProcesses(IReadOnlyList<ProcessStat> top, bool gpuAvailable)
+    {
+        ProcSubtitle = gpuAvailable
+            ? "每 5 秒刷新 · 按占用排序"
+            : "每 5 秒刷新 · 本机不提供每进程 GPU";
+
+        while (Processes.Count > top.Count) Processes.RemoveAt(Processes.Count - 1);
+        while (Processes.Count < top.Count) Processes.Add(new ProcessRow());
+
+        for (int i = 0; i < top.Count; i++)
+            Processes[i].Apply(top[i]);
+    }
+
+    /// <summary>
+    /// 往趋势图追加一个采样点。折叠时由调用方跳过 —— 看不见的历史没有价值。
+    /// 读不到的项写 NaN，画图时断开，绝不写 0（A-13）。
+    /// </summary>
+    public void PushTrend(MetricSnapshot snap)
+        => Trend.Push(Value(snap, MetricId.CpuTotalLoad) ?? double.NaN,
+                      Value(snap, MetricId.GpuLoad) ?? double.NaN);
 
     private void ApplyCpu(MetricSnapshot snap)
     {

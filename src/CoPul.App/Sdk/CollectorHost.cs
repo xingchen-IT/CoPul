@@ -2,7 +2,6 @@ using System.Windows.Threading;
 using CoPul.Collector.Metrics;
 using CoPul.Collector.Providers;
 using CoPul.Collector.Scheduling;
-
 namespace CoPul.App.Sdk;
 
 /// <summary>
@@ -22,6 +21,7 @@ public sealed class CollectorHost : IDisposable
     private readonly OsProvider _os = new();
     private readonly MsrCpuProvider _msr = new();
     private readonly NvmeStorageProvider _nvme = new();
+    private readonly ProcessProvider _proc = new();
     private readonly SampleScheduler _scheduler;
 
     private int _started;
@@ -50,7 +50,7 @@ public sealed class CollectorHost : IDisposable
     public CollectorHost(Dispatcher ui)
     {
         _ui = ui;
-        Providers = new IMetricProvider[] { _nvml, _os, _msr, _nvme };
+        Providers = new IMetricProvider[] { _nvml, _os, _msr, _nvme, _proc };
         _scheduler = new SampleScheduler(Providers, new SampleSchedulerOptions { UserIntervalMs = 500 });
         _scheduler.SnapshotReady += OnSnapshotReady;
     }
@@ -69,6 +69,25 @@ public sealed class CollectorHost : IDisposable
 
     /// <summary>N03 延迟探测目标，界面用来标注"延迟测的是谁"。</summary>
     public string PingTarget => _os.PingTarget;
+
+    /// <summary>
+    /// 占用最高的若干进程（M1.4）。与 N05 网卡名同一条旁路：复合结构不进快照。
+    /// 5 秒刷新一次，读到旧数组最多晚 5 秒。
+    /// </summary>
+    public IReadOnlyList<ProcessStat> TopProcesses => _proc.Top;
+
+    /// <summary>每进程 GPU 占用在这台机器上能不能拿到（WDDM 显卡通常拿不到）。</summary>
+    public bool ProcessGpuAvailable => _proc.GpuAvailable;
+
+    /// <summary>
+    /// 进程区块折叠时关掉这两组采集。进程快照 + GPU Engine 一轮约 20ms，
+    /// 是全部采集里最贵的一组，看不见就别采。
+    /// </summary>
+    public bool ProcessSamplingEnabled
+    {
+        get => _proc.Enabled;
+        set => _proc.Enabled = value;
+    }
 
     public long SnapshotCount => _scheduler.SnapshotCount;
 
