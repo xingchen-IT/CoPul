@@ -8,14 +8,18 @@ namespace CoPul.Collector.Metrics;
 public enum MetricId
 {
     // ---------- CPU ----------
-    CpuName,               // C01
+    CpuName,               // C01  启动一次（SystemInfo，见该类型）
     CpuTotalLoad,          // C02  % Processor Utility
+    CpuCoreLoad,           // C03  数组，每逻辑核占用率（M1.0 补）
     CpuPackageTemp,        // C04
     CpuCoreTemp,           // C05  数组
     CpuClockGhz,           // C06
     CpuPackagePowerW,      // C07
     CpuCoreVoltage,        // C08  v1 默认关闭
     CpuFanRpm,             // C09  v1 默认关闭
+    CpuLoadAvg1,           // C10  负载均值 1 分钟（M1.0 补）
+    CpuLoadAvg5,           // C10  5 分钟
+    CpuLoadAvg15,          // C10  15 分钟
 
     // ---------- GPU ----------
     GpuName,               // G01
@@ -36,7 +40,11 @@ public enum MetricId
     RamUsedMb,             // M02
     RamTotalMb,            // M02
     RamAvailMb,            // M03
-    RamSwapUsedMb,         // M04
+    RamCachedMb,           // M04  已缓存（GetPerformanceInfo.SystemCache）
+    RamCommitUsedMb,       // M05  提交量（Commit）
+    RamCommitLimitMb,      // M05  提交上限（物理 + 页面文件）
+    RamPageFileMb,         // M06  页面文件使用 = 提交量 − 物理总量（推算，见 OsProvider）
+    // 注：M07（内存频率/通道）走 SPD，需 LuMi 管理员通路，v1 不采（4.3 标"隐藏"）
 
     // ---------- 磁盘 ----------
     DiskTemperature,       // D02  数组，每盘一个

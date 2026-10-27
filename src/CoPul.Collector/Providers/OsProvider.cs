@@ -37,17 +37,28 @@ public sealed class OsProvider : IMetricProvider
     private readonly List<NicCounter> _nics = new();
     private readonly List<SampleGroup> _groups;
 
+    /// <summary>C03：每逻辑核一个计数器，按 (处理器组, 逻辑核) 数值序排列。</summary>
+    private readonly List<PdhCounter> _coreUtility = new();
+
     private Thread? _pingThread;
     private readonly ManualResetEventSlim _stopPing = new(false);
     private double _cachedLatencyMs = double.NaN;
     private int _pingFailStreak;
+
+    // ---- C10 负载均值状态 ----
+    private ulong _lastIdle, _lastKernel, _lastUser;
+    private long _lastLoadAvgTs;
+    private bool _loadAvgPrimed;
+    private double _avg1, _avg5, _avg15;
 
     public OsProvider()
     {
         _groups = new List<SampleGroup>
         {
             new("Os.Memory", Tier.T0, SampleMemory),
+            new("Os.MemoryExtra", Tier.T2, SampleMemoryExtra),
             new("Os.Perf", Tier.T0b, SamplePdh),
+            new("Os.LoadAvg", Tier.T2Slow, SampleLoadAvg),
             new("Os.Latency", Tier.T2, SampleLatency)
         };
     }
@@ -61,6 +72,9 @@ public sealed class OsProvider : IMetricProvider
 
     // ---- 诊断字段，供 M0.6 基准输出 ----
     public int PdhCounterCount => _pdh?.Counters.Count ?? 0;
+
+    /// <summary>C03 实际挂上的每核计数器数量。少于逻辑核数说明实例名解析失败。</summary>
+    public int CoreCounterCount => _coreUtility.Count;
     public double LastCollectMs { get; private set; }
     public uint LastCollectStatus { get; private set; }
     public double LastPingMs { get; private set; }
@@ -79,6 +93,14 @@ public sealed class OsProvider : IMetricProvider
     /// <summary>延迟探测间隔。N03 的 floor 是 1000ms（P-04：高频 ICMP 会抬高被测量值）。</summary>
     public int PingIntervalMs { get; set; } = 1000;
 
+    /// <summary>
+    /// 是否采集 C03 每核占用率。默认开。
+    /// 关掉它是 R18 的退路之一：0.5s 档读数离散 3 倍，若将来贴线，
+    /// 先关 C03（大窗口 20 格变灰）比降全核温度频率对用户更无损。
+    /// 必须在 <see cref="Initialize"/> 之前设置。
+    /// </summary>
+    public bool EnablePerCoreLoad { get; set; } = true;
+
     public bool Initialize()
     {
         if (Status != ProviderStatus.NotInitialized) return Status == ProviderStatus.Ready;
@@ -96,6 +118,7 @@ public sealed class OsProvider : IMetricProvider
             _diskBusyTotal = _pdh.TryAdd(CounterDiskBusyTotal);
 
             AddNetworkCounters();
+            AddCoreCounters();
 
             // 速率型计数器必须至少两次 Collect 才有值，第一次只是建基线。
             _pdh.Collect();
@@ -160,6 +183,43 @@ public sealed class OsProvider : IMetricProvider
         return open >= 0 && close > open ? counterPath[(open + 1)..close] : "";
     }
 
+    /// <summary>
+    /// C03 每逻辑核占用率。M1.0 实测：20 个计数器挂进同一个 query，单次 Collect 从
+    /// 0.165 ms 涨到 0.339 ms（**增量 0.174 ms**，即 8.3 µs/计数器），
+    /// 折算整机 0.0044% —— 比读一次 GetSystemTimes 还便宜的事不用另开通道。
+    ///
+    /// 为什么不用 NtQuerySystemInformation(SystemProcessorPerformanceInformation)：
+    /// 它只要 48 µs（便宜 4 倍），但口径是 `% Processor Time`，而 C02 用的是
+    /// `% Processor Utility`（Q-06，与任务管理器一致）。两者在睿频下能差出 10 个点，
+    /// 大窗口里"总占用 35%、20 格加起来 50%"会被当成 bug。**口径一致压过 0.17 ms**。
+    /// </summary>
+    private void AddCoreCounters()
+    {
+        if (!EnablePerCoreLoad) return;
+
+        var items = new List<(int Group, int Index, string Path)>();
+
+        foreach (string path in PdhQuery.ExpandWildcard(@"\Processor Information(*)\% Processor Utility"))
+        {
+            string inst = ExtractInstance(path);
+            if (inst.Length == 0 || inst.Contains("_Total", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // 实例名形如 "0,12"（处理器组, 逻辑核）。PDH 返回的是字典序，
+            // "0,10" 排在 "0,2" 前面 —— 直接照抄会让 20 格顺序错乱，必须按数值重排。
+            string[] seg = inst.Split(',');
+            if (seg.Length != 2) continue;
+            if (!int.TryParse(seg[0], out int grp) || !int.TryParse(seg[1], out int idx)) continue;
+
+            items.Add((grp, idx, path));
+        }
+
+        foreach (var it in items.OrderBy(i => i.Group).ThenBy(i => i.Index))
+        {
+            var c = _pdh!.TryAdd(it.Path);
+            if (c != null) _coreUtility.Add(c);
+        }
+    }
+
     /// <summary>T0：内存。M0.6 实测 0.016–0.022 ms，20Hz 完全无压力。</summary>
     private void SampleMemory(MetricSnapshot sink)
     {
@@ -196,6 +256,23 @@ public sealed class OsProvider : IMetricProvider
         cpu ??= _cpuTime != null ? PdhQuery.TryGetDouble(_cpuTime, rc) : null;
         if (cpu.HasValue) sink.Set(MetricId.CpuTotalLoad, Math.Clamp(cpu.Value, 0, 100));
 
+        // C03：每逻辑核占用。同一个 query、同一次 Collect，不需要第二次刷新。
+        if (_coreUtility.Count > 0)
+        {
+            var loads = new double[_coreUtility.Count];
+            int valid = 0;
+            for (int i = 0; i < loads.Length; i++)
+            {
+                double? v = PdhQuery.TryGetDouble(_coreUtility[i], rc);
+                if (v.HasValue) { loads[i] = Math.Clamp(v.Value, 0, 100); valid++; }
+                else loads[i] = double.NaN;
+            }
+
+            if (valid > 0)
+                sink.SetSeries(MetricId.CpuCoreLoad, loads,
+                    valid == loads.Length ? MetricState.Ok : MetricState.Stale);
+        }
+
         // 磁盘速率
         double? diskRead = _diskReadTotal != null ? PdhQuery.TryGetDouble(_diskReadTotal, rc) : null;
         double? diskWrite = _diskWriteTotal != null ? PdhQuery.TryGetDouble(_diskWriteTotal, rc) : null;
@@ -231,6 +308,71 @@ public sealed class OsProvider : IMetricProvider
             sink.Set(MetricId.NetDownBytesPerSec, bestRx);
             sink.Set(MetricId.NetUpBytesPerSec, bestTx);
         }
+    }
+
+    /// <summary>
+    /// T2：内存明细 M04 已缓存 / M05 提交 / M06 页面文件。
+    /// 一次 GetPerformanceInfo 同时给出三项，M1.0 实测 **36 µs**，
+    /// 所以不必像文档 4.3 原写的那样拆成 2s 与 5s 两个节奏，统一挂 T2（1s）。
+    /// </summary>
+    private void SampleMemoryExtra(MetricSnapshot sink)
+    {
+        if (!Win32.TryGetPerformanceInfo(out var pi)) return;
+
+        double pageMb = pi.PageSize / 1024.0 / 1024.0;
+        if (pageMb <= 0) return;
+
+        sink.Set(MetricId.RamCachedMb, pi.SystemCache.ToInt64() * pageMb);
+        sink.Set(MetricId.RamCommitUsedMb, pi.CommitTotal.ToInt64() * pageMb);
+        sink.Set(MetricId.RamCommitLimitMb, pi.CommitLimit.ToInt64() * pageMb);
+
+        // 页面文件使用 = 提交量 − 物理总量。这是推算值，不是"页面文件占用了多少"：
+        // 提交量超过物理内存的部分必然落在页面文件（或压缩内存）里。
+        // 精确值要走 NtQuerySystemInformation(SystemPageFileInformation)，v1 不做。
+        double pageFileMb = (pi.CommitTotal.ToInt64() - pi.PhysicalTotal.ToInt64()) * pageMb;
+        sink.Set(MetricId.RamPageFileMb, Math.Max(0, pageFileMb),
+            note: "推算值（提交量 − 物理总量），非页面文件独立读数");
+    }
+
+    /// <summary>
+    /// T2s：C10 负载均值。Windows 没有 load average，这里用全机 CPU 占用做
+    /// 60 / 300 / 900 秒时间常数的指数平滑（与 uptime 的语义接近，但不是同一算法）。
+    /// 单次 29 µs，5s 一次可忽略。
+    /// </summary>
+    private void SampleLoadAvg(MetricSnapshot sink)
+    {
+        if (!Win32.TryGetSystemTimes(out ulong idle, out ulong kernel, out ulong user)) return;
+
+        long now = Stopwatch.GetTimestamp();
+        if (!_loadAvgPrimed)
+        {
+            _lastIdle = idle; _lastKernel = kernel; _lastUser = user;
+            _lastLoadAvgTs = now;
+            _loadAvgPrimed = true;
+            return;   // 首个样本只建基线，没有区间可算
+        }
+
+        double dt = (now - _lastLoadAvgTs) / (double)Stopwatch.Frequency;
+        if (dt <= 0) return;
+
+        double load = Win32.CpuLoadBetween((_lastIdle, _lastKernel, _lastUser), (idle, kernel, user));
+        _lastIdle = idle; _lastKernel = kernel; _lastUser = user; _lastLoadAvgTs = now;
+
+        // alpha = 1 - e^(-dt/τ)，τ = 60 / 300 / 900 s
+        double a1 = 1 - Math.Exp(-dt / 60.0);
+        double a5 = 1 - Math.Exp(-dt / 300.0);
+        double a15 = 1 - Math.Exp(-dt / 900.0);
+
+        // 冷启动时直接取首个读数，避免从 0 慢慢爬上来（前 15 分钟都偏低）
+        if (_avg1 <= 0 && _avg5 <= 0 && _avg15 <= 0) { _avg1 = _avg5 = _avg15 = load; }
+
+        _avg1 += (load - _avg1) * a1;
+        _avg5 += (load - _avg5) * a5;
+        _avg15 += (load - _avg15) * a15;
+
+        sink.Set(MetricId.CpuLoadAvg1, _avg1);
+        sink.Set(MetricId.CpuLoadAvg5, _avg5);
+        sink.Set(MetricId.CpuLoadAvg15, _avg15);
     }
 
     /// <summary>
