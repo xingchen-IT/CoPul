@@ -151,23 +151,7 @@ public sealed class SystemInfo
         var tPart = Stopwatch.StartNew();
         try
         {
-            var parts = new List<PartitionInfo>();
-            foreach (var d in DriveInfo.GetDrives())
-            {
-                try
-                {
-                    if (!d.IsReady) continue;
-                    if (d.DriveType is not (DriveType.Fixed or DriveType.Removable)) continue;
-                    if (!Win32.TryGetVolumeSpace(d.Name, out double totalMb, out double freeMb)) continue;
-
-                    parts.Add(new PartitionInfo(d.Name.TrimEnd('\\'), totalMb, freeMb, d.DriveFormat));
-                }
-                catch
-                {
-                    // 空光驱 / 离线卷 / 无权限，跳过这一卷即可，不影响其他卷
-                }
-            }
-            info.Partitions = parts;
+            info.Partitions = ReadPartitions();
         }
         catch (Exception ex)
         {
@@ -178,5 +162,74 @@ public sealed class SystemInfo
         sw.Stop();
         info.CollectMs = sw.Elapsed.TotalMilliseconds;
         return info;
+    }
+
+    /// <summary>
+    /// D04 卷列表读取（4.4 标 10000ms，所以不能只在启动读一次）。
+    /// 实测 444 µs / 3 卷，独立成静态方法是为了让 <see cref="RefreshPartitions"/> 复用同一段逻辑，
+    /// 避免"启动时的分区"和"10 秒后的分区"两条代码路径慢慢长歪。
+    /// </summary>
+    public static List<PartitionInfo> ReadPartitions()
+    {
+        var parts = new List<PartitionInfo>();
+        foreach (var d in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (!d.IsReady) continue;
+                if (d.DriveType is not (DriveType.Fixed or DriveType.Removable)) continue;
+                if (!Win32.TryGetVolumeSpace(d.Name, out double totalMb, out double freeMb)) continue;
+
+                parts.Add(new PartitionInfo(d.Name.TrimEnd('\\'), totalMb, freeMb, d.DriveFormat));
+            }
+            catch
+            {
+                // 空光驱 / 离线卷 / 无权限，跳过这一卷即可，不影响其他卷
+            }
+        }
+        return parts;
+    }
+
+    /// <summary>
+    /// D04 定时刷新（10s）。**必须后台线程调用**。
+    ///
+    /// 只在"用户能看出差别"时才认为有变化：卷数量变了，或任一卷的使用率整数位变了。
+    /// 否则 10 秒一次通知会让 UI 白白重排一遍分区行（实测这一行的布局不算便宜）。
+    /// </summary>
+    /// <returns>true = 已更新且值得刷新 UI。</returns>
+    public bool RefreshPartitions()
+    {
+        List<PartitionInfo> fresh;
+        try
+        {
+            fresh = ReadPartitions();
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (fresh.Count == 0) return false;   // 全部卷暂时不可访问，保留旧值比清空好
+
+        bool changed = fresh.Count != Partitions.Count;
+        if (!changed)
+        {
+            for (int i = 0; i < fresh.Count; i++)
+            {
+                var a = Partitions[i];
+                var b = fresh[i];
+                if (a.Name != b.Name || Math.Abs(a.TotalMb - b.TotalMb) > 1
+                    || (int)a.UsedPercent != (int)b.UsedPercent)
+                {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        if (!changed) return false;
+
+        Partitions = fresh;
+        return true;
     }
 }

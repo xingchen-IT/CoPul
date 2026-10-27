@@ -19,6 +19,7 @@ public sealed class OsProvider : IMetricProvider
     private const string CounterDiskReadTotal = @"\PhysicalDisk(_Total)\Disk Read Bytes/sec";
     private const string CounterDiskWriteTotal = @"\PhysicalDisk(_Total)\Disk Write Bytes/sec";
     private const string CounterDiskBusyTotal = @"\PhysicalDisk(_Total)\% Disk Time";
+    private const string CounterDiskReadWildcard = @"\PhysicalDisk(*)\Disk Read Bytes/sec";
 
     /// <summary>虚拟 / 隧道网卡的实例名关键字。N01/N02 必须排除，否则读数被内部流量污染。</summary>
     private static readonly string[] VirtualNicKeywords =
@@ -39,6 +40,10 @@ public sealed class OsProvider : IMetricProvider
 
     /// <summary>C03：每逻辑核一个计数器，按 (处理器组, 逻辑核) 数值序排列。</summary>
     private readonly List<PdhCounter> _coreUtility = new();
+
+    /// <summary>D03：每块物理盘的读/写计数器，下标 == PhysicalDriveN 的 N。</summary>
+    private PdhCounter?[] _diskRead = Array.Empty<PdhCounter?>();
+    private PdhCounter?[] _diskWrite = Array.Empty<PdhCounter?>();
 
     private Thread? _pingThread;
     private readonly ManualResetEventSlim _stopPing = new(false);
@@ -119,6 +124,7 @@ public sealed class OsProvider : IMetricProvider
 
             AddNetworkCounters();
             AddCoreCounters();
+            AddPerDiskCounters();
 
             // 速率型计数器必须至少两次 Collect 才有值，第一次只是建基线。
             _pdh.Collect();
@@ -220,6 +226,56 @@ public sealed class OsProvider : IMetricProvider
         }
     }
 
+    /// <summary>
+    /// D03 每盘读写速率（R21）。PhysicalDisk 的实例名形如 <c>"0 C:"</c> / <c>"1 D: E:"</c>，
+    /// **首段数字就是 PhysicalDriveN 的 N**，所以可以直接对齐到 D02 的盘温数组下标。
+    ///
+    /// 三个坑：
+    /// 1. 实例名里的盘符会变（插拔 U 盘、盘符重排），但索引部分不变——这里只取索引，
+    ///    盘符一律忽略，否则"E: 换成 F:"就会让整块盘的读数变成 `—`。
+    /// 2. 索引可能不连续（本机就是 0、2，没有 1），数组长度取 <c>maxIndex + 1</c>、
+    ///    空位留 null，**不能按枚举顺序塞**——那样第 2 块盘的速率会画到第 1 块盘上。
+    /// 3. 热插拔后新盘不会自动出现（实例是初始化时一次性挂上的），要等重启。
+    ///    这是 v1 的已知限制，见 docs/M1.2 的 R23。
+    /// </summary>
+    private void AddPerDiskCounters()
+    {
+        var found = new List<(int Index, string Instance, string ReadPath)>();
+
+        foreach (string path in PdhQuery.ExpandWildcard(CounterDiskReadWildcard))
+        {
+            string inst = ExtractInstance(path);
+            if (inst.Length == 0) continue;
+            if (inst.StartsWith("_Total", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // 首段空格前是数字索引："0 C:" / "1 D: E:"
+            int sp = inst.IndexOf(' ');
+            string head = sp > 0 ? inst[..sp] : inst;
+            if (!int.TryParse(head, out int index) || index < 0) continue;
+
+            found.Add((index, inst, path));
+        }
+
+        if (found.Count == 0) return;
+
+        int maxIndex = found.Max(f => f.Index);
+        _diskRead = new PdhCounter?[maxIndex + 1];
+        _diskWrite = new PdhCounter?[maxIndex + 1];
+
+        foreach (var f in found)
+        {
+            _diskRead[f.Index] = _pdh!.TryAdd(f.ReadPath);
+            _diskWrite[f.Index] = _pdh!.TryAdd(f.ReadPath.Replace("Disk Read Bytes/sec", "Disk Write Bytes/sec"));
+        }
+    }
+
+    /// <summary>成功挂上的每盘计数器数量（读+写各算一个）。诊断用。</summary>
+    public int PerDiskCounterCount => _diskRead.Count(c => c != null) + _diskWrite.Count(c => c != null);
+
+    /// <summary>实际枚举到的物理盘索引，升序。诊断用：对照 D01 的盘列表看有没有漏盘。</summary>
+    public IReadOnlyList<int> PerDiskIndices =>
+        Enumerable.Range(0, _diskRead.Length).Where(i => _diskRead[i] != null || _diskWrite[i] != null).ToList();
+
     /// <summary>T0：内存。M0.6 实测 0.016–0.022 ms，20Hz 完全无压力。</summary>
     private void SampleMemory(MetricSnapshot sink)
     {
@@ -281,6 +337,29 @@ public sealed class OsProvider : IMetricProvider
 
         double? busy = _diskBusyTotal != null ? PdhQuery.TryGetDouble(_diskBusyTotal, rc) : null;
         if (busy.HasValue) sink.Set(MetricId.DiskBusyPercent, Math.Clamp(busy.Value, 0, 100));
+
+        // D03 每盘：与合计同一次 Collect，只是多几次格式化（实测增量在噪声内）
+        if (_diskRead.Length > 0)
+        {
+            var readPer = new double[_diskRead.Length];
+            var writePer = new double[_diskRead.Length];
+            int readValid = 0, writeValid = 0;
+
+            for (int i = 0; i < _diskRead.Length; i++)
+            {
+                double? r = _diskRead[i] != null ? PdhQuery.TryGetDouble(_diskRead[i]!, rc) : null;
+                double? w = _diskWrite[i] != null ? PdhQuery.TryGetDouble(_diskWrite[i]!, rc) : null;
+                readPer[i] = r ?? double.NaN;
+                writePer[i] = w ?? double.NaN;
+                if (r.HasValue) readValid++;
+                if (w.HasValue) writeValid++;
+            }
+
+            if (readValid > 0) sink.SetSeries(MetricId.DiskReadPerDisk, readPer,
+                readValid == readPer.Length ? MetricState.Ok : MetricState.Stale);
+            if (writeValid > 0) sink.SetSeries(MetricId.DiskWritePerDisk, writePer,
+                writeValid == writePer.Length ? MetricState.Ok : MetricState.Stale);
+        }
 
         // 网络：取当前流量最大的物理网卡作为「活动网卡」
         double bestTotal = -1;

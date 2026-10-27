@@ -49,6 +49,9 @@
                         <StackPanel>
                             <Grid>
                                 <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="cpu"
+                                            Content="{Binding CpuBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
                                     <TextBlock Text="CPU" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentCpu}" />
                                     <TextBlock Text="{Binding CpuModel}" Style="{StaticResource TextBlockModel}" />
@@ -58,15 +61,17 @@
                                            Text="{Binding LoadAvgText, StringFormat='负载均值 1/5/15  {0}'}" />
                             </Grid>
 
-                            <UniformGrid Columns="4" Margin="0,12,0,0">
-                                <controls:MetricTile DataContext="{Binding CpuLoad}" />
-                                <controls:MetricTile DataContext="{Binding CpuTemp}" />
-                                <controls:MetricTile DataContext="{Binding CpuClock}" />
-                                <controls:MetricTile DataContext="{Binding CpuPower}" />
-                            </UniformGrid>
+                            <StackPanel Visibility="{Binding CpuBlock.BodyVisibility}">
+                                <UniformGrid Columns="4" Margin="0,12,0,0">
+                                    <controls:MetricTile DataContext="{Binding CpuLoad}" />
+                                    <controls:MetricTile DataContext="{Binding CpuTemp}" />
+                                    <controls:MetricTile DataContext="{Binding CpuClock}" />
+                                    <controls:MetricTile DataContext="{Binding CpuPower}" />
+                                </UniformGrid>
 
-                            <TextBlock Text="{Binding CoresText}" Style="{StaticResource TextMono}"
-                                       Margin="0,12,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding CoresText}" Style="{StaticResource TextMono}"
+                                           Margin="0,12,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -75,6 +80,9 @@
                         <StackPanel>
                             <Grid>
                                 <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="gpu"
+                                            Content="{Binding GpuBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
                                     <TextBlock Text="GPU" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentGpu}" />
                                     <TextBlock Text="{Binding GpuModel}" Style="{StaticResource TextBlockModel}" />
@@ -83,7 +91,8 @@
                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
                             </Grid>
 
-                            <UniformGrid Columns="3" Margin="0,12,0,0">
+                            <UniformGrid Columns="3" Margin="0,12,0,0"
+                                         Visibility="{Binding GpuBlock.BodyVisibility}">
                                 <controls:MetricTile DataContext="{Binding GpuLoad}" Margin="0,0,12,10" />
                                 <controls:MetricTile DataContext="{Binding GpuTemp}" Margin="0,0,12,10" />
                                 <controls:MetricTile DataContext="{Binding GpuPower}" Margin="0,0,0,10" />
@@ -99,6 +108,9 @@
                         <StackPanel>
                             <Grid>
                                 <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="mem"
+                                            Content="{Binding MemBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
                                     <TextBlock Text="内存" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentRam}" />
                                     <TextBlock Text="{Binding MemHeadline}" Style="{StaticResource TextBlockModel}" />
@@ -107,7 +119,8 @@
                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
                             </Grid>
 
-                            <UniformGrid Columns="4" Margin="0,12,0,0">
+                            <UniformGrid Columns="4" Margin="0,12,0,0"
+                                         Visibility="{Binding MemBlock.BodyVisibility}">
                                 <controls:MetricTile DataContext="{Binding MemLoad}" />
                                 <controls:MetricTile DataContext="{Binding MemUsed}" />
                                 <controls:MetricTile DataContext="{Binding MemCommit}" />
@@ -120,41 +133,81 @@
                     <Border Style="{StaticResource BlockCard}">
                         <StackPanel>
                             <Grid>
-                                <TextBlock Text="硬盘" Style="{StaticResource TextBlockTitle}"
-                                           Foreground="{StaticResource AccentDisk}" VerticalAlignment="Center" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="disk"
+                                            Content="{Binding DiskBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
+                                    <TextBlock Text="硬盘" Style="{StaticResource TextBlockTitle}"
+                                               Foreground="{StaticResource AccentDisk}" />
+                                </StackPanel>
                                 <TextBlock Text="{Binding DiskSummary}" Style="{StaticResource TextBody}"
                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
                             </Grid>
 
-                            <ItemsControl ItemsSource="{Binding Disks}" Margin="0,8,0,0">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,4,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="56" />
-                                                <ColumnDefinition Width="82" />
-                                                <ColumnDefinition Width="58" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Model}"
-                                                       Style="{StaticResource TextBody}"
-                                                       Foreground="{StaticResource BrushTextPrimary}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Bus}"
-                                                       Style="{StaticResource TextBody}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding CapacityText}"
-                                                       Style="{StaticResource TextBody}" HorizontalAlignment="Right" />
-                                            <TextBlock Grid.Column="3" Text="{Binding Temp}"
-                                                       Style="{StaticResource TextBody}" HorizontalAlignment="Right"
-                                                       Foreground="{Binding TempBrush}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <StackPanel Visibility="{Binding DiskBlock.BodyVisibility}">
+                                <!-- 表头：单盘读写是新加的列（D03 每盘），没有表头会读不懂 -->
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="52" />
+                                        <ColumnDefinition Width="74" />
+                                        <ColumnDefinition Width="64" />
+                                        <ColumnDefinition Width="64" />
+                                        <ColumnDefinition Width="50" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="型号" Style="{StaticResource TextLabel}" />
+                                    <TextBlock Grid.Column="1" Text="总线" Style="{StaticResource TextLabel}" />
+                                    <TextBlock Grid.Column="2" Text="容量" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="3" Text="读 MB/s" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="4" Text="写 MB/s" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="5" Text="温度" Style="{StaticResource TextLabel}"
+                                               HorizontalAlignment="Right" />
+                                </Grid>
 
-                            <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,10,0,8" />
+                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,4,0,0" />
 
-                            <TextBlock Text="{Binding PartitionText}" Style="{StaticResource TextBody}"
-                                       TextWrapping="Wrap" />
+                                <ItemsControl ItemsSource="{Binding Disks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,4,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="52" />
+                                                    <ColumnDefinition Width="74" />
+                                                    <ColumnDefinition Width="64" />
+                                                    <ColumnDefinition Width="64" />
+                                                    <ColumnDefinition Width="50" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Model}"
+                                                           Style="{StaticResource TextBody}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{StaticResource BrushTextPrimary}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Bus}"
+                                                           Style="{StaticResource TextBody}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding CapacityText}"
+                                                           Style="{StaticResource TextBody}" HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="3" Text="{Binding ReadText}"
+                                                           Style="{StaticResource TextMonoRow}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="4" Text="{Binding WriteText}"
+                                                           Style="{StaticResource TextMonoRow}"
+                                                           HorizontalAlignment="Right" />
+                                                <TextBlock Grid.Column="5" Text="{Binding Temp}"
+                                                           Style="{StaticResource TextBody}" HorizontalAlignment="Right"
+                                                           Foreground="{Binding TempBrush}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,10,0,8" />
+
+                                <TextBlock Text="{Binding PartitionText}" Style="{StaticResource TextBody}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

@@ -29,6 +29,16 @@ public sealed class CollectorHost : IDisposable
     private volatile MetricSnapshot? _latest;
     private DispatcherTimer? _frameTimer;
     private long _lastFrameTs;
+    private Thread? _partThread;
+    private readonly ManualResetEventSlim _stopParts = new(false);
+
+    /// <summary>D04 分区刷新次数（诊断用）。与 <see cref="PartitionChangedCount"/> 一起
+    /// 证明"没刷新 UI"是"数据没变"而不是"线程没跑"。</summary>
+    public long PartitionRefreshCount;
+    public long PartitionChangedCount;
+
+    /// <summary>D04 分区刷新间隔。需求 4.4 标 10000ms，实测单次 444 µs / 3 卷。</summary>
+    private const int PartitionRefreshMs = 10_000;
 
     /// <summary>
     /// 界面帧间隔下限（ms）。采集按 0.5s 挡位跑，但**不要把每个 tier 的发布都变成一次重绘**：
@@ -57,6 +67,9 @@ public sealed class CollectorHost : IDisposable
 
     /// <summary>静态信息读完，<b>已在 UI 线程</b>。</summary>
     public event Action<SystemInfo>? InfoReady;
+
+    /// <summary>D04 分区数据变了（10s 一次，且只在真的变了时触发），<b>已在 UI 线程</b>。</summary>
+    public event Action<SystemInfo>? PartitionsRefreshed;
 
     public void Start()
     {
@@ -94,6 +107,16 @@ public sealed class CollectorHost : IDisposable
             Info = info;
 
             Post(() => InfoReady?.Invoke(info));
+
+            // D04 的 10s 刷新：不能像静态信息那样只读一次（4.4 标 10000ms），
+            // 但也不能进采集循环——它按 0.5s 跑等于每 tick 白读三次卷。
+            _partThread = new Thread(PartitionLoop)
+            {
+                IsBackground = true,
+                Name = "CoPul.Partitions",
+                Priority = ThreadPriority.BelowNormal
+            };
+            _partThread.Start();
         }
         catch (Exception ex)
         {
@@ -103,8 +126,26 @@ public sealed class CollectorHost : IDisposable
         }
     }
 
-    private void OnSnapshotReady(MetricSnapshot snap)
+    /// <summary>
+    /// D04 后台刷新循环。用 BelowNormal 优先级 + 10s 间隔，单次 0.4–0.5 ms，
+    /// 折算整机 0.002%，可以忽略。
+    /// </summary>
+    private void PartitionLoop()
     {
+        while (!_stopParts.Wait(PartitionRefreshMs))
+        {
+            var info = Info;
+            if (info is null) continue;
+
+            Interlocked.Increment(ref PartitionRefreshCount);
+            if (!info.RefreshPartitions()) continue;
+
+            Interlocked.Increment(ref PartitionChangedCount);
+            Post(() => PartitionsRefreshed?.Invoke(info));
+        }
+    }
+
+    private void OnSnapshotReady(MetricSnapshot snap)    {
         _latest = snap;
         Interlocked.Exchange(ref _dirty, 1);   // 只置脏，真正绘制交给 UI 线程的帧定时器
     }
@@ -147,6 +188,8 @@ public sealed class CollectorHost : IDisposable
         _scheduler.SnapshotReady -= OnSnapshotReady;
         _frameTimer?.Stop();
         _frameTimer = null;
+        _stopParts.Set();
+        _partThread = null;
         _scheduler.Dispose();
     }
 }

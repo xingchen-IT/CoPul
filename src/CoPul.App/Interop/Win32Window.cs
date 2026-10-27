@@ -53,9 +53,44 @@ internal static class Win32Window
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromRect(ref RECT rect, uint flags);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfoW(IntPtr monitor, ref MONITORINFO info);
+
+    private const uint MONITOR_DEFAULTTONULL = 0;
+
+    /// <summary>
+    /// 取窗口所在显示器的工作区，单位是**物理像素**。调用方负责用 DIP 比例换算——
+    /// WPF 的 <see cref="System.Windows.Window.Left"/> 是 DIP，Win32 的 RECT 是物理像素，
+    /// 两者在 150% 缩放下差 1.5 倍，混用会让窗口每启动一次就往右下角挪一截。
+    /// </summary>
+    /// <returns>false = 矩形完全不在任何显示器上（或取工作区失败），调用方应回退到居中。</returns>
+    public static bool TryGetWorkArea(double leftPx, double topPx, double widthPx, double heightPx,
+                                      out RECT work)
+    {
+        work = default;
+
+        var rect = new RECT
+        {
+            Left = (int)Math.Round(leftPx),
+            Top = (int)Math.Round(topPx),
+            Right = (int)Math.Round(leftPx + widthPx),
+            Bottom = (int)Math.Round(topPx + heightPx)
+        };
+
+        // DEFAULTTONULL：不在任何显示器上时返回 IntPtr.Zero（而不是像 NEAREST 那样硬给一个）
+        IntPtr monitor = MonitorFromRect(ref rect, MONITOR_DEFAULTTONULL);
+        if (monitor == IntPtr.Zero) return false;
+
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfoW(monitor, ref info)) return false;
+
+        work = info.rcWork;
+        return true;
+    }
 
     /// <summary>
     /// 把最大化尺寸限制到当前显示器的工作区（扣掉任务栏）。

@@ -144,7 +144,10 @@ public partial class App : Application
                 // 那时 CPU 高是环境问题，不是采集器的问题）
                 $"render tier : {RenderCapability.Tier >> 16}",
                 $"frames      : {window.ApplyCount}  平均 ApplySnapshot {SafeAvg(window.ApplyTotalMs, window.ApplyCount):F3} ms" +
-                $"  平均 Layout {SafeAvg(window.LayoutTotalMs, window.ApplyCount):F3} ms"
+                $"  平均 Layout {SafeAvg(window.LayoutTotalMs, window.ApplyCount):F3} ms",
+                // D04 的 10s 刷新：刷新次数 vs 变化次数。60s 窗口下应该刷新 5-6 次，
+                // 变化 0 次是正常的（磁盘使用率一秒内不可能跳过一个整数百分点）。
+                $"d04 refresh : {window.Host.PartitionRefreshCount} 次  其中变化 {window.Host.PartitionChangedCount} 次"
             };
 
             // 线程级分解：总 CPU 高但不知道贵在哪时，这是唯一能定位的手段

@@ -48,8 +48,10 @@ public enum MetricId
 
     // ---------- 磁盘 ----------
     DiskTemperature,       // D02  数组，每盘一个
-    DiskReadBytesPerSec,   // D03
-    DiskWriteBytesPerSec,  // D03
+    DiskReadBytesPerSec,   // D03  合计（PhysicalDisk(_Total)）
+    DiskWriteBytesPerSec,  // D03  合计
+    DiskReadPerDisk,       // D03  数组，下标 == PhysicalDriveN 的 N（与 DiskTemperature 对齐）
+    DiskWritePerDisk,      // D03  数组，同上
     DiskBusyPercent,       // D05
 
     // ---------- 网络 ----------

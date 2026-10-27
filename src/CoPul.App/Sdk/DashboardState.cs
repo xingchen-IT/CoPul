@@ -1,17 +1,20 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Media;
 using CoPul.Collector.Metrics;
 using CoPul.Collector.Providers;
 
 namespace CoPul.App.Sdk;
 
-/// <summary>硬盘区块的一行。型号 / 类型 / 容量来自 <see cref="SystemInfo"/>，温度每次快照刷新。</summary>
+/// <summary>硬盘区块的一行。型号 / 类型 / 容量来自 <see cref="SystemInfo"/>，温度与速率每次快照刷新。</summary>
 public sealed class DiskRow : INotifyPropertyChanged
 {
     private string _temp = Fmt.Dash;
     private Level _level = Level.Muted;
+    private string _readText = Fmt.Dash;
+    private string _writeText = Fmt.Dash;
 
     public DiskRow(int index, string model, string bus, double capacityGb)
     {
@@ -28,6 +31,10 @@ public sealed class DiskRow : INotifyPropertyChanged
     public string CapacityText { get; }
 
     public string Temp => _temp;
+
+    /// <summary>D03 单盘读速率（MB/s）。与合计分开显示，别把合计值摊到每行假装是单盘读数。</summary>
+    public string ReadText => _readText;
+    public string WriteText => _writeText;
 
     public Brush TempBrush => Palette.Brush(_level switch
     {
@@ -60,6 +67,18 @@ public sealed class DiskRow : INotifyPropertyChanged
         Raise(nameof(TempBrush));
     }
 
+    /// <summary>
+    /// 单盘速率。<paramref name="readBps"/> / <paramref name="writeBps"/> 为 NaN 表示这块盘
+    /// 没有挂上 PDH 实例（例如热插拔后才出现，见 R23），显示 `—` 而不是 0。
+    /// </summary>
+    public void SetRates(double readBps, double writeBps)
+    {
+        string r = double.IsNaN(readBps) ? Fmt.Dash : Fmt.Rate(readBps);
+        string w = double.IsNaN(writeBps) ? Fmt.Dash : Fmt.Rate(writeBps);
+        if (_readText != r) { _readText = r; Raise(nameof(ReadText)); }
+        if (_writeText != w) { _writeText = w; Raise(nameof(WriteText)); }
+    }
+
     private void Raise([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
@@ -74,6 +93,55 @@ public static class Severity
     public static Level Load(double percent) => percent > 90 ? Level.Danger
         : percent > 70 ? Level.Warn
         : Level.Normal;
+}
+
+/// <summary>
+/// 一个可折叠区块的状态（5.4「各区块标题左侧有折叠箭头，状态持久化」）。
+///
+/// 折叠不只是把内容藏起来：<see cref="DashboardState.ApplySnapshot"/> 会跳过折叠区块的
+/// 文案计算，所以折叠是真的省 CPU——尤其是 CPU 区块那行 20 个核心的字符串拼接。
+/// </summary>
+public sealed class BlockState : INotifyPropertyChanged
+{
+    private bool _collapsed;
+
+    public BlockState(string id) => Id = id;
+
+    /// <summary>持久化用的 id：cpu / gpu / mem / disk。</summary>
+    public string Id { get; }
+
+    public bool Collapsed
+    {
+        get => _collapsed;
+        private set
+        {
+            if (_collapsed == value) return;
+            _collapsed = value;
+            Raise(nameof(Collapsed));
+            Raise(nameof(BodyVisibility));
+            Raise(nameof(Arrow));
+            Raise(nameof(HeaderMargin));
+        }
+    }
+
+    public Visibility BodyVisibility => _collapsed ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>折叠箭头字形。用文字而不是 Path：少一个视觉资源，且在等宽字体下对齐稳定。</summary>
+    public string Arrow => _collapsed ? "▸" : "▾";
+
+    /// <summary>折叠后标题行不再需要下边距（正文没了，留白会显得空）。</summary>
+    public Thickness HeaderMargin => _collapsed ? new Thickness(0) : new Thickness(0, 12, 0, 0);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>恢复到配置里的值。不触发 <see cref="Changed"/>，避免启动时把默认值写回磁盘。</summary>
+    public void Restore(bool collapsed) => Collapsed = collapsed;
+
+    /// <summary>用户点击。触发 <see cref="Changed"/> 让窗口去持久化。</summary>
+    public void Toggle() => Collapsed = !Collapsed;
+
+    private void Raise([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
 /// <summary>
@@ -133,6 +201,17 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
+    // ---- 折叠状态（5.4，持久化到 config.json） ----
+    public BlockState CpuBlock { get; } = new("cpu");
+    public BlockState GpuBlock { get; } = new("gpu");
+    public BlockState MemBlock { get; } = new("mem");
+    public BlockState DiskBlock { get; } = new("disk");
+
+    public IEnumerable<BlockState> Blocks => new[] { CpuBlock, GpuBlock, MemBlock, DiskBlock };
+
+    /// <summary>按 id 找区块。恢复配置时用，避免开一串 switch。</summary>
+    public BlockState? Block(string id) => Blocks.FirstOrDefault(b => b.Id == id);
+
     // ---- 文案 ----
     public string CpuModel { get => _cpuModel; private set => Set(ref _cpuModel, value); }
     public string GpuModel { get => _gpuModel; private set => Set(ref _gpuModel, value); }
@@ -177,7 +256,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         return list.Count == 0 ? "采集正常" : string.Join(" · ", list);
     }
 
-    /// <summary>静态信息到货：型号、盘列表、分区。M1 只在启动读一次（D04 的 10s 刷新留待 M1.2）。</summary>
+    /// <summary>静态信息到货：型号、盘列表、分区。D04 之后每 10s 由 <see cref="ApplyPartitions"/> 刷新。</summary>
     public void ApplyInfo(SystemInfo info)
     {
         CpuModel = info.CpuName.Length > 0 ? info.CpuName : "未知 CPU";
@@ -190,20 +269,35 @@ public sealed class DashboardState : INotifyPropertyChanged
         foreach (var d in info.Disks)
             Disks.Add(new DiskRow(d.Index, d.Model, d.Bus, d.CapacityGb));
 
-        PartitionText = info.Partitions.Count == 0
-            ? "分区信息不可用"
-            : string.Join("    ", info.Partitions.Select(p =>
-                $"{p.Name}  {p.UsedPercent:F0}%  ({p.TotalMb / 1024 - p.FreeMb / 1024:F0}/{p.TotalMb / 1024:F0} GB)"));
+        PartitionText = FormatPartitions(info.Partitions);
 
         StatusText = info.Warnings.Count == 0 ? "采集正常" : string.Join(" · ", info.Warnings);
         _infoNote = info.Warnings.Count == 0 ? "" : string.Join(" · ", info.Warnings);
     }
 
+    /// <summary>D04 10 秒刷新（4.4）。只改分区这一行，不碰其他区块。</summary>
+    public void ApplyPartitions(IReadOnlyList<PartitionInfo> parts)
+        => PartitionText = FormatPartitions(parts);
+
+    private static string FormatPartitions(IReadOnlyList<PartitionInfo> parts)
+        => parts.Count == 0
+            ? "分区信息不可用"
+            : string.Join("    ", parts.Select(p =>
+                $"{p.Name}  {p.UsedPercent:F0}%  ({p.TotalMb / 1024 - p.FreeMb / 1024:F0}/{p.TotalMb / 1024:F0} GB)"));
+
     /// <summary>自测用：跳过「各核心」长文本的更新，用来判断布局成本是否集中在它上面。</summary>
     public bool SuppressCoreLine { get; set; }
 
-    /// <summary>每帧刷新（0.5s 一次），只做字符串格式化与赋值。</summary>
+    /// <summary>每帧刷新（0.5s 一次），只做字符串格式化与赋值。折叠的区块整段跳过。</summary>
     public void ApplySnapshot(MetricSnapshot snap)
+    {
+        if (!CpuBlock.Collapsed) ApplyCpu(snap);
+        if (!GpuBlock.Collapsed) ApplyGpu(snap);
+        if (!MemBlock.Collapsed) ApplyMemory(snap);
+        if (!DiskBlock.Collapsed) ApplyDisk(snap);
+    }
+
+    private void ApplyCpu(MetricSnapshot snap)
     {
         // ---------------- CPU ----------------
         SetCell(CpuLoad, snap, MetricId.CpuTotalLoad, Fmt.Pct, Severity.Load, withBar: true);
@@ -222,7 +316,10 @@ public sealed class DashboardState : INotifyPropertyChanged
             CoresText = "各核心占用率不可用";
 
         LoadAvgText = FormatLoadAvg(snap);
+    }
 
+    private void ApplyGpu(MetricSnapshot snap)
+    {
         // ---------------- GPU ----------------
         SetCell(GpuLoad, snap, MetricId.GpuLoad, Fmt.Pct, Severity.Load, withBar: true);
         SetCell(GpuTemp, snap, MetricId.GpuTemp, Fmt.Temp, Severity.Temp);
@@ -242,7 +339,10 @@ public sealed class DashboardState : INotifyPropertyChanged
         string enc = TryText(snap, MetricId.GpuEncoderLoad, v => v.ToString("F0"));
         string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
         GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
+    }
 
+    private void ApplyMemory(MetricSnapshot snap)
+    {
         // ---------------- 内存 ----------------
         double? used = Value(snap, MetricId.RamUsedMb);
         double? total = Value(snap, MetricId.RamTotalMb);
@@ -266,20 +366,29 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         double? pageFile = Value(snap, MetricId.RamPageFileMb);
         MemDetail = pageFile.HasValue ? $"页面文件 ~{pageFile.Value / 1024:F1} GB（推算值）" : "";
+    }
 
+    private void ApplyDisk(MetricSnapshot snap)
+    {
         // ---------------- 硬盘 ----------------
         bool hasTemp = snap.TryGetSeries(MetricId.DiskTemperature, out var temps) && temps.IsUsable;
+        bool hasRead = snap.TryGetSeries(MetricId.DiskReadPerDisk, out var reads) && reads.IsUsable;
+        bool hasWrite = snap.TryGetSeries(MetricId.DiskWritePerDisk, out var writes) && writes.IsUsable;
+
         foreach (var row in Disks)
         {
-            if (hasTemp && row.Index >= 0 && row.Index < temps.Values.Length
-                && !double.IsNaN(temps.Values[row.Index]))
-                row.SetTemp(temps.Values[row.Index]);
+            int i = row.Index;
+            if (hasTemp && i >= 0 && i < temps.Values.Length && !double.IsNaN(temps.Values[i]))
+                row.SetTemp(temps.Values[i]);
             else
                 row.ClearTemp();
+
+            double r = hasRead && i >= 0 && i < reads.Values.Length ? reads.Values[i] : double.NaN;
+            double w = hasWrite && i >= 0 && i < writes.Values.Length ? writes.Values[i] : double.NaN;
+            row.SetRates(r, w);
         }
 
-        // 5.3 要求每盘一行带 D03，但采集层目前只有 PhysicalDisk(_Total) 的合计值（R21）。
-        // 这里如实标"合计"，不把它拆到每一行假装是单盘读数。
+        // 合计单独一行，与每盘读数并列。5.3 要求"每盘一行带 D03"，不把合计摊到每行。
         string read = TryText(snap, MetricId.DiskReadBytesPerSec, Fmt.Rate);
         string write = TryText(snap, MetricId.DiskWriteBytesPerSec, Fmt.Rate);
         DiskSummary = read == Fmt.Dash && write == Fmt.Dash
