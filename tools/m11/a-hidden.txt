@@ -1,0 +1,11 @@
+time        : 2026-10-27 17:20:48
+window      : 0×0  state=Normal
+admin       : False
+warmup(s)   : 10  期间 CPU 1938 ms（含 JIT / PDH 初始化 / 冷盘枚举）
+window(s)   : 30.0
+cpu time    : 344 ms
+single-core : 1.146%
+machine     : 0.0573%
+threads     : 16
+render tier : 2
+frames      : 199  平均 ApplySnapshot 0.168 ms

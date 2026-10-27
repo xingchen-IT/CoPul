@@ -1,0 +1,8 @@
+time        : 2026-10-27 17:16:05
+window      : 820×760  state=Normal
+admin       : False
+window(s)   : 60.1
+cpu time    : 3516 ms
+single-core : 5.849%
+machine     : 0.2924%
+threads     : 24
