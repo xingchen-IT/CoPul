@@ -1,0 +1,64 @@
+=== M1.0 字段验收 ===
+time  : 2026-10-27 16:45:19
+admin : False
+
+--- 静态信息 SystemInfo ---
+C01 CPU 型号     : 13th Gen Intel(R) Core(TM) i7-13650HX
+G01 GPU 型号     : NVIDIA GeForce RTX 4060 Laptop GPU
+逻辑核数         : 20
+OS               : Microsoft Windows 10.0.26200
+读取耗时         : 6.84 ms  (CPU名 0.81 / 物理盘 4.43 / 分区 1.56)
+D01 物理盘       :
+    #0 [NVMe] NVMe SAMSUNG MZVL81T0HELB-00BTW  953.9 GB
+    #1 [NVMe] NVMe Predator SSD GM7 1TB  953.9 GB
+D04 分区         :
+    C:   88.7%  266.1/300.2 GB  NTFS
+    D:   77.5%  483.9/624.0 GB  NTFS
+    E:   51.0%  486.9/953.9 GB  NTFS
+
+--- 标量（M1.0 新增项标 ★）---
+  ★ CpuLoadAvg1                   42.04  Ok
+  ★ CpuLoadAvg5                   42.04  Ok
+  ★ CpuLoadAvg15                  42.04  Ok
+  ★ RamCachedMb                 4552.38  Ok
+  ★ RamCommitUsedMb            40847.56  Ok
+  ★ RamCommitLimitMb           57987.12  Ok
+  ★ RamPageFileMb               8460.44  Ok  // 推算值（提交量 − 物理总量），非页面文件独立读数
+    CpuTotalLoad                  68.57  Ok
+    CpuPackageTemp                 (缺失)  ——
+    CpuClockGhz                    (缺失)  ——
+    CpuPackagePowerW               (缺失)  ——
+    GpuLoad                       39.00  Ok
+    GpuMemUsedMb                3058.75  Ok
+    GpuTemp                       60.00  Ok
+    GpuPowerW                     18.02  Ok
+    RamLoad                       84.91  Ok
+    RamUsedMb                  27500.17  Ok
+    RamTotalMb                 32387.12  Ok
+    DiskReadBytesPerSec        74925.31  Ok
+    DiskWriteBytesPerSec      538005.33  Ok
+    NetDownBytesPerSec         87841.71  Ok
+    NetLatencyMs                  38.00  Ok
+
+--- 数组（★ = M1.0 新增）---
+  ★ CpuCoreLoad [20] Ok
+       75  21  87  60  86  75 100  69  39  56  62  31  72  71  71  75  78  77  82  88
+  CpuCoreTemp: （缺失）
+  DiskTemperature: （缺失）
+
+--- 诊断 ---
+  Os.PDH 计数器总数   : 29（其中每核 20）
+  Os.Perf 单次 Collect: 3.343 ms   rc=0
+  网卡（纳入统计）    : Realtek PCIe GbE Family Controller, Intel[R] Wi-Fi 6 AX201 160MHz
+  NVML       Ready          init=  41.62 ms  
+  OS / PDH   Ready          init= 634.63 ms  
+  MSR / PawnIO Failed         init=   3.25 ms  读取 CPU 温度需要管理员权限（PawnIO 驱动句柄被拒）。
+  NVMe SMART Failed         init=   0.40 ms  读取硬盘温度需要管理员权限（物理磁盘句柄被拒）。
+  快照数              : 48
+  各层实际间隔：
+    T0               设定  500 ms  实际   500.4 ms  平均tick   0.190 ms  最大   1.841 ms  13 次
+    T1               设定  500 ms  实际   500.4 ms  平均tick   0.107 ms  最大   1.299 ms  13 次
+    T2               设定 1000 ms  实际  1000.8 ms  平均tick   0.458 ms  最大   1.402 ms  7 次
+    T2Slow           设定 5000 ms  实际  5013.0 ms  平均tick   0.527 ms  最大   0.739 ms  2 次
+    T0b              设定  500 ms  实际   500.4 ms  平均tick   3.433 ms  最大   4.453 ms  13 次
+

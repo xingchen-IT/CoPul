@@ -1,0 +1,58 @@
+=== M1.0 Probe ===
+time      : 2026-10-27 16:38:32
+admin     : False
+cores     : 20
+os        : Microsoft Windows NT 10.0.26200.0
+runtime   : 8.0.11
+
+--- A. C01 CPU 型号（注册表 ProcessorNameString）---
+ok        : True
+value     : 13th Gen Intel(R) Core(TM) i7-13650HX
+cost      : 28.353 µs/call  (n=200, total=5.671 ms)
+
+--- B. C03 每核占用（NtQuerySystemInformation / SystemProcessorPerformanceInformation）---
+instances : 20
+loads     :  47  12  44  16  44  41  44  38  47  16  12  47  41  31  34  41  38  34  44  44
+load avg  : 35.6
+cost      : 48.076 µs/call  (n=3000)
+@200ms    : 0.2404 ms/s = 0.0240% 单核 = 0.00120% 整机
+@500ms    : 0.0962 ms/s = 0.0096% 单核 = 0.00048% 整机
+
+--- B2. 对照：PDH 每核计数器（文档 4.1 原方案）---
+instances : 21  -> 0,0 | 0,1 | 0,10 | 0,11 | 0,12 | 0,13 | 0,14 | 0,15 | 0,16 | 0,17 | 0,18 | 0,19 | 0,2 | 0,3 | 0,4 | 0,5 | 0,6 | 0,7 | 0,8 | 0,9 | 0,_Total
+1 计数器  : 0.165 ms/Collect (n=300)
+1+21 计数器: 0.339 ms/Collect (n=300)  增量 0.174 ms
+每计数器  : 0.0083 ms
+@200ms 整机: 0.0085%
+
+--- C. M04/M05/M06 GetPerformanceInfo ---
+PageSize          : 4096 B
+M04 已缓存(SystemCache) : 4176.6 MB
+M05 提交              : 39.68 / 56.63 GB
+M06 页面文件(推算)     : 8244 MB   [= (CommitTotal - PhysicalTotal) * PageSize]
+物理总量             : 31.63 GB   可用 4410 MB
+进程/线程/句柄        : 449 / 9738 / 235241
+cost              : 40.086 µs/call (n=2000)
+@5000ms 整机      : 0.000040%
+
+--- D. D01 磁盘型号 ---
+SetupAPI  : rawCount=2  cost=7.07 ms
+  - [SCSI/NVMe] NVMe Predator SSD GM7 1TB  instance=SCSI\DISK&VEN_NVME&PROD_PREDATOR_SSD_GM7\4&10B9E979&0&030000
+  - [SCSI/NVMe] NVMe SAMSUNG MZVL81T0HELB-00BTW  instance=SCSI\DISK&VEN_NVME&PROD_SAMSUNG_MZVL81T0\4&10B9E979&0&020000
+
+注册表 disk\Enum 原始串：
+  [0] SCSI\Disk&Ven_NVMe&Prod_SAMSUNG_MZVL81T0\4&10b9e979&0&020000
+  [1] SCSI\Disk&Ven_NVMe&Prod_Predator_SSD_GM7\4&10b9e979&0&030000
+
+IOCTL 直读（不提权 0 访问权限）：
+  \\.\PhysicalDrive0  size=?  product=NVMe SAMSUNG MZVL81T0HELB-00BTW  err=0
+  \\.\PhysicalDrive1  size=?  product=NVMe Predator SSD GM7 1TB  err=0
+
+--- E. D04 分区 ---
+cost      : 165.366 µs/call (n=300)  (@10000ms 整机 0.0000827%)
+
+--- F. C10 负载均值（GetSystemTimes + EWMA）---
+当前 500ms 窗口 CPU: 50.2%
+cost      : 79.203 µs/call (n=2000)
+说明      : Windows 无 load average，C10 用 GetSystemTimes 的 CPU 占用做 60/300/900s 指数平滑
+
