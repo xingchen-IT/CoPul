@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CoPul</AssemblyName>
+    <RootNamespace>CoPul.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!--
+      注意：这里**不能**设 InvariantGlobalization。WPF 的 Binding 会调
+      XmlLanguage.GetSpecificCulture()，一旦全球化被裁掉就直接抛
+      "Cannot find non-neutral culture related to 'en-us'"，窗口连 Show() 都过不去。
+      采集层（CoPul.Collector）设它是安全的，因为它不碰 WPF。
+    -->
+    <!-- 单文件产物名就是 CoPul.exe，产品名与进程名一致，方便任务管理器里认出来 -->
+    <Product>CoPul 芯脉</Product>
+    <AssemblyTitle>CoPul 芯脉</AssemblyTitle>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CoPul.Collector\CoPul.Collector.csproj" />
+  </ItemGroup>
+
+</Project>

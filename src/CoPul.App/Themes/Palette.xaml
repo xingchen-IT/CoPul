@@ -1,0 +1,36 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        配色来自需求 10.3「低饱和、工业感，禁止霓虹色」。
+        这里只放深色一档：v1 先只做深色（浅色模式在第 10 章列了值，但没有进 5.3 的必须项）。
+        所有画刷都 Freeze 过，避免每帧刷新时产生额外开销。
+    -->
+
+    <!-- 背景与结构 -->
+    <SolidColorBrush x:Key="BrushBg"           Color="#0F1216" />
+    <SolidColorBrush x:Key="BrushPanel"        Color="#151B21" />
+    <SolidColorBrush x:Key="BrushPanelHover"   Color="#1B222A" />
+    <SolidColorBrush x:Key="BrushStroke"       Color="#242C35" />
+    <SolidColorBrush x:Key="BrushTrack"        Color="#232B33" />
+
+    <!-- 文字 -->
+    <SolidColorBrush x:Key="BrushTextPrimary"   Color="#E8ECF2" />
+    <SolidColorBrush x:Key="BrushTextSecondary" Color="#9AA4B2" />
+    <SolidColorBrush x:Key="BrushTextTertiary"  Color="#6B7480" />
+
+    <!-- 语义色 -->
+    <SolidColorBrush x:Key="AccentCpu"   Color="#5B8FF9" />
+    <SolidColorBrush x:Key="AccentGpu"   Color="#4FB3A6" />
+    <SolidColorBrush x:Key="AccentRam"   Color="#9B8AFB" />
+    <SolidColorBrush x:Key="AccentVram"  Color="#B98FE8" />
+    <SolidColorBrush x:Key="AccentNet"   Color="#E0A44A" />
+    <SolidColorBrush x:Key="AccentFps"   Color="#7FB37A" />
+    <SolidColorBrush x:Key="AccentDisk"  Color="#8C9BAA" />
+    <SolidColorBrush x:Key="AccentPower" Color="#D97E5A" />
+
+    <!-- 阈值色（覆盖语义色，优先级最高） -->
+    <SolidColorBrush x:Key="BrushWarn"   Color="#E0A44A" />
+    <SolidColorBrush x:Key="BrushDanger" Color="#D95C5C" />
+
+</ResourceDictionary>

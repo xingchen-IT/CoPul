@@ -1,0 +1,216 @@
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+
+namespace CoPul.App;
+
+public partial class App : Application
+{
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    /// <summary>UI 线程的 OS 线程 ID。用于在线程分解里认出"渲染/布局"这一路。</summary>
+    private uint _uiThreadId;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        _uiThreadId = GetCurrentThreadId();
+
+        var window = new MainWindow();
+        MainWindow = window;
+
+        // --hidden：不显示窗口，用来分离「采集器成本」与「WPF 渲染成本」
+        bool hidden = e.Args.Contains("--hidden");
+        if (!hidden) window.Show();
+
+        // 自测：--stats <txt 路径> [--seconds 60] [--warmup 10] [--freeze] [--hidden]
+        string? stats = ArgValue(e.Args, "--stats");
+        if (stats is not null)
+        {
+            window.MeasureLayout = true;
+            if (e.Args.Contains("--no-cores")) window.State.SuppressCoreLine = true;
+            if (e.Args.Contains("--freeze"))
+            {
+                // 窗口照常显示但不再接收新数据：用来判断成本在「更新」还是在「合成」
+                var freezeAt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                freezeAt.Tick += (_, _) => { freezeAt.Stop(); window.Paused = true; };
+                freezeAt.Start();
+            }
+
+            RunSelfCpuProbe(window, stats,
+                int.TryParse(ArgValue(e.Args, "--seconds"), out int sec) && sec > 0 ? sec : 60,
+                int.TryParse(ArgValue(e.Args, "--warmup"), out int warm) && warm >= 0 ? warm : 10);
+            return;
+        }
+
+        // 无头验收用：--shot <png 路径> [--wait 毫秒]
+        // M1 没有自动化 UI 测试，用它把真实窗口渲染成图片，肉眼核对布局与数值。
+        string? shot = ArgValue(e.Args, "--shot");
+        if (shot is null) return;
+
+        int waitMs = int.TryParse(ArgValue(e.Args, "--wait"), out int w) && w > 0 ? w : 4000;
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(waitMs) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            try
+            {
+                SavePng(window, shot);
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText(shot + ".error.txt", ex.ToString());
+            }
+            finally
+            {
+                Shutdown();
+            }
+        };
+        timer.Start();
+    }
+
+    private static string? ArgValue(string[] args, string name)
+    {
+        int i = Array.IndexOf(args, name);
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
+    /// <summary>
+    /// 量自身 CPU。用 <c>Process.TotalProcessorTime</c> 的增量除以墙钟时间，
+    /// 口径与 M0.6 的基准程序一致（60 秒窗口下量化误差 ±0.026%）。
+    ///
+    /// 注意两点：
+    /// 1. 这个数字**包含 WPF 渲染**，正是需求 11 章要考核的"整机口径"；
+    ///    m06 只量采集器，两者不能直接相加比较；
+    /// 2. 必须跳过预热再取基线——启动那几十秒里有 JIT、PDH 初始化（约 0.6s）、
+    ///    冷盘枚举（R20，约 0.19s），混进去会把稳态读数抬高好几倍（M0.6 踩过同一个坑）。
+    /// </summary>
+    private void RunSelfCpuProbe(MainWindow window, string path, int seconds, int warmupSec)
+    {
+        var process = System.Diagnostics.Process.GetCurrentProcess();
+        TimeSpan cpu0 = default;
+        long wall0 = 0;
+        int tick = 0;
+        string? warmupNote = null;
+        var thread0 = new Dictionary<int, TimeSpan>();
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        timer.Tick += (_, _) =>
+        {
+            tick++;
+
+            if (tick == warmupSec)
+            {
+                process.Refresh();
+                cpu0 = process.TotalProcessorTime;
+                wall0 = System.Diagnostics.Stopwatch.GetTimestamp();
+
+                foreach (System.Diagnostics.ProcessThread t in process.Threads)
+                {
+                    try { thread0[t.Id] = t.TotalProcessorTime; } catch { }
+                }
+
+                // 预热期间的 CPU 一并记下来，用于说明"启动成本"到底多大
+                warmupNote = $"{cpu0.TotalMilliseconds:F0} ms（含 JIT / PDH 初始化 / 冷盘枚举）";
+            }
+
+            if (tick < warmupSec + seconds) return;
+            timer.Stop();
+
+            process.Refresh();
+            double wallMs = (System.Diagnostics.Stopwatch.GetTimestamp() - wall0) * 1000.0
+                            / System.Diagnostics.Stopwatch.Frequency;
+            double cpuMs = (process.TotalProcessorTime - cpu0).TotalMilliseconds;
+            double single = cpuMs / wallMs * 100.0;
+            double machine = single / Environment.ProcessorCount;
+
+            var lines = new List<string>
+            {
+                $"time        : {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                $"window      : {window.ActualWidth:F0}×{window.ActualHeight:F0}  state={window.WindowState}",
+                $"admin       : {IsAdministrator()}",
+                $"warmup(s)   : {warmupSec}  期间 CPU {warmupNote}",
+                $"window(s)   : {wallMs / 1000.0:F1}",
+                $"cpu time    : {cpuMs:F0} ms",
+                $"single-core : {single:F3}%",
+                $"machine     : {machine:F4}%",
+                $"threads     : {process.Threads.Count}",
+                // 渲染档位：2 = 硬件加速，0/1 = 软件渲染（远程桌面或驱动异常时 WPF 会退到这里，
+                // 那时 CPU 高是环境问题，不是采集器的问题）
+                $"render tier : {RenderCapability.Tier >> 16}",
+                $"frames      : {window.ApplyCount}  平均 ApplySnapshot {SafeAvg(window.ApplyTotalMs, window.ApplyCount):F3} ms" +
+                $"  平均 Layout {SafeAvg(window.LayoutTotalMs, window.ApplyCount):F3} ms"
+            };
+
+            // 线程级分解：总 CPU 高但不知道贵在哪时，这是唯一能定位的手段
+            var deltas = new List<(int Id, double Ms)>();
+            foreach (System.Diagnostics.ProcessThread t in process.Threads)
+            {
+                try
+                {
+                    thread0.TryGetValue(t.Id, out var before);
+                    deltas.Add((t.Id, (t.TotalProcessorTime - before).TotalMilliseconds));
+                }
+                catch { }
+            }
+
+            lines.Add("thread breakdown (ms):");
+            foreach (var d in deltas.OrderByDescending(x => x.Ms).Take(6))
+                lines.Add($"  tid {d.Id,-7} {d.Ms,7:F0} ms  {d.Ms / wallMs * 100.0,6:F2}% single-core" +
+                          (d.Id == _uiThreadId ? "   <- UI/渲染线程" : ""));
+
+            try
+            {
+                string? dir = Path.GetDirectoryName(Path.GetFullPath(path));
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllLines(path, lines);
+            }
+            finally
+            {
+                Shutdown();
+            }
+        };
+        timer.Start();
+    }
+
+    private static bool IsAdministrator()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity)
+            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    private static double SafeAvg(double total, long count) => count == 0 ? 0 : total / count;
+
+    /// <summary>
+    /// 按当前 DPI 把窗口内容渲染成 PNG。用 <c>RenderTargetBitmap</c> 而不是屏幕截图，
+    /// 这样不依赖窗口是否在最前，也不会被远程桌面/锁屏影响。
+    /// </summary>
+    private static void SavePng(Window window, string path)
+    {
+        var dpi = VisualTreeHelper.GetDpi(window);
+
+        int pixelWidth = (int)Math.Ceiling(window.ActualWidth * dpi.DpiScaleX);
+        int pixelHeight = (int)Math.Ceiling(window.ActualHeight * dpi.DpiScaleY);
+        if (pixelWidth <= 0 || pixelHeight <= 0)
+            throw new InvalidOperationException($"窗口尺寸为 {window.ActualWidth}×{window.ActualHeight}，无法渲染。");
+
+        var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight,
+                                            96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        bitmap.Render(window);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+
+        string? dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        using var stream = File.Create(path);
+        encoder.Save(stream);
+    }
+}

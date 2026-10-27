@@ -1,0 +1,176 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 样式里大量引用调色板，必须在这里合并一次：StaticResource 只查自身与已合并的字典 -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Palette.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!-- 字体：数字一律等宽（Tabular），否则 0.5s 刷新时数值会左右抖（需求 10.2） -->
+    <FontFamily x:Key="FontUi">Microsoft YaHei UI</FontFamily>
+    <FontFamily x:Key="FontNumeric">Segoe UI</FontFamily>
+    <FontFamily x:Key="FontMono">Consolas</FontFamily>
+
+    <Style x:Key="TextBrand" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="TextBrandSub" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="8,0,0,0" />
+    </Style>
+
+    <Style x:Key="TextBlockTitle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="TextBlockModel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="10,0,0,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TextLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+    </Style>
+
+    <Style x:Key="TextBody" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TextMono" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TextTileLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <Style x:Key="TextTileValue" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        <Setter Property="LineHeight" Value="28" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+    </Style>
+
+    <Style x:Key="TextTileUnit" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Margin" Value="3,0,0,4" />
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+    </Style>
+
+    <Style x:Key="TextTileSub" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <!-- 4px 细条：占用率这类有满量程的指标才用 -->
+    <Style x:Key="MiniBar" TargetType="ProgressBar">
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Height" Value="4" />
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="Background" Value="{StaticResource BrushTrack}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="2" ClipToBounds="True">
+                        <Grid x:Name="PART_Track">
+                            <Rectangle x:Name="PART_Indicator" HorizontalAlignment="Left"
+                                       Fill="{TemplateBinding Foreground}" RadiusX="2" RadiusY="2" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 区块容器 -->
+    <Style x:Key="BlockCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource BrushPanel}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16,12,16,14" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+
+    <!-- 标题栏按钮：无边框、悬停浮起、关闭键悬停变红 -->
+    <Style x:Key="TitleBarButton" TargetType="Button">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Arrow" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TitleBarCloseButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushDanger}" />
+                            <Setter Property="Foreground" Value="#FFFFFF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,19 @@
+<UserControl x:Class="CoPul.App.Controls.MetricTile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Margin="0,0,12,0">
+    <!-- DataContext 是 Sdk.MetricCell，视图只绑属性，不做任何格式化 -->
+    <StackPanel>
+        <TextBlock Text="{Binding Title}" Style="{StaticResource TextTileLabel}" />
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Value}" Style="{StaticResource TextTileValue}"
+                       Foreground="{Binding ValueBrush}" />
+            <TextBlock Text="{Binding Unit}" Style="{StaticResource TextTileUnit}" />
+        </StackPanel>
+        <!-- ProgressBar.Value 默认 TwoWay，而 MetricCell.Bar 是只读的，必须显式 OneWay -->
+        <ProgressBar Style="{StaticResource MiniBar}" Value="{Binding Bar, Mode=OneWay}"
+                     Foreground="{Binding BarBrush}" Visibility="{Binding BarVisibility}" />
+        <TextBlock Text="{Binding Sub}" Style="{StaticResource TextTileSub}"
+                   Visibility="{Binding SubVisibility}" />
+    </StackPanel>
+</UserControl>

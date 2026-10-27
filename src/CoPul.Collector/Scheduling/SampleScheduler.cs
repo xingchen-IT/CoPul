@@ -205,6 +205,11 @@ public sealed class SampleScheduler : IDisposable
             long nowMs = (long)(sw.Elapsed.TotalMilliseconds);
             long minWait = long.MaxValue;
 
+            // 本轮到期的 tier 先都跑完，最后只发布一次。
+            // 0.5s 挡位下 T0/T0b/T1/T1b 都会落在同一个 500ms 边界上，如果每层各发一次，
+            // 界面就会从 2 帧/秒变成 8 帧/秒 —— 每个视图都要多做 4 倍的布局与渲染。
+            List<MetricSnapshot>? due = null;
+
             foreach (var t in _tiers)
             {
                 if (nowMs >= t.NextDueMs)
@@ -220,15 +225,20 @@ public sealed class SampleScheduler : IDisposable
                     t.NextDueMs += t.IntervalMs;
                     if (t.NextDueMs <= nowMs) t.NextDueMs = nowMs + t.IntervalMs;
 
-                    long m0 = Stopwatch.GetTimestamp();
-                    _latest = Merge(_latest, sink);
-                    MergeTotalMs += (Stopwatch.GetTimestamp() - m0) * 1000.0 / Stopwatch.Frequency;
-                    _snapshotCount++;
-                    SnapshotReady?.Invoke(_latest);
+                    (due ??= new List<MetricSnapshot>(4)).Add(sink);
                 }
 
                 long wait = t.NextDueMs - nowMs;
                 if (wait < minWait) minWait = wait;
+            }
+
+            if (due is not null)
+            {
+                long m0 = Stopwatch.GetTimestamp();
+                _latest = Merge(_latest, due);
+                MergeTotalMs += (Stopwatch.GetTimestamp() - m0) * 1000.0 / Stopwatch.Frequency;
+                _snapshotCount++;
+                SnapshotReady?.Invoke(_latest);
             }
 
             if (minWait == long.MaxValue) minWait = MaxWaitMs;
@@ -244,14 +254,17 @@ public sealed class SampleScheduler : IDisposable
     }
 
     /// <summary>
-    /// 把本轮 tier 的部分指标并进总快照。各 tier 刷新节奏不同，
+    /// 把本轮到期的各 tier 的部分指标并进总快照。各 tier 刷新节奏不同，
     /// 内存里必须保留其他层的上一轮值，否则 UI 会在两层交替刷新时闪 `—`。
     /// </summary>
-    private static MetricSnapshot Merge(MetricSnapshot previous, MetricSnapshot current)
+    private static MetricSnapshot Merge(MetricSnapshot previous, IReadOnlyList<MetricSnapshot> current)
     {
         var merged = previous.Clone();
-        foreach (var kv in current.Scalars) merged.Set(kv.Key, kv.Value.Value, kv.Value.State, kv.Value.TimestampMs, kv.Value.Note);
-        foreach (var kv in current.Series) merged.SetSeries(kv.Key, kv.Value.Values, kv.Value.State, kv.Value.TimestampMs, kv.Value.Note);
+        foreach (var sink in current)
+        {
+            foreach (var kv in sink.Scalars) merged.Set(kv.Key, kv.Value.Value, kv.Value.State, kv.Value.TimestampMs, kv.Value.Note);
+            foreach (var kv in sink.Series) merged.SetSeries(kv.Key, kv.Value.Values, kv.Value.State, kv.Value.TimestampMs, kv.Value.Note);
+        }
         return merged;
     }
 
