@@ -13,6 +13,10 @@ public sealed record PartitionInfo(string Name, double TotalMb, double FreeMb, s
     public double UsedPercent => TotalMb > 0 ? (TotalMb - FreeMb) / TotalMb * 100.0 : double.NaN;
 }
 
+/// <summary>一块 GPU 适配器（来自 DXGI）。<see cref="Description"/> 就是 G01 的兜底文案。</summary>
+public sealed record GpuAdapterInfo(string Description, string Vendor, uint VendorId, uint DeviceId,
+                                    double DedicatedVramGb, bool IsSoftware, long Luid);
+
 /// <summary>
 /// 启动时读一次的静态硬件描述（需求文档 4.1 C01 / 4.2 G01 / 4.4 D01 / D04）。
 ///
@@ -22,8 +26,8 @@ public sealed record PartitionInfo(string Name, double TotalMb, double FreeMb, s
 ///
 /// 用法（M1 起）：
 /// <code>
-/// var info = SystemInfo.Collect();          // 约 5 ms，放在后台线程（A-12）
-/// info.GpuName = nvmlProvider.DeviceName;   // GPU 型号来自 NVML 的 nvmlDeviceGetName
+/// var info = SystemInfo.Collect();                 // 约 7 ms，放在后台线程（A-12）；G01 已由 DXGI 兜底
+/// info.ApplyNvmlGpuName(nvmlProvider.DeviceName);  // NVML 就绪时用权威名字覆盖，GpuSource 变 "NVML"
 /// </code>
 /// </summary>
 public sealed class SystemInfo
@@ -31,8 +35,17 @@ public sealed class SystemInfo
     /// <summary>C01 CPU 型号，例如 "13th Gen Intel(R) Core(TM) i7-13650HX"。</summary>
     public string CpuName { get; set; } = "";
 
-    /// <summary>G01 GPU 型号。由 <c>NvmlGpuProvider.DeviceName</c> 回填——采集层不重复问 NVML。</summary>
+    /// <summary>
+    /// G01 GPU 型号。来源按优先级：NVML（NVIDIA 机器，权威）→ DXGI（其余全部情况）。
+    /// 不要再直接赋值，走 <see cref="ApplyNvmlGpuName"/>，否则 <see cref="GpuSource"/> 会对不上。
+    /// </summary>
     public string GpuName { get; set; } = "";
+
+    /// <summary>G01 的实际来源，取值 <c>"NVML"</c> / <c>"DXGI"</c> / <c>""</c>（未取到）。用于设置页诊断（Q-18）。</summary>
+    public string GpuSource { get; set; } = "";
+
+    /// <summary>DXGI 枚举到的全部适配器（含软件渲染器）。多 GPU 机器的完整列表，UI 可展开显示。</summary>
+    public IReadOnlyList<GpuAdapterInfo> GpuAdapters { get; set; } = Array.Empty<GpuAdapterInfo>();
 
     public int LogicalCores { get; set; }
 
@@ -52,8 +65,21 @@ public sealed class SystemInfo
 
     /// <summary>分段耗时，用于解释「为什么首帧磁盘区块慢半拍」。</summary>
     public double CpuNameMs { get; private set; }
+    public double GpuNameMs { get; private set; }
     public double DisksMs { get; private set; }
     public double PartitionsMs { get; private set; }
+
+    /// <summary>
+    /// NVML 拿到型号时覆盖 DXGI 的结果。传空则保持 DXGI 的结果不动（这正是 R19 的兜底逻辑）。
+    /// </summary>
+    /// <returns>true = 用了 NVML 的名字；false = 保留 DXGI 的名字或仍为空。</returns>
+    public bool ApplyNvmlGpuName(string? nvmlName)
+    {
+        if (string.IsNullOrWhiteSpace(nvmlName)) return false;
+        GpuName = nvmlName.Trim();
+        GpuSource = "NVML";
+        return true;
+    }
 
     /// <summary>
     /// 读一遍静态信息。**必须在后台线程调用**（A-12）：单次约 5 ms，
@@ -71,6 +97,40 @@ public sealed class SystemInfo
         if (Win32.TryGetCpuName(out string cpu)) info.CpuName = cpu;
         else info.Warnings.Add("C01 CPU 型号读取失败（注册表 ProcessorNameString 不可用）。");
         info.CpuNameMs = sw.Elapsed.TotalMilliseconds;
+
+        // G01 兜底：DXGI 枚举（R19）。放在这里而不是放在 Provider 里，是因为它必须在
+        // NVML 缺席时也有值；NVML 就绪后由 ApplyNvmlGpuName 覆盖。
+        var tGpu = Stopwatch.StartNew();
+        try
+        {
+            if (Dxgi.TryGetAdapters(out var adapters, out _, out string? err))
+            {
+                info.GpuAdapters = adapters
+                    .Select(a => new GpuAdapterInfo(a.Description, a.VendorName, a.VendorId, a.DeviceId,
+                                                    a.DedicatedVramGb, a.IsSoftware, a.Luid))
+                    .ToList();
+
+                var primary = Dxgi.PickPrimary(adapters);
+                if (primary is not null)
+                {
+                    info.GpuName = primary.Description;
+                    info.GpuSource = "DXGI";
+                }
+                else
+                {
+                    info.Warnings.Add("G01 DXGI 只枚举到软件渲染器，找不到真实 GPU。");
+                }
+            }
+            else
+            {
+                info.Warnings.Add($"G01 DXGI 枚举失败：{err ?? "无适配器"}");
+            }
+        }
+        catch (Exception ex)
+        {
+            info.Warnings.Add($"G01 DXGI 枚举异常：{ex.GetBaseException().Message}");
+        }
+        info.GpuNameMs = tGpu.Elapsed.TotalMilliseconds;
 
         var tDisk = Stopwatch.StartNew();
         try
