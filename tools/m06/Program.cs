@@ -462,12 +462,25 @@ internal static class Program
 
         _scheduler.UserIntervalMs = interval;
         Thread.Sleep(200);
+
+        // 预热：.NET 的 tiered JIT 在进程启动后会持续后台编译数十秒，这段成本会被
+        // 当成"稳态开销"。实测同一挡位三次跑出 0.521/0.521/0.182%，而三次的 tier
+        // 统计几乎一致 —— 差异全部来自采样之外的进程内活动，就是 JIT + 首次 GC。
+        // 先空跑 15 秒让 JIT 收敛，再强制一次完整 GC 清掉启动垃圾，之后才开始计时。
+        W($"    预热 15 秒（等待 tiered JIT 收敛与首次 GC）…");
+        Thread.Sleep(15000);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        W($"    预热完成。");
+
         _scheduler.ResetStats();
         Thread.Sleep(300);
 
         var proc = Process.GetCurrentProcess();
         proc.Refresh();
         TimeSpan cpu0 = proc.TotalProcessorTime;
+        var threadCpu0 = SnapshotThreadCpu();
         var wall = Stopwatch.StartNew();
 
         Thread.Sleep(seconds * 1000);
@@ -492,8 +505,62 @@ internal static class Program
         W($"    快照合并                          : {_scheduler.MergeTotalMs:F1} ms（{_scheduler.MergeTotalMs / wall.Elapsed.TotalMilliseconds * 100:F4}%）");
         W();
 
+        // 线程级分解：进程 CPU 是各线程之和，但 tier 统计标的是「墙钟」不是「CPU 时间」，
+        // 低占用档下 200ms 的差额必须落到具体线程才能判断是不是采集的成本。
+        var threadCpu1 = SnapshotThreadCpu();
+        var threadPri = SnapshotThreadPri();
+        W($"    线程 CPU 增量分解（窗口内，仅列 >1ms）：");
+        var deltas = threadCpu1
+            .Where(kv => threadCpu0.ContainsKey(kv.Key))
+            .Select(kv => (Id: kv.Key, Ms: kv.Value - threadCpu0[kv.Key]))
+            .Where(x => x.Ms > 1.0)
+            .OrderByDescending(x => x.Ms)
+            .Take(8)
+            .ToList();
+        if (deltas.Count == 0) W($"      （无）");
+        foreach (var d in deltas)
+            W($"      tid={d.Id,6}  {d.Ms,8:F1} ms  {d.Ms / wall.Elapsed.TotalMilliseconds * 100,6:F3}% 单核  优先级={threadPri.GetValueOrDefault(d.Id, "?")}");
+        W($"      明细合计    {deltas.Sum(x => x.Ms),8:F1} ms  /  进程实测 {busyMs:F1} ms");
+        W();
+
         _steadyPct = pct;
         _steadyStats = stats;
+    }
+
+    /// <summary>采一份「线程 ID → 累计 CPU 毫秒」快照。已退出的线程取不到，忽略即可。</summary>
+    private static Dictionary<int, double> SnapshotThreadCpu()
+    {
+        var result = new Dictionary<int, double>();
+        try
+        {
+            var p = Process.GetCurrentProcess();
+            p.Refresh();
+            foreach (ProcessThread t in p.Threads)
+            {
+                try { result[t.Id] = t.TotalProcessorTime.TotalMilliseconds; }
+                catch { /* 线程已退出 */ }
+            }
+        }
+        catch { /* 线程枚举被拒 */ }
+        return result;
+    }
+
+    /// <summary>线程 ID → 优先级，用来区分「采样线程(AboveNormal)」「PingLoop(BelowNormal)」「GC/线程池(Normal)」。</summary>
+    private static Dictionary<int, string> SnapshotThreadPri()
+    {
+        var result = new Dictionary<int, string>();
+        try
+        {
+            var p = Process.GetCurrentProcess();
+            p.Refresh();
+            foreach (ProcessThread t in p.Threads)
+            {
+                try { result[t.Id] = t.PriorityLevel.ToString(); }
+                catch { }
+            }
+        }
+        catch { }
+        return result;
     }
 
     private static double _steadyPct = -1;
