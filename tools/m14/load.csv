@@ -1,0 +1,57 @@
+time,machine_pct,sum_singlecore_pct,top4
+00:16:58,31.0,804,python.exe=160%; WorkBuddy.exe=116%; wallpaperui.exe=89%; python.exe=66%
+00:17:03,30.6,550,NVDisplay.Container.exe=105%; python.exe=95%; WorkBuddy.exe=58%; wallpaperui.exe=44%
+00:17:08,25.5,475,python.exe=94%; NVDisplay.Container.exe=64%; wallpaperui.exe=47%; WorkBuddy.exe=47%
+00:17:13,27.0,477,python.exe=101%; WorkBuddy.exe=56%; wallpaperui.exe=44%; python.exe=39%
+00:17:17,24.1,421,python.exe=93%; WorkBuddy.exe=61%; wallpaperui.exe=48%; python.exe=34%
+00:17:22,24.3,440,python.exe=98%; WorkBuddy.exe=47%; wallpaperui.exe=46%; python.exe=37%
+00:17:27,22.1,407,python.exe=96%; WorkBuddy.exe=54%; wallpaperui.exe=43%; python.exe=35%
+00:17:32,24.6,437,python.exe=94%; wallpaperui.exe=51%; WorkBuddy.exe=51%; python.exe=35%
+00:17:36,22.7,397,python.exe=93%; WorkBuddy.exe=48%; wallpaperui.exe=40%; python.exe=32%
+00:17:41,26.1,476,python.exe=108%; WorkBuddy.exe=57%; wallpaperui.exe=48%; python.exe=42%
+00:17:46,26.8,457,python.exe=87%; WorkBuddy.exe=52%; wallpaperui.exe=44%; python.exe=30%
+00:17:50,23.9,436,python.exe=100%; WorkBuddy.exe=48%; wallpaperui.exe=39%; python.exe=36%
+00:17:55,23.6,427,python.exe=98%; WorkBuddy.exe=53%; wallpaperui.exe=42%; python.exe=37%
+00:18:00,24.6,428,python.exe=95%; wallpaperui.exe=51%; WorkBuddy.exe=46%; python.exe=35%
+00:18:05,23.2,423,python.exe=96%; WorkBuddy.exe=50%; wallpaperui.exe=39%; python.exe=35%
+00:18:09,33.3,526,python.exe=99%; WorkBuddy.exe=63%; wallpaperui.exe=52%; msedgewebview2.exe=39%
+00:18:14,34.3,600,python.exe=99%; NVDisplay.Container.exe=97%; WorkBuddy.exe=60%; wallpaperui.exe=52%
+00:18:19,26.3,495,python.exe=90%; NVDisplay.Container.exe=74%; WorkBuddy.exe=57%; wallpaperui.exe=42%
+00:18:24,23.5,429,python.exe=95%; wallpaperui.exe=45%; WorkBuddy.exe=38%; python.exe=34%
+00:18:29,25.1,449,python.exe=99%; WorkBuddy.exe=56%; wallpaperui.exe=47%; python.exe=39%
+00:18:33,21.5,391,python.exe=95%; wallpaperui.exe=45%; WorkBuddy.exe=43%; python.exe=35%
+00:18:38,24.3,433,python.exe=95%; WorkBuddy.exe=56%; wallpaperui.exe=53%; python.exe=34%
+00:18:43,25.1,437,python.exe=101%; WorkBuddy.exe=51%; wallpaperui.exe=45%; python.exe=37%
+00:18:47,24.8,431,python.exe=94%; WorkBuddy.exe=50%; wallpaperui.exe=43%; python.exe=34%
+00:18:52,24.3,437,python.exe=98%; WorkBuddy.exe=45%; wallpaperui.exe=40%; python.exe=33%
+00:18:57,24.7,468,python.exe=100%; WorkBuddy.exe=67%; wallpaperui.exe=53%; python.exe=38%
+00:19:01,23.0,406,python.exe=92%; WorkBuddy.exe=44%; wallpaperui.exe=41%; python.exe=31%
+00:19:06,22.0,409,python.exe=100%; WorkBuddy.exe=50%; wallpaperui.exe=42%; python.exe=36%
+00:19:11,25.7,446,python.exe=100%; WorkBuddy.exe=49%; wallpaperui.exe=46%; python.exe=38%
+00:19:15,22.8,386,python.exe=90%; WorkBuddy.exe=48%; wallpaperui.exe=36%; python.exe=30%
+00:19:20,29.7,497,python.exe=105%; WorkBuddy.exe=66%; wallpaperui.exe=47%; python.exe=39%
+00:19:25,30.2,492,python.exe=94%; NVDisplay.Container.exe=72%; WorkBuddy.exe=54%; wallpaperui.exe=43%
+00:19:30,45.4,870,python.exe=106%; NVDisplay.Container.exe=100%; WorkBuddy.exe=84%; wallpaperui.exe=56%
+00:19:36,55.9,1040,python.exe=97%; WorkBuddy.exe=87%; System=62%; DeepSeek Harness.exe=51%
+00:19:41,49.0,888,python.exe=87%; WorkBuddy.exe=66%; System=62%; dwm.exe=59%
+00:19:46,33.9,632,python.exe=96%; WorkBuddy.exe=72%; DeepSeek Harness.exe=66%; DeepSeek Harness.exe=43%
+00:19:51,34.3,625,python.exe=98%; WorkBuddy.exe=81%; DeepSeek Harness.exe=58%; DeepSeek Harness.exe=40%
+00:19:56,32.6,591,python.exe=97%; WorkBuddy.exe=76%; DeepSeek Harness.exe=65%; DeepSeek Harness.exe=40%
+00:20:00,29.5,548,python.exe=92%; WorkBuddy.exe=64%; DeepSeek Harness.exe=60%; python.exe=36%
+00:20:05,32.4,615,python.exe=98%; WorkBuddy.exe=82%; DeepSeek Harness.exe=62%; DeepSeek Harness.exe=42%
+00:20:10,30.4,559,python.exe=99%; WorkBuddy.exe=74%; DeepSeek Harness.exe=63%; python.exe=39%
+00:20:15,38.6,668,python.exe=92%; WorkBuddy.exe=75%; DeepSeek Harness.exe=65%; DeepSeek Harness.exe=40%
+00:20:20,30.9,577,python.exe=98%; WorkBuddy.exe=78%; DeepSeek Harness.exe=64%; python.exe=40%
+00:20:25,34.3,639,python.exe=95%; WorkBuddy.exe=82%; DeepSeek Harness.exe=73%; msedgewebview2.exe=42%
+00:20:30,33.0,597,python.exe=95%; WorkBuddy.exe=69%; DeepSeek Harness.exe=60%; DeepSeek Harness.exe=38%
+00:20:35,37.3,668,python.exe=100%; WorkBuddy.exe=92%; DeepSeek Harness.exe=68%; DeepSeek Harness.exe=42%
+00:20:40,35.3,665,WorkBuddy.exe=104%; python.exe=95%; DeepSeek Harness.exe=67%; DeepSeek Harness.exe=40%
+00:20:45,38.4,677,python.exe=100%; WorkBuddy.exe=82%; DeepSeek Harness.exe=66%; python.exe=40%
+00:20:49,37.8,641,python.exe=96%; WorkBuddy.exe=94%; DeepSeek Harness.exe=71%; msedgewebview2.exe=38%
+00:20:54,36.8,679,NVDisplay.Container.exe=102%; python.exe=100%; WorkBuddy.exe=81%; DeepSeek Harness.exe=65%
+00:20:59,33.7,654,python.exe=94%; WorkBuddy.exe=80%; DeepSeek Harness.exe=65%; NVDisplay.Container.exe=57%
+00:21:04,31.4,579,python.exe=98%; WorkBuddy.exe=73%; DeepSeek Harness.exe=63%; DeepSeek Harness.exe=40%
+00:21:09,32.7,598,python.exe=97%; WorkBuddy.exe=77%; DeepSeek Harness.exe=63%; DeepSeek Harness.exe=41%
+00:21:14,35.3,616,python.exe=95%; DeepSeek Harness.exe=75%; WorkBuddy.exe=70%; DeepSeek Harness.exe=40%
+00:21:19,31.1,580,python.exe=94%; WorkBuddy.exe=74%; DeepSeek Harness.exe=62%; msedgewebview2.exe=39%
+00:21:24,33.4,599,python.exe=95%; WorkBuddy.exe=81%; DeepSeek Harness.exe=64%; DeepSeek Harness.exe=39%
