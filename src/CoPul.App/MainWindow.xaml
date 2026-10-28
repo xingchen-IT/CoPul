@@ -142,10 +142,10 @@
                     </Border>
 
                     <!--
-                        FPS 区块（M1.5）：一排六格（帧率 / 最低 / 最高 / 平均 / 1% Low / 帧时间）
-                        + 折线。统计三格为近 60 秒窗口，紧跟帧率是因为同属"帧率"这一个量。
+                        FPS 区块（M1.5）：一排四格（帧率 / 最低·最高·平均 / 1% Low / 帧时间）
+                        + 折线。统计三项为近 60 秒窗口，合在同一格里用斜杠分隔。
                         数据源只能是 PresentMon 的 ETW 呈现流 —— Windows 没有任何 API
-                        直接给帧率（需求 4.6 / Q-07）。本版采集未接入，六格恒为 `—`，
+                        直接给帧率（需求 4.6 / Q-07）。本版采集未接入，数值恒为 `—`，
                         折线区只有网格：不写 0（A-13），也不在这里塞演示曲线。
                         副标题已写明原因，接通后改成「前台进程帧率 · 近 60 秒 · 0–240 FPS」。
                     -->
@@ -163,15 +163,35 @@
                             </Grid>
 
                             <StackPanel Visibility="{Binding FpsBlock.BodyVisibility}">
-                                <!-- 一排六格：帧率 → 最低 / 最高 / 平均（近 60 秒窗口统计）
-                                     → 1% Low → 帧时间。
-                                     统计三件套紧跟帧率，因为它们是同一个量的不同口径；
-                                     1% Low 与帧时间属于"另一类"（流畅度 / 单帧耗时），排在后面。 -->
-                                <UniformGrid Columns="6" Margin="0,12,0,0">
+                                <!-- 四格一排：帧率 / 最低·最高·平均（合一格）/ 1% Low / 帧时间。
+                                     统计三项是同一个量的不同口径，拆成三格会把"帧率"这一个指标
+                                     摊成四块并占满整排，所以合进一格用斜杠分隔。
+                                     数字各绑自己的 MetricCell，不可用时统一退成次文字色（A-13）。 -->
+                                <UniformGrid Columns="4" Margin="0,12,0,0">
                                     <controls:MetricTile DataContext="{Binding FpsValue}" />
-                                    <controls:MetricTile DataContext="{Binding FpsMin}" />
-                                    <controls:MetricTile DataContext="{Binding FpsMax}" />
-                                    <controls:MetricTile DataContext="{Binding FpsAvg}" />
+
+                                    <Grid Margin="0,0,12,0"
+                                          ToolTip="近 60 秒窗口内的最低 / 最高 / 平均帧率">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="最低/最高/平均" Style="{StaticResource TextTileLabel}" />
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal">
+                                            <TextBlock Text="{Binding FpsMin.Value}" Style="{StaticResource TextTileValue}"
+                                                       Foreground="{Binding FpsMin.ValueBrush}" />
+                                            <TextBlock Text="/" Style="{StaticResource TextTileValue}"
+                                                       Foreground="{StaticResource BrushTextTertiary}" />
+                                            <TextBlock Text="{Binding FpsMax.Value}" Style="{StaticResource TextTileValue}"
+                                                       Foreground="{Binding FpsMax.ValueBrush}" />
+                                            <TextBlock Text="/" Style="{StaticResource TextTileValue}"
+                                                       Foreground="{StaticResource BrushTextTertiary}" />
+                                            <TextBlock Text="{Binding FpsAvg.Value}" Style="{StaticResource TextTileValue}"
+                                                       Foreground="{Binding FpsAvg.ValueBrush}" />
+                                            <TextBlock Text="FPS" Style="{StaticResource TextTileUnit}" />
+                                        </StackPanel>
+                                    </Grid>
+
                                     <controls:MetricTile DataContext="{Binding FpsLow1}" />
                                     <controls:MetricTile DataContext="{Binding FpsTime}" />
                                 </UniformGrid>
