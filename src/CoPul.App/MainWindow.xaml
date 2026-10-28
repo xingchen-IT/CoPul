@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:CoPul.App.Controls"
-        Title="CoPul 芯脉" Width="820" Height="1230" MinWidth="640" MinHeight="480"
+        Title="CoPul 芯脉" Width="820" Height="1460" MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BrushBg}" FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
@@ -138,6 +138,42 @@
                                 <controls:MetricTile Grid.Row="1" Grid.Column="3" Grid.ColumnSpan="3"
                                                      Margin="0,0,0,0" DataContext="{Binding GpuClock}" />
                             </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--
+                        FPS 区块（M1.5）：帧率 / 1% Low / 帧时间 + 折线。
+                        数据源只能是 PresentMon 的 ETW 呈现流 —— Windows 没有任何 API
+                        直接给帧率（需求 4.6 / Q-07）。本版采集未接入，三格恒为 `—`，
+                        折线区只有网格：不写 0（A-13），也不在这里塞演示曲线。
+                        副标题已写明原因，接通后改成「近 60 秒 · 0–240 FPS」。
+                    -->
+                    <Border Style="{StaticResource BlockCard}">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource FoldButton}" Tag="fps"
+                                            Content="{Binding FpsBlock.Arrow}" Click="ToggleBlock_Click"
+                                            ToolTip="折叠 / 展开" />
+                                    <TextBlock Text="FPS" Style="{StaticResource TextBlockTitle}"
+                                               Foreground="{StaticResource AccentFps}" />
+                                    <TextBlock Text="{Binding FpsSubtitle}" Style="{StaticResource TextBlockModel}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel Visibility="{Binding FpsBlock.BodyVisibility}">
+                                <UniformGrid Columns="3" Margin="0,12,0,0">
+                                    <controls:MetricTile DataContext="{Binding FpsValue}" />
+                                    <controls:MetricTile DataContext="{Binding FpsLow1}" />
+                                    <controls:MetricTile DataContext="{Binding FpsTime}" />
+                                </UniformGrid>
+
+                                <!-- 量程 240：覆盖 60/120/144/165/240 Hz 全部常见刷新率。
+                                     再高的帧率会平顶，好过让 240 以下的分辨率被压扁。 -->
+                                <controls:TrendChart x:Name="FpsView" Height="104" Margin="0,10,0,0"
+                                                     MaxValue="240" Unit="FPS"
+                                                     Visibility="{Binding FpsBlock.BodyVisibility}" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

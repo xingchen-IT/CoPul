@@ -260,6 +260,16 @@ public sealed class DashboardState : INotifyPropertyChanged
         // 风扇格已移除：移动版 GPU 的风扇归笔记本 EC/BIOS 管，NVML 不暴露转速
         // （nvidia-smi 同样报 N/A），永远不会出数，见 R26。
 
+        // FPS 三格。数据源只能是 PresentMon 的 ETW 呈现流（需求 4.6 / Q-07），
+        // Windows 没有任何 API 直接给帧率。本版采集尚未接入，先按不可用渲染：
+        // 显示 `—`，不写 0（A-13），也不造假数据。
+        FpsValue = new MetricCell("帧率", "FPS", "AccentFps");
+        FpsLow1 = new MetricCell("1% Low", "FPS", "AccentFps");
+        FpsTime = new MetricCell("帧时间", "ms", "AccentFps");
+        FpsValue.Unavailable();
+        FpsLow1.Unavailable();
+        FpsTime.Unavailable();
+
         MemLoad = new MetricCell("占用率", "%", "AccentRam");
         MemUsed = new MetricCell("已用", "GB", "AccentRam");
         MemCommit = new MetricCell("提交", "GB", "AccentRam");
@@ -283,6 +293,10 @@ public sealed class DashboardState : INotifyPropertyChanged
     public MetricCell GpuPower { get; }
     public MetricCell GpuMem { get; }
     public MetricCell GpuClock { get; }
+
+    public MetricCell FpsValue { get; }
+    public MetricCell FpsLow1 { get; }
+    public MetricCell FpsTime { get; }
 
     public MetricCell MemLoad { get; }
     public MetricCell MemUsed { get; }
@@ -312,6 +326,7 @@ public sealed class DashboardState : INotifyPropertyChanged
     // ---- 折叠状态（5.4，持久化到 config.json） ----
     public BlockState CpuBlock { get; } = new("cpu");
     public BlockState GpuBlock { get; } = new("gpu");
+    public BlockState FpsBlock { get; } = new("fps");
     public BlockState MemBlock { get; } = new("mem");
     public BlockState NetBlock { get; } = new("net");
     public BlockState DiskBlock { get; } = new("disk");
@@ -321,7 +336,7 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     public IEnumerable<BlockState> Blocks => new[]
     {
-        CpuBlock, GpuBlock, MemBlock, NetBlock, DiskBlock, TrendBlock, TempBlock, ProcBlock
+        CpuBlock, GpuBlock, FpsBlock, MemBlock, NetBlock, DiskBlock, TrendBlock, TempBlock, ProcBlock
     };
 
     /// <summary>按 id 找区块。恢复配置时用，避免开一串 switch。</summary>
@@ -346,6 +361,12 @@ public sealed class DashboardState : INotifyPropertyChanged
 
     /// <summary>进程区块右侧的说明：刷新节奏 + 每进程 GPU 在这台机器上能不能拿到。</summary>
     public string ProcSubtitle { get => _procSubtitle; private set => Set(ref _procSubtitle, value); }
+
+    /// <summary>
+    /// FPS 区块副标题。采集没接通时三格恒为 `—`，不写清原因用户只会以为软件坏了
+    /// （同 4.2「不得静默降级」）。接通后这行改成「近 60 秒 · 0–240 FPS」。
+    /// </summary>
+    public string FpsSubtitle { get; } = "前台进程帧率 · PresentMon 未接入";
 
     /// <summary>趋势图副标题。写明窗口长度与量程，省掉纵轴刻度文字。</summary>
     public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
