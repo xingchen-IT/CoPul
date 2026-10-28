@@ -40,6 +40,7 @@ public sealed class PresentMonSession : IDisposable
     private int _consecutiveRestarts;
     private long _frameCount;
     private long _parseErrors;
+    private long _eventsLost;
 
     /// <summary>最近一次失败原因（stderr 原文，或"找不到 exe"），直接进状态栏。</summary>
     public string? LastError { get; private set; }
@@ -53,6 +54,13 @@ public sealed class PresentMonSession : IDisposable
     public long FrameCount => Interlocked.Read(ref _frameCount);
 
     public long ParseErrors => Interlocked.Read(ref _parseErrors);
+
+    /// <summary>
+    /// PresentMon 自报的 ETW 丢事件数（stderr 里的 "warning: N ETW events were lost"）。
+    /// 这是判断"会话建起来了但一帧都没有"的唯一线索：丢几万条说明事件在进缓冲前就被丢了，
+    /// 而不是我们解析错了。
+    /// </summary>
+    public long EventsLost => Interlocked.Read(ref _eventsLost);
 
     /// <summary>所有进程的 v1 CSV 列名（用于确认 PresentMon 版本没有改列名）。</summary>
     public string HeaderColumns { get; private set; } = "";
@@ -152,18 +160,28 @@ public sealed class PresentMonSession : IDisposable
         //   一个同名残留会话，不加这个参数下次就再也起不来（表现为"访问被拒绝"但不提原因）。
         // 不加 --process_id：前台进程随时会变，每换一次就重启一次会话等于每秒重建 ETW，
         // 所以采全部进程，由上层按"当前目标"筛选。
+        //
+        // --no_track_input：**这一条决定 FPS 能不能出数**（2026-10-29 实测）。
+        // 不加它 PresentMon 会同时使能 Microsoft-Windows-Win32k 的 MessagePump/Input 事件，
+        // 鼠标一动就是每秒几万条，把 ETW 的实时缓冲冲爆——表现为会话建立成功、provider 全开、
+        // 一帧都收不到，stderr 只有一句 "121384 ETW events were lost"。
+        // 本机实测：8 秒 168880 条丢失 / 0 帧 → 加此参数后 3994 条丢失 / 157 帧。
+        // msSinceInput 那一列我们用不到，关掉没有任何损失。
         string args =
-            "--output_stdout --no_console_stats --v1_metrics " +
+            "--output_stdout --no_console_stats --v1_metrics --no_track_input " +
             "--session_name CoPulFps --stop_existing_session " +
             "--exclude PresentMon.exe --exclude CoPul.exe --exclude dwm.exe";
 
+        // 不设 StandardOutputEncoding：PresentMon 2.6 往 stdout 写的是 **UTF-16LE**（带 FF FE
+        // BOM，实测），而 --output_file 模式写的是 UTF-8。写死任何一种都会在另一条路上解出
+        // "A\0p\0p\0…" 这种带 NUL 的乱码，表头永远认不出来。改由 ReadLoop 里的
+        // StreamReader 按 BOM 自动判别，两条路都对。
         var psi = new ProcessStartInfo(exePath, args)
         {
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = System.IO.Path.GetDirectoryName(exePath) ?? "."
         };
@@ -209,6 +227,7 @@ public sealed class PresentMonSession : IDisposable
         {
             if (e.Data is null) return;
             lock (err) { if (err.Length < 4096) err.AppendLine(e.Data); }
+            TryParseEventsLost(e.Data);
         };
         proc.BeginErrorReadLine();
 
@@ -216,7 +235,14 @@ public sealed class PresentMonSession : IDisposable
 
         try
         {
-            using var reader = proc.StandardOutput;
+            // 按 BOM 自动判别编码（见 StartProcess 里的注释）：UTF-16LE / UTF-8 都认。
+            // 直接拿 BaseStream 而不是 proc.StandardOutput，是因为后者已经按未指定的
+            // 编码包装过了，会先解一遍再交给我们。
+            using var reader = new StreamReader(
+                proc.StandardOutput.BaseStream,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                detectEncodingFromByteOrderMarks: true,
+                bufferSize: 8192);
             string? line;
             int headerChecks = 0;
 
@@ -277,9 +303,35 @@ public sealed class PresentMonSession : IDisposable
         {
             if (err.Length > 0) reason = err.ToString().Trim();
         }
+
+        // 丢事件太多说明会话是"活的但瞎的"：ETW 缓冲被冲爆，Present 事件没进来。
+        // 这句必须盖过 stderr 原文，否则界面只显示 "warning: 121384 ETW events were lost"，
+        // 用户看不懂那是"FPS 采不到"的意思。也是 --no_track_input 失效时的第一道报警。
+        long lost = EventsLost;
+        if (lost > 20000)
+            LastError = $"ETW 事件丢失严重（{lost} 条），本机拿不到呈现事件";
+
         // 进程正常退出（用户关了游戏不影响我们，会话不该退出）也算断开，交给看门狗重连。
-        if (!_disposed && !string.IsNullOrEmpty(reason)) LastError = reason;
+        if (!_disposed && !string.IsNullOrEmpty(reason) && lost <= 20000) LastError = reason;
         if (!_disposed) Faulted?.Invoke(LastError ?? "PresentMon 会话已断开");
+    }
+
+    /// <summary>从 stderr 的 "warning: 3994 ETW events were lost." 里取出数字。</summary>
+    private void TryParseEventsLost(string line)
+    {
+        const string marker = "ETW events were lost";
+        int at = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return;
+
+        int end = at;
+        while (end > 0 && !char.IsDigit(line[end - 1])) end--;
+        int begin = end;
+        while (begin > 0 && char.IsDigit(line[begin - 1])) begin--;
+        if (end == begin) return;
+
+        if (long.TryParse(line.AsSpan(begin, end - begin), NumberStyles.Integer,
+                          CultureInfo.InvariantCulture, out long v))
+            Interlocked.Exchange(ref _eventsLost, v);
     }
 
     private void ParseRow(string line, int iApp, int iPid, int iPresent, int iDisplay)
