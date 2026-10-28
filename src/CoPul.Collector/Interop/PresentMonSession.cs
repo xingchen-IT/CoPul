@@ -90,7 +90,6 @@ public sealed class PresentMonSession : IDisposable
         }
 
         if (!StartProcess(exePath)) return false;
-
         _watchdog = new Thread(() => WatchdogLoop(exePath))
         {
             IsBackground = true,
@@ -101,8 +100,51 @@ public sealed class PresentMonSession : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// 清掉上次遗留的 PresentMon。
+    ///
+    /// 正常退出时 <see cref="Stop"/> 会 Kill 子进程，但 CoPul 被任务管理器结束、崩溃、
+    /// 或者断电后重启，子进程就成了孤儿——它会一直跑着吃 0.3–0.5% 单核，而且没人读它的
+    /// stdout，管道写满后卡死但仍占着 ETW 会话。
+    ///
+    /// **只杀路径完全一致的那个**：用户自己装的 PresentMon 在别的目录，不能误伤。
+    /// </summary>
+    private static void KillOrphans(string exePath)
+    {
+        string full;
+        try { full = System.IO.Path.GetFullPath(exePath); }
+        catch { return; }
+
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("PresentMon"))
+            {
+                using (p)
+                {
+                    try
+                    {
+                        // MainModule 需要读进程内存，非提权时抛 Win32Exception——直接跳过，
+                        // 反正非提权本来也起不来 PresentMon。
+                        if (!string.Equals(p.MainModule?.FileName, full, StringComparison.OrdinalIgnoreCase)) continue;
+                        p.Kill();
+                    }
+                    catch
+                    {
+                        // 单个进程读不到 / 杀不掉，不影响本次启动
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // 枚举失败（极少见）不是致命错误
+        }
+    }
+
     private bool StartProcess(string exePath)
     {
+        KillOrphans(exePath);
+
         // v1 列集（PresentMon 1.x 口径）：字段少、列名十年没动过，解析风险最低。
         // --no_console_stats：否则它会在 stdout 上画动态统计表，和 CSV 混在一起。
         // --session_name：固定名字，免得和用户自己开着的 PresentMon 抢默认的 "PresentMon" 会话。
