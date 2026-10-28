@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:CoPul.App.Controls"
-        Title="CoPul 芯脉" Width="820" Height="1460" MinWidth="640" MinHeight="480"
+        Title="CoPul 芯脉" Width="820" Height="1520" MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource BrushBg}" FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
@@ -142,11 +142,12 @@
                     </Border>
 
                     <!--
-                        FPS 区块（M1.5）：帧率 / 1% Low / 帧时间 + 折线。
+                        FPS 区块（M1.5）：实时三格（帧率 / 1% Low / 帧时间）
+                        + 统计三格（最低 / 最高 / 平均，近 60 秒窗口）+ 折线。
                         数据源只能是 PresentMon 的 ETW 呈现流 —— Windows 没有任何 API
-                        直接给帧率（需求 4.6 / Q-07）。本版采集未接入，三格恒为 `—`，
+                        直接给帧率（需求 4.6 / Q-07）。本版采集未接入，六格恒为 `—`，
                         折线区只有网格：不写 0（A-13），也不在这里塞演示曲线。
-                        副标题已写明原因，接通后改成「近 60 秒 · 0–240 FPS」。
+                        副标题已写明原因，接通后改成「前台进程帧率 · 近 60 秒 · 0–240 FPS」。
                     -->
                     <Border Style="{StaticResource BlockCard}">
                         <StackPanel>
@@ -162,10 +163,20 @@
                             </Grid>
 
                             <StackPanel Visibility="{Binding FpsBlock.BodyVisibility}">
+                                <!-- 第一排：实时三件套。当前帧率 / 1% Low（最差 1% 帧的平均帧率，
+                                     比平均值更能反映卡顿）/ 单帧耗时。 -->
                                 <UniformGrid Columns="3" Margin="0,12,0,0">
                                     <controls:MetricTile DataContext="{Binding FpsValue}" />
                                     <controls:MetricTile DataContext="{Binding FpsLow1}" />
                                     <controls:MetricTile DataContext="{Binding FpsTime}" />
+                                </UniformGrid>
+
+                                <!-- 第二排：统计三件套。近 60 秒窗口内的最低 / 最高 / 平均帧率。
+                                     与折线图同窗口，避免"图上没这么低、最低值却很难看"的分歧。 -->
+                                <UniformGrid Columns="3" Margin="0,10,0,0">
+                                    <controls:MetricTile DataContext="{Binding FpsMin}" />
+                                    <controls:MetricTile DataContext="{Binding FpsMax}" />
+                                    <controls:MetricTile DataContext="{Binding FpsAvg}" />
                                 </UniformGrid>
 
                                 <!-- 量程 240：覆盖 60/120/144/165/240 Hz 全部常见刷新率。

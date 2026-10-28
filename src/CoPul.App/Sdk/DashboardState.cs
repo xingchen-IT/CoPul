@@ -263,12 +263,22 @@ public sealed class DashboardState : INotifyPropertyChanged
         // FPS 三格。数据源只能是 PresentMon 的 ETW 呈现流（需求 4.6 / Q-07），
         // Windows 没有任何 API 直接给帧率。本版采集尚未接入，先按不可用渲染：
         // 显示 `—`，不写 0（A-13），也不造假数据。
+        // 第一排是"实时三件套"：当前帧率 / 流畅度（1% Low）/ 单帧耗时。
+        // 第二排是"统计三件套"：窗口内的最低 / 最高 / 平均帧率。
+        // 统计窗口与折线图同为近 60 秒（120 点 × 0.5s），这样"图上看到的范围"
+        // 和"数字统计的范围"是同一个区间，不会出现图里没这么低、最低值却很难看的分歧。
         FpsValue = new MetricCell("帧率", "FPS", "AccentFps");
         FpsLow1 = new MetricCell("1% Low", "FPS", "AccentFps");
         FpsTime = new MetricCell("帧时间", "ms", "AccentFps");
+        FpsMin = new MetricCell("最低", "FPS", "AccentFps");
+        FpsMax = new MetricCell("最高", "FPS", "AccentFps");
+        FpsAvg = new MetricCell("平均", "FPS", "AccentFps");
         FpsValue.Unavailable();
         FpsLow1.Unavailable();
         FpsTime.Unavailable();
+        FpsMin.Unavailable();
+        FpsMax.Unavailable();
+        FpsAvg.Unavailable();
 
         MemLoad = new MetricCell("占用率", "%", "AccentRam");
         MemUsed = new MetricCell("已用", "GB", "AccentRam");
@@ -297,6 +307,9 @@ public sealed class DashboardState : INotifyPropertyChanged
     public MetricCell FpsValue { get; }
     public MetricCell FpsLow1 { get; }
     public MetricCell FpsTime { get; }
+    public MetricCell FpsMin { get; }
+    public MetricCell FpsMax { get; }
+    public MetricCell FpsAvg { get; }
 
     public MetricCell MemLoad { get; }
     public MetricCell MemUsed { get; }
@@ -363,10 +376,12 @@ public sealed class DashboardState : INotifyPropertyChanged
     public string ProcSubtitle { get => _procSubtitle; private set => Set(ref _procSubtitle, value); }
 
     /// <summary>
-    /// FPS 区块副标题。采集没接通时三格恒为 `—`，不写清原因用户只会以为软件坏了
-    /// （同 4.2「不得静默降级」）。接通后这行改成「近 60 秒 · 0–240 FPS」。
+    /// <summary>
+    /// FPS 区块副标题。采集没接通时六格恒为 `—`，不写清原因用户只会以为软件坏了
+    /// （同 4.2「不得静默降级」）。顺便写明统计窗口——最低/最高/平均都是「近 60 秒」
+    /// 口径，不写就只能靠猜。接通后这行改成「前台进程帧率 · 近 60 秒 · 0–240 FPS」。
     /// </summary>
-    public string FpsSubtitle { get; } = "前台进程帧率 · PresentMon 未接入";
+    public string FpsSubtitle { get; } = "前台进程帧率 · 60 秒统计 · PresentMon 未接入";
 
     /// <summary>趋势图副标题。写明窗口长度与量程，省掉纵轴刻度文字。</summary>
     public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
