@@ -128,9 +128,6 @@ public partial class MainWindow : Window
         foreach (string id in config.CollapsedBlocks)
             _state.Block(id)?.Restore(true);
 
-        double w = Math.Max(MinWidth, config.WindowWidth);
-        double h = Math.Max(MinHeight, config.WindowHeight);
-
         bool hasPos = !double.IsNaN(config.WindowLeft) && !double.IsNaN(config.WindowTop);
 
         // WPF 的 Left/Top/Width 是 DIP，Win32 的 MONITORINFO 是物理像素。
@@ -139,21 +136,46 @@ public partial class MainWindow : Window
         double sx = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
         double sy = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
 
-        if (hasPos && Win32Window.TryGetWorkArea(config.WindowLeft * sx, config.WindowTop * sy,
-                                                w * sx, h * sy, out var workPx))
+        // 工作区（DIP）：有保存位置时按"上次那块显示器"算；取不到就退到主屏。
+        // 拔掉副屏 / 改分辨率后，保存的坐标可能已经不在任何显示器上（A-07）。
+        // 注意 `workPx` 必须先 default 再作为 out 传入：短路表达式里的 out var
+        // 在 hasPos 为 false 时编译器视为"可能未赋值"（CS0170）。
+        Win32Window.RECT workPx = default;
+        bool hasWork = hasPos && Win32Window.TryGetWorkArea(config.WindowLeft * sx, config.WindowTop * sy,
+                                                          config.WindowWidth * sx,
+                                                          Math.Max(MinHeight, config.WindowHeight) * sy,
+                                                          out workPx);
+        double workL, workT, workR, workB;
+        if (hasWork)
         {
-            // 换回 DIP 再钳制，避免把物理像素直接和 DIP 比较
-            double workL = workPx.Left / sx;
-            double workT = workPx.Top / sy;
-            double workR = workPx.Right / sx;
-            double workB = workPx.Bottom / sy;
+            workL = workPx.Left / sx;
+            workT = workPx.Top / sy;
+            workR = workPx.Right / sx;
+            workB = workPx.Bottom / sy;
+        }
+        else
+        {
+            Rect work = SystemParameters.WorkArea;      // DIP，主屏
+            workL = work.Left;
+            workT = work.Top;
+            workR = work.Right;
+            workB = work.Bottom;
+        }
 
-            // 尺寸也要钳：4K 下存的 3840×2000 换到 1080p 屏会超出工作区
-            w = Math.Min(w, workR - workL);
-            h = Math.Min(h, workB - workT);
+        double maxW = Math.Max(MinWidth, workR - workL);
+        double maxH = Math.Max(MinHeight, workB - workT);
 
-            Width = w;
-            Height = h;
+        // A-32：默认几何不写死，按工作区算。
+        // 宽度用保存值（默认 820），高度用保存值，没有保存值就用满工作区——
+        // 原来写死的 1460 只在这台屏上"看起来对"，换台机器要么超屏、要么多留一截空白。
+        double w = Math.Clamp(config.WindowWidth, MinWidth, maxW);
+        double h = config.WindowHeight > 0 ? Math.Clamp(config.WindowHeight, MinHeight, maxH) : maxH;
+
+        Width = w;
+        Height = h;
+
+        if (hasWork)
+        {
             Left = Math.Clamp(config.WindowLeft, workL, Math.Max(workL, workR - w));
             Top = Math.Clamp(config.WindowTop, workT, Math.Max(workT, workB - h));
 
@@ -162,12 +184,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            // 没有配置，或上次的位置已经不在任何显示器上（拔了副屏 / 改了分辨率）
-            // 高度还要再钳一次工作区：新增趋势与进程两个区块后默认高 1080，
-            // 在 1080p 屏上会顶出屏幕外（主屏工作区通常不足 1040 DIP）。
-            double workH = SystemParameters.WorkArea.Height;
-            Width = w;
-            Height = Math.Min(h, workH);
+            // 首次运行 / 位置失效：居中，尺寸已按工作区钳过
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
         }
 

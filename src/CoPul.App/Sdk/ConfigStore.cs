@@ -23,8 +23,15 @@ public sealed class AppConfig
     public double WindowTop { get; set; } = double.NaN;
     public double WindowWidth { get; set; } = 820;
 
-    /// <summary>默认高 1460：M1.5 的 FPS 区块（一排六格 + 折线）与进程表同时展开所需。高 DPI 屏上会被系统钳到工作区高度，靠内容区滚动。</summary>
-    public double WindowHeight { get; set; } = 1460;
+    /// <summary>
+    /// 窗口高（DIP）。**0 = 未设置**，表示"首次启动用满工作区高度"（A-32）。
+    ///
+    /// 为什么不再写死一个数字：内容自然高度是 1502 DIP（M1.5 用 ScrollViewer.ExtentHeight 实测），
+    /// 而 150% 缩放的 2560×1600 屏工作区只有 1019——9 个区块在任何常见屏幕上都不可能一屏放下。
+    /// 写死 1460 只有"开发机刚好被系统钳到 1019"这一种巧合下看着对，换台机器不是超屏就是留白。
+    /// 现在默认行为是"占满屏幕高度、内部滚动"，加区块也不必再回来改这个值。
+    /// </summary>
+    public double WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
 
     /// <summary>折叠的区块 id：<c>"cpu"</c> / <c>"gpu"</c> / <c>"mem"</c> / <c>"disk"</c>（5.4 要求持久化）。</summary>
