@@ -67,6 +67,35 @@ internal static class Win32
     }
 
     // =================================================================
+    // F01–F04 前台进程判定（FpsProvider 用）
+    // =================================================================
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
+    /// <summary>
+    /// 当前前台窗口所属进程的 PID。拿不到时返回 0。
+    ///
+    /// 两种"看起来是前台但不是应用"的情况要排掉：桌面本身（窗口句柄 == GetShellWindow()）
+    /// 和锁屏/无窗口状态。它们留着会让 FPS 面板去追 explorer.exe 的 0 帧。
+    /// </summary>
+    public static int GetForegroundProcessId()
+    {
+        IntPtr hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return 0;
+        if (hwnd == GetShellWindow()) return 0;
+
+        if (GetWindowThreadProcessId(hwnd, out uint pid) == 0) return 0;
+        return pid > int.MaxValue ? 0 : (int)pid;
+    }
+
+    // =================================================================
     // M1.0 补齐 UI 必需字段时新增的调用。全部实测过成本，见 docs/M1.0 报告。
     // =================================================================
 

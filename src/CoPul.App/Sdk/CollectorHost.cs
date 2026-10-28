@@ -22,6 +22,7 @@ public sealed class CollectorHost : IDisposable
     private readonly MsrCpuProvider _msr = new();
     private readonly NvmeStorageProvider _nvme = new();
     private readonly ProcessProvider _proc = new();
+    private readonly FpsProvider _fps = new();
     private readonly SampleScheduler _scheduler;
 
     private int _started;
@@ -50,7 +51,7 @@ public sealed class CollectorHost : IDisposable
     public CollectorHost(Dispatcher ui)
     {
         _ui = ui;
-        Providers = new IMetricProvider[] { _nvml, _os, _msr, _nvme, _proc };
+        Providers = new IMetricProvider[] { _nvml, _os, _msr, _nvme, _proc, _fps };
         _scheduler = new SampleScheduler(Providers, new SampleSchedulerOptions { UserIntervalMs = 500 });
         _scheduler.SnapshotReady += OnSnapshotReady;
     }
@@ -80,6 +81,29 @@ public sealed class CollectorHost : IDisposable
     public bool ProcessGpuAvailable => _proc.GpuAvailable;
 
     /// <summary>
+    /// F01–F04 的统计对象（PresentMon 的 Application 列）。空串表示当前没有任何进程在渲染，
+    /// 与网卡名同理：字符串装不进 <see cref="MetricSnapshot"/>，走旁路。
+    /// </summary>
+    public string FpsTargetApp => _fps.TargetApp;
+
+    /// <summary>FPS 会话是否真的接上了。用来区分「没提权/没接上」和「接上了但前台没在渲染」。</summary>
+    public bool FpsCollecting => _fps.IsCollecting;
+
+    /// <summary>FPS 不可用的具体原因。写在 FPS 区块副标题上——状态栏那一行在窗口底部，
+    /// 而 FPS 区块在屏幕中部，让人为了看一句原因去滚到底部是不合理的。</summary>
+    public string? FpsUnavailableReason => _fps.UnavailableReason;
+
+    /// <summary>
+    /// FPS 区块折叠时关掉 PresentMon。它是独立进程，自己就要吃 0.3–0.5% 单核，
+    /// 折叠了就没人看，没必要一直烧着。
+    /// </summary>
+    public bool FpsSamplingEnabled
+    {
+        get => _fps.Enabled;
+        set => _fps.Enabled = value;
+    }
+
+    /// <summary>
     /// 进程区块折叠时关掉这两组采集。进程快照 + GPU Engine 一轮约 20ms，
     /// 是全部采集里最贵的一组，看不见就别采。
     /// </summary>
@@ -99,6 +123,18 @@ public sealed class CollectorHost : IDisposable
 
     /// <summary>D04 分区数据变了（10s 一次，且只在真的变了时触发），<b>已在 UI 线程</b>。</summary>
     public event Action<SystemInfo>? PartitionsRefreshed;
+
+    /// <summary>
+    /// Provider 可用状态发生变化，<b>已在 UI 线程</b>。
+    ///
+    /// 原来状态只在 <see cref="InfoReady"/> 时摊一次，但 FPS 是异步的：PresentMon 起得来、
+    /// 首行 CSV 却可能在 1 秒后失败（ETW 会话名冲突、被杀软拦），那时状态栏还写着"运行中"。
+    /// 这里每 2 秒比一次签名，只有真变了才通知。
+    /// </summary>
+    public event Action<IReadOnlyList<IMetricProvider>>? ProvidersChanged;
+
+    private string _providerSignature = "";
+    private long _lastProviderCheckTs;
 
     public void Start()
     {
@@ -194,7 +230,28 @@ public sealed class CollectorHost : IDisposable
 
         Interlocked.Exchange(ref _dirty, 0);
         _lastFrameTs = now;
+        CheckProviders();
         FrameReady?.Invoke(snap, Info);
+    }
+
+    /// <summary>
+    /// 每 2 秒比对一次 Provider 状态签名。签名用「状态码 + 原因」拼成：
+    /// 只看状态码不够——同样是 Failed，"没提权"和"exe 缺失"的提示文案要跟着换。
+    /// </summary>
+    private void CheckProviders()
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if ((now - _lastProviderCheckTs) * 1000.0 / System.Diagnostics.Stopwatch.Frequency < 2000) return;
+        _lastProviderCheckTs = now;
+
+        var sb = new System.Text.StringBuilder(256);
+        foreach (var p in Providers) sb.Append((int)p.Status).Append(':').Append(p.UnavailableReason).Append('|');
+
+        string sig = sb.ToString();
+        if (sig == _providerSignature) return;
+
+        _providerSignature = sig;
+        ProvidersChanged?.Invoke(Providers);
     }
 
     private void Post(Action action)

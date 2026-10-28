@@ -56,9 +56,16 @@ public partial class MainWindow : Window
         _host = new CollectorHost(Dispatcher);
         TrendView.Series = _state.Trend;
         TempView.Series = _state.TrendTemp;   // 量程与单位在 XAML 里给了：0–100°C
+        FpsView.Series = _state.TrendFps;     // 量程 240 FPS，同样在 XAML 里
 
         // 进程采集是全部采集里最贵的一组（一轮约 20ms），启动时这块若已折叠就别采
         _host.ProcessSamplingEnabled = !_state.ProcBlock.Collapsed;
+        // PresentMon 是独立进程，自己就要吃 0.3–0.5% 单核，折叠了就别让它烧着
+        _host.FpsSamplingEnabled = !_state.FpsBlock.Collapsed;
+
+        // FPS 的可用状态是异步的（PresentMon 起得来、会话却可能 1 秒后才被拒），
+        // 所以除了启动时那一次，还得听运行中的状态变化
+        _host.ProvidersChanged += providers => _state.ApplyProviders(providers);
 
         _host.InfoReady += info =>
         {
@@ -75,9 +82,12 @@ public partial class MainWindow : Window
             // N05 网卡名 / N03 探测目标不在快照里（字符串），走旁路；无变化时内部会跳过通知
             _state.ApplyNetworkContext(_host.ActiveNicName, _host.PingTarget);
 
-            // 进程表与两张趋势图：折叠时整段跳过（趋势图连采样都不记，省一半成本）
+            // 进程表与三张趋势图：折叠时整段跳过（趋势图连采样都不记，省一半成本）
             if (!_state.ProcBlock.Collapsed)
                 _state.ApplyProcesses(_host.TopProcesses, _host.ProcessGpuAvailable);
+
+            // FPS 六格：目标进程名与"会话是否接上"都在快照外面，走旁路
+            _state.ApplyFps(snap, _host.FpsTargetApp, _host.FpsCollecting, _host.FpsUnavailableReason);
 
             if (!_state.TrendBlock.Collapsed)
             {
@@ -89,6 +99,12 @@ public partial class MainWindow : Window
             {
                 _state.PushTrendTemp(snap);
                 TempView.Refresh();
+            }
+
+            if (!_state.FpsBlock.Collapsed)
+            {
+                _state.PushTrendFps(snap);
+                FpsView.Refresh();
             }
 
             ApplyTotalMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0
@@ -228,6 +244,7 @@ public partial class MainWindow : Window
 
         // 折叠进程区块时顺手把最贵的两组采集关掉（见 CollectorHost.ProcessSamplingEnabled）
         if (block == _state.ProcBlock) _host.ProcessSamplingEnabled = !block.Collapsed;
+        if (block == _state.FpsBlock) _host.FpsSamplingEnabled = !block.Collapsed;
 
         SaveLayout();   // 折叠状态按 5.4 持久化
     }

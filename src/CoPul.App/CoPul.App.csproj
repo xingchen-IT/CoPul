@@ -28,4 +28,23 @@
     <ProjectReference Include="..\CoPul.Collector\CoPul.Collector.csproj" />
   </ItemGroup>
 
+  <!--
+    PresentMon 随包分发（Q-07：体积预算 +15MB，实际 980KB）。
+    Windows 没有给帧率的 API，FPS 只能靠它的 ETW 呈现流，见 FpsProvider。
+    许可证必须一起带（MIT 要求保留版权声明），运行时按 assets 目录结构
+    落到 <输出目录>\presentmon\，与 FpsProvider.ResolveExePath() 的查找顺序一致。
+  -->
+  <ItemGroup>
+    <None Include="assets\presentmon\PresentMon.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>presentmon\PresentMon.exe</Link>
+      <Visible>false</Visible>
+    </None>
+    <None Include="assets\presentmon\LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>presentmon\LICENSE.txt</Link>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
+
 </Project>

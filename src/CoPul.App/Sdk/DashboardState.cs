@@ -243,6 +243,7 @@ public sealed class DashboardState : INotifyPropertyChanged
     private string _netAdapter = "读取中…";
     private string _netTargetText = "";
     private string _procSubtitle = "";
+    private string _fpsSubtitle = "PresentMon 未接入 · 近 60 秒";
     private string _statusText = "正在初始化采集器…";
 
     public DashboardState()
@@ -337,6 +338,12 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// </summary>
     public TrendSeries TrendTemp { get; } = new(120);
 
+    /// <summary>
+    /// 帧率历史（M1.4c）。只有一条曲线，量程 0–240 FPS（XAML 里给）。
+    /// 目标进程切走时写 NaN 断线，不要把两个程序的帧率连成一条斜线。
+    /// </summary>
+    public TrendSeries TrendFps { get; } = new(120);
+
     // ---- 折叠状态（5.4，持久化到 config.json） ----
     public BlockState CpuBlock { get; } = new("cpu");
     public BlockState GpuBlock { get; } = new("gpu");
@@ -377,12 +384,15 @@ public sealed class DashboardState : INotifyPropertyChanged
     public string ProcSubtitle { get => _procSubtitle; private set => Set(ref _procSubtitle, value); }
 
     /// <summary>
-    /// <summary>
-    /// FPS 区块副标题。采集没接通时六格恒为 `—`，不写清原因用户只会以为软件坏了
-    /// （同 4.2「不得静默降级」）。顺便写明统计窗口——最低/最高/平均都是「近 60 秒」
-    /// 口径，不写就只能靠猜。接通后这行改成「前台进程帧率 · 近 60 秒 · 0–240 FPS」。
+    /// FPS 区块副标题。三种状态各有一句话，因为"六格全是 `—`"有完全不同的两种原因：
+    ///
+    /// - 会话没接上（没提权 / exe 缺失）→ 说清是"没接上"，并把原因指向状态栏；
+    /// - 接上了但没有任何进程在呈现 → "等待前台进程呈现"，这不是故障；
+    /// - 正常 → 报出当前统计的是哪个进程，否则用户不知道这个帧率是谁的。
+    ///
+    /// 统计窗口（近 60 秒）每次都写：最低/最高/平均是窗口值而不是瞬时值，不写只能靠猜。
     /// </summary>
-    public string FpsSubtitle { get; } = "前台进程帧率 · 60 秒统计 · PresentMon 未接入";
+    public string FpsSubtitle { get => _fpsSubtitle; private set => Set(ref _fpsSubtitle, value); }
 
     /// <summary>趋势图副标题。写明窗口长度与量程，省掉纵轴刻度文字。</summary>
     public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
@@ -449,8 +459,10 @@ public sealed class DashboardState : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateBrush)));
     }
 
-    private static string JoinNotes(params string[] parts)
-    {
+    /// <summary>裁掉句尾标点：原因串可能自带"，"或"。"，写进副标题后会出现 "…··， ·"。</summary>
+    private static string TrimEnd(string s) => s.TrimEnd('。', '；', '，', '、', ' ');
+
+    private static string JoinNotes(params string[] parts)    {
         var list = parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
         return list.Count == 0 ? "采集正常" : string.Join(" · ", list);
     }
@@ -541,6 +553,51 @@ public sealed class DashboardState : INotifyPropertyChanged
     public void PushTrendTemp(MetricSnapshot snap)
         => TrendTemp.Push(Value(snap, MetricId.CpuPackageTemp) ?? double.NaN,
                           Value(snap, MetricId.GpuTemp) ?? double.NaN);
+
+    /// <summary>
+    /// 往帧率图追加一个采样点。第二条线恒为 NaN：<see cref="TrendChart"/> 的接口是双序列，
+    /// 而 FPS 只有一条曲线，给 NaN 就不会画出来（A-13 的同一套"无值即断开"逻辑）。
+    /// </summary>
+    public void PushTrendFps(MetricSnapshot snap)
+        => TrendFps.Push(Value(snap, MetricId.FpsPresent) ?? double.NaN, double.NaN);
+
+    /// <summary>
+    /// FPS 六格（F01–F04）。<paramref name="targetApp"/> 与 <paramref name="collecting"/>
+    /// 不在快照里（前者是字符串，后者是会话状态），由 CollectorHost 旁路带过来。
+    /// </summary>
+    public void ApplyFps(MetricSnapshot snap, string targetApp, bool collecting, string? unavailableReason = null)
+    {
+        if (FpsBlock.Collapsed) return;
+
+        FpsSubtitle = !collecting
+            ? (string.IsNullOrWhiteSpace(unavailableReason)
+                ? "PresentMon 未接入 · 详见底部状态栏"
+                : "PresentMon 未接入 · " + TrimEnd(unavailableReason))
+            : string.IsNullOrEmpty(targetApp)
+                ? "已接入 · 等待前台进程呈现画面"
+                : $"{targetApp} · 近 60 秒 · 0–240 FPS";
+
+        // 会话没接上时快照里也没有 FPS 值，下面的 SetCell 自然退成 `—`。
+        // 平均帧率与最低/最高同源同窗口，缺一个就等于窗口还没攒够，整组一起退。
+        SetCell(FpsValue, snap, MetricId.FpsPresent, Fmt.Fps);
+        SetCell(FpsTime, snap, MetricId.FpsFrameTimeMs, Fmt.Ms);
+        SetCell(FpsLow1, snap, MetricId.FpsLow1Pct, Fmt.Fps);
+
+        bool hasWindow = snap.TryGet(MetricId.FpsAvg60, out var avg) && avg.IsUsable;
+        if (hasWindow)
+        {
+            SetCell(FpsMin, snap, MetricId.FpsMin60, Fmt.Fps);
+            SetCell(FpsMax, snap, MetricId.FpsMax60, Fmt.Fps);
+            SetCell(FpsAvg, snap, MetricId.FpsAvg60, Fmt.Fps);
+        }
+        else
+        {
+            // 窗口还没攒够（刚切到目标 2 秒内）：统一 `—`，不要拿瞬时值冒充 60 秒统计。
+            FpsMin.Unavailable();
+            FpsMax.Unavailable();
+            FpsAvg.Unavailable();
+        }
+    }
 
     private void ApplyCpu(MetricSnapshot snap)
     {
@@ -699,8 +756,7 @@ public sealed class DashboardState : INotifyPropertyChanged
     private static string TryText(MetricSnapshot snap, MetricId id, Func<double, string> fmt)
         => snap.TryGet(id, out var s) && s.IsUsable ? fmt(s.Value) : Fmt.Dash;
 
-    private static void SetCell(MetricCell cell, MetricSnapshot snap, MetricId id,
-                                Func<double, string> fmt,
+    private static void SetCell(MetricCell cell, MetricSnapshot snap, MetricId id,                                Func<double, string> fmt,
                                 Func<double, Level>? severity = null,
                                 bool withBar = false)
     {

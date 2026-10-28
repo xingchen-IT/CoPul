@@ -54,6 +54,16 @@ public enum MetricId
     DiskWritePerDisk,      // D03  数组，同上
     DiskBusyPercent,       // D05
 
+    // ---------- FPS（需求 4.6，数据源 = PresentMon ETW 呈现流，见 FpsProvider） ----------
+    // 六项同源同窗口：都在 FpsProvider 内部由同一批呈现帧算出，
+    // 分成独立 MetricId 只是为了 UI 能一格一格绑。
+    FpsPresent,            // F01  当前帧率 = 最近 1 秒内的呈现帧
+    FpsFrameTimeMs,        // F02  帧时间 = 最近 1 秒的平均帧间隔（1000 / FPS）
+    FpsMin60,              // F03  近 60 秒逐秒帧率的最小值
+    FpsMax60,              // F03  近 60 秒逐秒帧率的最大值
+    FpsAvg60,              // F03  近 60 秒逐秒帧率的算术平均
+    FpsLow1Pct,            // F04  1% Low：最慢 1% 帧的平均帧时间取倒数
+
     // ---------- 网络 ----------
     NetUpBytesPerSec,      // N01
     NetDownBytesPerSec,    // N02

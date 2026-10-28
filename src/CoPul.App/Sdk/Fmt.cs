@@ -21,6 +21,15 @@ internal static class Fmt
 
     public static string Mhz(double v) => v.ToString("F0", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// 帧率。整数：0.4 FPS 的差别没人读得出来，而小数会让"最低/最高/平均"那格挤成 6 个字符。
+    /// 单位已由格子的 Unit 承担。
+    /// </summary>
+    public static string Fps(double v) => v.ToString("F0", CultureInfo.InvariantCulture);
+
+    /// <summary>帧时间（ms）。保留 1 位：60 FPS 是 16.7，写 17 就看不出和 16 的差别了。</summary>
+    public static string Ms(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+
     public static string Gb(double mb) => (mb / 1024.0).ToString("F1", CultureInfo.InvariantCulture);
 
     /// <summary>字节速率 → MB/s，保留 1 位。低于 1 KB/s 时显示 0.0，不显示科学计数法。</summary>
