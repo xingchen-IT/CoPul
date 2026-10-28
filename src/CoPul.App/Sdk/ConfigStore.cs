@@ -23,8 +23,8 @@ public sealed class AppConfig
     public double WindowTop { get; set; } = double.NaN;
     public double WindowWidth { get; set; } = 820;
 
-    /// <summary>默认高 1520：M1.5 的 FPS 区块从三格扩到两排六格后，1460 会截断进程表。高 DPI 屏上会被系统钳到工作区高度，靠内容区滚动。</summary>
-    public double WindowHeight { get; set; } = 1520;
+    /// <summary>默认高 1460：M1.5 的 FPS 区块（一排六格 + 折线）与进程表同时展开所需。高 DPI 屏上会被系统钳到工作区高度，靠内容区滚动。</summary>
+    public double WindowHeight { get; set; } = 1460;
     public bool WindowMaximized { get; set; }
 
     /// <summary>折叠的区块 id：<c>"cpu"</c> / <c>"gpu"</c> / <c>"mem"</c> / <c>"disk"</c>（5.4 要求持久化）。</summary>
