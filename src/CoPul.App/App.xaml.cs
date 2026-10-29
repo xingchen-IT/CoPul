@@ -126,6 +126,15 @@ public partial class App : Application
             f.Activate();
         };
 
+        // 同上，「切到任务栏条」（M3）。这条让大窗口能进入任务栏模式——
+        // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
+        window.TrayRequested = () =>
+        {
+            window.Hide();
+            TaskbarWindow t = EnsureTaskbar();
+            t.Show();
+        };
+
         bool wantFloat = e.Args.Contains("--float");
         if (e.Args.Contains("--backdrop"))
         {

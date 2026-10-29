@@ -59,6 +59,13 @@ public partial class MainWindow : Window
     /// </summary>
     public Action? FloatRequested { get; set; }
 
+    /// <summary>
+    /// 「切到任务栏条」（M3）。理由同 <see cref="FloatRequested"/>：
+    /// 三个视图共用一份 <see cref="DashboardState"/>，谁显示谁由 App 编排，
+    /// 窗口之间互相 new 会把"数据只有一份、界面可以有三个"这条约束弄丢。
+    /// </summary>
+    public Action? TrayRequested { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -353,5 +360,17 @@ public partial class MainWindow : Window
         }
 
         FloatRequested();
+    }
+
+    /// <summary>切到任务栏条（M3）。同样只发请求，Show/Hide 由 App 编排。</summary>
+    private void Tray_Click(object sender, RoutedEventArgs e)
+    {
+        if (TrayRequested is null)
+        {
+            _state.ShowHint("任务栏条未接线");
+            return;
+        }
+
+        TrayRequested();
     }
 }

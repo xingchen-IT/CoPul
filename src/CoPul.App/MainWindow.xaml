@@ -50,6 +50,8 @@
                             VerticalAlignment="Center" Margin="0,0,8,0">
                     <Button Style="{StaticResource TitleBarButton}" Content="▭"
                             ToolTip="切到悬浮窗" Click="Float_Click" />
+                    <Button Style="{StaticResource TitleBarButton}" Content="▤"
+                            ToolTip="切到任务栏条" Click="Tray_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="⚙"
                             ToolTip="设置（M2 实现）" Click="Settings_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="—"
