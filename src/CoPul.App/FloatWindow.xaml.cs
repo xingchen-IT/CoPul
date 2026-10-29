@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using CoPul.App.Interop;
 using CoPul.App.Sdk;
@@ -11,8 +12,9 @@ namespace CoPul.App;
 /// 悬浮窗（需求第 6 章）。M2 当前进度：
 /// <list type="bullet">
 /// <item>已完成：无边框圆角长条 + 六字段两行式 + 真实数据 + 毛玻璃 + 拖动 + 双击切大窗口 + 右键菜单</item>
-/// <item>已完成：浅色 / 深色两套玻璃外观可切换，五档浓度可调</item>
-/// <item>待做：边缘吸附（6.5）、位置按比例持久化（6.7）、锁定位置 / 三档手动缩放（Q-05）</item>
+/// <item>已完成：浅色 / 深色两套玻璃外观可切换，七档浓度可调</item>
+/// <item>已完成：边缘吸附、位置按比例持久化、锁定位置、外观偏好持久化（6.5 / 6.6 / 6.7）</item>
+/// <item>待做：三档手动缩放（Q-05）、投影（6.4）</item>
 /// </list>
 ///
 /// <para>
@@ -87,38 +89,115 @@ public partial class FloatWindow : Window
     private int _level = 3;      // 0-based：3 = 适中
     private bool _glass = true;
 
+    /// <summary>位置锁（6.5）。锁定后拖动无效，但双击、右键菜单照常。</summary>
+    private bool _locked;
+
+    /// <summary>共享数据状态。用来在拖动期间置 <see cref="DashboardState.Paused"/>。</summary>
+    private readonly DashboardState _state;
+
+    /// <summary>共享配置。<see cref="ConfigStore.Current"/> 的同一份，改完直接 <see cref="ConfigStore.SaveCurrent"/>。</summary>
+    private readonly AppConfig _config;
+
     /// <summary>
     /// HWND 是否已就绪。没有这个守卫时，构造函数里设 Theme / GlassLevel 会触发一次
     /// 无效的 ApplyGlass（窗口还没 HWND，DWM 调用全部落空），日志里会多出一条"未取到 HWND"。
     /// </summary>
     private bool _hwndReady;
 
-    public FloatWindow(DashboardState state)
+    public FloatWindow(DashboardState state, AppConfig config)
     {
         InitializeComponent();
+
+        _state = state;
+        _config = config;
         DataContext = state;
+
+        // 外观从配置读回。必须先于 InitializeComponent 之后、Show 之前落到字段上，
+        // 否则窗口会先按默认值画一遍再被改掉（闪一下浅色再变深色）。
+        if (Enum.TryParse(config.FloatTheme, ignoreCase: true, out GlassTheme theme))
+            _theme = theme;
+        _level = Math.Clamp(config.FloatGlassLevel, 1, LevelCount) - 1;
+        _glass = config.FloatGlassEnabled;
+        _locked = config.FloatLocked;
 
         SourceInitialized += (_, _) =>
         {
             _hwndReady = true;
             WindowGlass.HideFromAltTab(this);
             ApplyGlass(_glass);
+            SyncMenuChecks();
         };
 
-        // 尺寸要等 SizeToContent 算完才能居中，所以位置放到 Loaded
-        Loaded += (_, _) =>
-        {
-            // Loaded 之后 HwndTarget 才稳定，这里补一次透明底（在 SourceInitialized 里设会被覆盖）。
-            // 少了这一句，窗口底会变成纯黑，Acrylic 看起来完全没生效。
-            WindowGlass.MakeClientTransparent(this);
+        // Loaded 时 HwndTarget 才稳定，这里补一次透明底（在 SourceInitialized 里设会被覆盖）。
+        // 少了这一句，窗口底会变成纯黑，Acrylic 看起来完全没生效。
+        Loaded += (_, _) => WindowGlass.MakeClientTransparent(this);
 
-            if (CenterOnScreen) PlaceAtCenter();
-            else PlaceAtBottomLeft();
+        // 定位必须等首帧渲染完：SizeToContent 的窗口在 Loaded 阶段宽度还没定型，
+        // 实测此时 GetWindowRect 量到的是 94px（最终 381 DIP × 1.5 = 571px）。
+        // 拿这个宽度去算「60% 可见」的夹紧范围会算出完全错误的结果。
+        ContentRendered += (_, _) =>
+        {
+            if (PersistProbe)
+            {
+                // 走 setter，也就是用户点菜单走的同一条路
+                Theme = GlassTheme.Dark;
+                GlassLevel = 6;
+                PlacementDiag = $"persist-probe: theme={Theme} level={GlassLevel}";
+                Application.Current.Shutdown();
+                return;
+            }
+
+            if (SnapProbe is { } probe)
+            {
+                // 自测优先：直接摆到指定位置再跑吸附 + 夹紧，不读配置也不写配置
+                Monitors.MoveWindowTo(Handle, probe.X, probe.Y);
+                SettlePlacement();
+                PlacementDiag = DescribePlacement("snap-probe");
+            }
+            else if (CenterOnScreen) PlaceAtCenter();
+            else if (TryRestorePlacement()) PlacementDiag = DescribePlacement("restored");
+            else
+            {
+                PlaceAtBottomLeft();
+                PlacementDiag = DescribePlacement("default");
+            }
         };
     }
 
     /// <summary>验收毛玻璃时把窗口挪到屏幕中间，方便连同背景一起截（--float-center）。</summary>
     public bool CenterOnScreen { get; set; }
+
+    /// <summary>
+    /// 自测：<c>--float-snap-probe x,y</c>。启动后先把窗口硬摆到 (x,y)（物理像素），
+    /// 再跑一次 <see cref="SnapToWorkAreaEdge"/>，把结果写进 <see cref="PlacementDiag"/>。
+    ///
+    /// <para>
+    /// 为什么要这个探针：吸附逻辑一行 if 看着简单，但它是"物理像素坐标 + DPI 换算阈值 +
+    /// 四个方向的正负号"，靠肉眼看截图根本分不清"没吸附"和"吸附了但我算错了"。探针把
+    /// 窗口矩形与工作区矩形一起打出来，对不对一眼可读。
+    /// </para>
+    /// </summary>
+    public (int X, int Y)? SnapProbe { get; set; }
+
+    /// <summary>最近一次位置运算的诊断串，供截图工具写进 sidecar 文件。</summary>
+    public string PlacementDiag { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 自测：<c>--float-persist-probe</c>。启动后把外观改成「深色 + 第 6 档」再退出，
+    /// 用来验证"改设置 → 写 config.json"这条链路真的通。
+    ///
+    /// <para>
+    /// 这条链路历史上出过事：<see cref="ConfigStore.Save"/> 原本手抄了一份字段白名单，
+    /// 加新字段时漏同步就是"设置存不上"且没有任何报错。菜单点不了，就用探针走路。
+    /// </para>
+    /// </summary>
+    public bool PersistProbe { get; set; }
+
+    /// <summary>
+    /// 外观变化是否写回配置。默认 true；用 <c>--glass-dark</c> / <c>--glass-level</c>
+    /// 跑验收时由 App 关掉 —— 那些参数是临时改外观，不该把用户的配置改成"深色第 1 档"。
+    /// </summary>
+    public bool PersistToConfig { get; set; } = true;
 
     /// <summary>
     /// 启动时指定外观，供自测参数用（<c>--glass-dark</c> / <c>--glass-level N</c>）。
@@ -133,6 +212,7 @@ public partial class FloatWindow : Window
             _theme = value;
             SyncMenuChecks();
             if (_hwndReady) ApplyGlass(_glass);
+            PersistAppearance();
         }
     }
 
@@ -150,6 +230,7 @@ public partial class FloatWindow : Window
             _level = index;
             SyncMenuChecks();
             if (_hwndReady) ApplyGlass(_glass);
+            PersistAppearance();
         }
     }
 
@@ -178,8 +259,8 @@ public partial class FloatWindow : Window
     public event EventHandler? MainWindowRequested;
 
     /// <summary>
-    /// 默认位置：当前显示器工作区左下角，距左 12、距底 12（6.7 的兜底规则；
-    /// 按比例持久化在下一阶段接上，这里先保证"第一次出来就在看得见的地方"）。
+    /// 默认位置：主显示器工作区左下角，距左 12、距底 12（6.7 的兜底规则）。
+    /// 只在"从未摆放"或"配置里的显示器已经不在了"时走到这里。
     /// </summary>
     private void PlaceAtBottomLeft()
     {
@@ -193,6 +274,132 @@ public partial class FloatWindow : Window
         Rect wa = SystemParameters.WorkArea;
         Left = wa.Left + (wa.Width - ActualWidth) / 2;
         Top = wa.Top + (wa.Height - ActualHeight) / 2;
+    }
+
+    // =================================================================
+    // 位置持久化与吸附（6.5 / 6.7）
+    // =================================================================
+
+    private IntPtr Handle => new WindowInteropHelper(this).Handle;
+
+    /// <summary>
+    /// 按配置还原位置。全程物理像素（见 <see cref="Monitors"/> 的说明）。
+    /// </summary>
+    /// <returns>false = 没有记录 / 取不到显示器 / 尺寸还没算好，调用方走默认位置。</returns>
+    private bool TryRestorePlacement()
+    {
+        var saved = new FloatPlacement(_config.FloatMonitor, _config.FloatRatioX, _config.FloatRatioY);
+        if (!saved.IsKnown) return false;
+
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return false;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return false;
+
+        int widthPx = rect.Right - rect.Left;
+        int heightPx = rect.Bottom - rect.Top;
+        if (widthPx <= 0 || heightPx <= 0) return false;   // SizeToContent 还没算完
+
+        Monitors.TryPrimary(out MonitorArea primary);
+        if (!saved.TryResolve(Monitors.All(), primary, widthPx, heightPx,
+                              out _, out int leftPx, out int topPx))
+            return false;
+
+        Monitors.MoveWindowTo(hwnd, leftPx, topPx);
+        return true;
+    }
+
+    /// <summary>记录当前位置。拖动结束、锁定切换时调用；失败静默（下次启动回默认位置而已）。</summary>
+    private void SavePlacement()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
+
+        FloatPlacement placement = FloatPlacement.Capture(work.Device, rect.Left, rect.Top, work);
+        if (!placement.IsKnown) return;
+
+        _config.FloatMonitor = placement.Monitor;
+        _config.FloatRatioX = placement.RatioX;
+        _config.FloatRatioY = placement.RatioY;
+        ConfigStore.SaveCurrent();
+    }
+
+    /// <summary>
+    /// 松手时贴边（6.5）：距工作区边缘 &lt; 12 DIP 就吸上去，另一轴保持不动。
+    ///
+    /// <para>
+    /// 阈值必须按当前显示器缩放换算成物理像素：12 DIP 在 150% 屏上是 18 像素，
+    /// 直接拿 12 去比会让高 DPI 用户觉得"怎么拖都吸不上"。
+    /// </para>
+    /// </summary>
+    private void SnapToWorkAreaEdge()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
+
+        const double SnapDip = 12;
+        int snap = (int)Math.Round(SnapDip * Monitors.ScaleForWindow(hwnd));
+
+        int widthPx = rect.Right - rect.Left;
+        int heightPx = rect.Bottom - rect.Top;
+
+        int left = rect.Left;
+        int top = rect.Top;
+
+        if (Math.Abs(rect.Left - work.Left) <= snap) left = work.Left;                    // 贴左
+        else if (Math.Abs(work.Right - rect.Right) <= snap) left = work.Right - widthPx;  // 贴右
+
+        if (Math.Abs(rect.Top - work.Top) <= snap) top = work.Top;                        // 贴上
+        else if (Math.Abs(work.Bottom - rect.Bottom) <= snap) top = work.Bottom - heightPx; // 贴下
+
+        if (left == rect.Left && top == rect.Top) return;
+
+        Monitors.MoveWindowTo(hwnd, left, top);
+    }
+
+    /// <summary>
+    /// 松手后的位置整理：先贴边（6.5），再夹进"至少 60% 可见"的范围（6.5「拖到屏幕外」）。
+    ///
+    /// <para>
+    /// 顺序不能反。先夹紧再吸附的话，被夹到工作区边缘的窗口会被吸附逻辑再挪一次，
+    /// 贴边的手感反而变成"弹一下"。吸附只认 12 DIP 以内，夹紧只认越界，
+    /// 两者作用范围不重叠，先吸后夹是唯一不会互相打架的顺序。
+    /// </para>
+    /// </summary>
+    private void SettlePlacement()
+    {
+        SnapToWorkAreaEdge();
+        ClampInsideWorkArea();
+    }
+
+    /// <summary>把窗口夹回"至少 60% 落在工作区内"。拖出屏幕时松手会被拉回来。</summary>
+    private void ClampInsideWorkArea()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
+
+        int left = rect.Left;
+        int top = rect.Top;
+        FloatPlacement.Clamp(work, rect.Right - rect.Left, rect.Bottom - rect.Top, ref left, ref top);
+
+        if (left == rect.Left && top == rect.Top) return;
+        Monitors.MoveWindowTo(hwnd, left, top);
+    }
+
+    /// <summary>把窗口矩形、工作区、缩放打成一串，供自测核对。</summary>
+    private string DescribePlacement(string tag)
+    {
+        if (!Monitors.TryGetRect(Handle, out Win32Window.RECT r)) return $"{tag}: 取不到窗口矩形";
+
+        Monitors.TryForWindow(Handle, out MonitorArea work);
+        return $"{tag}: window=({r.Left},{r.Top})-({r.Right},{r.Bottom}) " +
+               $"work=({work.Left},{work.Top})-({work.Right},{work.Bottom}) " +
+               $"device={work.Device} scale={Monitors.ScaleForWindow(Handle):F2}";
     }
 
     // =================================================================
@@ -274,11 +481,17 @@ public partial class FloatWindow : Window
 
         if (e.ClickCount == 2)
         {
-            // 双击切大窗口（Q-05）
+            // 双击切大窗口（Q-05）。放在锁定判断之前：锁定只锁位置，不锁"切回大窗口"。
             MainWindowRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
 
+        if (_locked) return;   // 6.5：锁定后拖动无效
+
+        // 拖动期间停掉数据更新（6.5）。DragMove 会把 UI 线程交给模态循环，
+        // 不闸住数据入口的话数字仍每 0.5s 重排一次，拖起来有顿感。
+        // Paused 在共享 State 上，两个视图同时静默。
+        _state.Paused = true;
         try
         {
             DragMove();
@@ -288,6 +501,14 @@ public partial class FloatWindow : Window
             // 鼠标在 DragMove 之前就松开了（双击的第二下、或者远程会话里丢事件）——
             // 这不是错误，吞掉即可，否则会冒到 Dispatcher 上写一份无意义的崩溃日志。
         }
+        finally
+        {
+            _state.Paused = false;
+        }
+
+        // 吸附、夹紧与落盘放在松手之后：拖动途中改位置会和 DragMove 抢，窗口会抖
+        SettlePlacement();
+        SavePlacement();
     }
 
     private void Shell_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
@@ -322,7 +543,32 @@ public partial class FloatWindow : Window
     }
 
     private void ToggleGlass_Click(object sender, RoutedEventArgs e)
-        => ApplyGlass(GlassMenu.IsChecked);
+    {
+        ApplyGlass(GlassMenu.IsChecked);
+        PersistAppearance();
+    }
+
+    private void ToggleLock_Click(object sender, RoutedEventArgs e)
+    {
+        // IsCheckable 的菜单项点下去时 WPF 已经先把 IsChecked 翻过了，这里读到的就是新状态
+        _locked = LockMenu.IsChecked;
+        _config.FloatLocked = _locked;
+        ConfigStore.SaveCurrent();
+    }
+
+    /// <summary>
+    /// 把当前外观写回配置。改一次存一次，而不是等退出 ——
+    /// 悬浮窗被任务管理器结束、或程序崩掉时，用户刚调好的外观不该丢。
+    /// </summary>
+    private void PersistAppearance()
+    {
+        if (!PersistToConfig) return;
+
+        _config.FloatTheme = _theme.ToString();
+        _config.FloatGlassLevel = _level + 1;
+        _config.FloatGlassEnabled = _glass;
+        ConfigStore.SaveCurrent();
+    }
 
     /// <summary>
     /// 菜单勾选状态跟实际状态对齐。用 IsChecked 直接互斥即可——菜单项是 IsCheckable 的，
@@ -334,6 +580,11 @@ public partial class FloatWindow : Window
 
         ThemeLightMenu.IsChecked = _theme == GlassTheme.Light;
         ThemeDarkMenu.IsChecked = _theme == GlassTheme.Dark;
+
+        // 这两项也要跟配置对齐：从 config.json 读回"深色 + 锁定"时，
+        // 菜单若还显示默认的勾选状态，用户会以为设置没生效。
+        if (LockMenu is not null) LockMenu.IsChecked = _locked;
+        if (GlassMenu is not null) GlassMenu.IsChecked = _glass;
 
         // 档位用数组走循环：加档时只要 XAML 补一项、LevelCount 加一，这里不用动
         MenuItem?[] levels =

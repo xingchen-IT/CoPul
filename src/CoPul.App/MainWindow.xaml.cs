@@ -28,8 +28,16 @@ public partial class MainWindow : Window
     /// <summary>自测用：只在 --stats 下开启，正常运行时布局仍由 WPF 自己延后处理。</summary>
     public bool MeasureLayout { get; set; }
 
-    /// <summary>自测用：暂停把快照写进界面，用于分离「WPF 渲染静态窗口」与「每次更新的布局成本」。</summary>
-    public bool Paused { get; set; }
+    /// <summary>
+    /// 暂停把快照写进界面。自测（<c>--freeze</c>）用它分离「渲染静态窗口」与「每帧更新」的成本；
+    /// M2 起悬浮窗拖动时也会置位（6.5）。实际标志存在共享的 <see cref="DashboardState"/> 上，
+    /// 这里是转发 —— 两个窗口看到的必须是同一个开关。
+    /// </summary>
+    public bool Paused
+    {
+        get => _state.Paused;
+        set => _state.Paused = value;
+    }
 
     /// <summary>圆角半径（DIP）。与 XAML 里外层 Border 的 CornerRadius 必须一致，否则描边会露角。</summary>
     private const double CornerRadiusDip = 8;

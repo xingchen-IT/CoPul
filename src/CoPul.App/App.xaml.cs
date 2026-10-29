@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CoPul.App.Interop;
+using CoPul.App.Sdk;
 
 namespace CoPul.App;
 
@@ -42,7 +43,7 @@ public partial class App : Application
         {
             if (floating is not null) return floating;
 
-            floating = new FloatWindow(window.State);
+            floating = new FloatWindow(window.State, ConfigStore.Current);
             floating.MainWindowRequested += (_, _) =>
             {
                 floating?.Hide();
@@ -107,10 +108,26 @@ public partial class App : Application
             f.CenterOnScreen = e.Args.Contains("--float-center");   // 验收毛玻璃时用
 
             // 自测开关必须在 Show 之前设：Show 之后 HWND 就绪，玻璃会按当时的值画一遍。
+            // 这些参数是在改外观，如果照常落盘，跑一次验收就会把用户的配置改成"深色第 1 档"。
+            bool glassOverride = e.Args.Contains("--glass-dark") || ArgValue(e.Args, "--glass-level") is not null;
+            if (glassOverride) f.PersistToConfig = false;
+
+            // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路
+            if (e.Args.Contains("--float-persist-probe")) f.PersistProbe = true;
+
             if (e.Args.Contains("--glass-dark")) f.Theme = FloatWindow.GlassTheme.Dark;
             if (int.TryParse(ArgValue(e.Args, "--accent-flags"), out int flags)) WindowGlass.AccentFlagsOverride = flags;
             if (int.TryParse(ArgValue(e.Args, "--accent-state"), out int astate)) WindowGlass.AccentStateOverride = astate;
             if (int.TryParse(ArgValue(e.Args, "--glass-level"), out int lv)) f.GlassLevel = lv;
+
+            // --float-snap-probe x,y：摆到 (x,y) 再跑吸附，结果写进 shots 的 sidecar 文件
+            string? snapProbe = ArgValue(e.Args, "--float-snap-probe");
+            if (snapProbe is not null)
+            {
+                string[] parts = snapProbe.Split(',');
+                if (parts.Length == 2 && int.TryParse(parts[0], out int px) && int.TryParse(parts[1], out int py))
+                    f.SnapProbe = (px, py);
+            }
 
             f.Show();
         }
@@ -166,7 +183,10 @@ public partial class App : Application
                     if (target is FloatWindow fw)
                         File.WriteAllText(shotScreen + ".info.txt",
                             $"glass: {fw.GlassMode}{Environment.NewLine}" +
-                            $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP");
+                            $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP" +
+                            (fw.PlacementDiag.Length == 0
+                                ? string.Empty
+                                : Environment.NewLine + "place: " + fw.PlacementDiag));
                 }
                 else
                 {

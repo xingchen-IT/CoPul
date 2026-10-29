@@ -532,6 +532,17 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// <summary>自测用：跳过「各核心」长文本的更新，用来判断布局成本是否集中在它上面。</summary>
     public bool SuppressCoreLine { get; set; }
 
+    /// <summary>
+    /// 暂停数据更新（6.5「拖动中降低刷新频率」）。
+    ///
+    /// <para>
+    /// 放在 State 上而不是各自窗口里：大窗口与悬浮窗共用同一份 State，
+    /// 拖动悬浮窗时如果只挡悬浮窗的赋值，采集侧仍会把几十条属性质变通知推给没人看的视图。
+    /// 这里一刀切在数据入口，两个视图同时静默。
+    /// </para>
+    /// </summary>
+    public bool Paused { get; set; }
+
     /// <summary>每帧刷新（0.5s 一次），只做字符串格式化与赋值。折叠的区块整段跳过。</summary>
     public void ApplySnapshot(MetricSnapshot snap)
     {

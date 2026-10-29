@@ -32,6 +32,10 @@
             <ContextMenu>
                 <MenuItem Header="显示大窗口" Click="ShowMain_Click" />
 
+                <MenuItem x:Name="LockMenu" Header="锁定位置" IsCheckable="True"
+                          Click="ToggleLock_Click"
+                          ToolTip="锁定后拖动无效，防止误碰挪走（6.5）" />
+
                 <Separator />
 
                 <!-- 单选靠代码互斥（WPF 菜单没有现成的 RadioMenuItem） -->
@@ -55,6 +59,14 @@
 
                 <MenuItem x:Name="GlassMenu" Header="毛玻璃" IsCheckable="True" IsChecked="True"
                           Click="ToggleGlass_Click" />
+
+                <!-- 6.6 的菜单结构里这两项 v1 就有，但功能不在 v1 范围：
+                     悬浮窗六字段必须全显（Q-03），设置页排在 M4。留成置灰项而不是直接删掉，
+                     是为了让菜单结构和需求对得上，也避免以后加回来时改结构。 -->
+                <MenuItem Header="显示字段" IsEnabled="False"
+                          ToolTip="v1 全部常显，不提供隐藏（Q-03）" />
+                <MenuItem Header="设置…" IsEnabled="False"
+                          ToolTip="设置页在 M4 提供" />
 
                 <Separator />
                 <MenuItem Header="退出" Click="Exit_Click" />
