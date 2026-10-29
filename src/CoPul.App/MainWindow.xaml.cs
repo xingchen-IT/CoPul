@@ -57,7 +57,9 @@ public partial class MainWindow : Window
 
         DataContext = _state;
 
-        _config = ConfigStore.Load();
+        // 用共享实例而不是自己 Load 一份：悬浮窗也要写同一份配置（外观 / 位置），
+        // 各持一份会互相覆盖（见 ConfigStore.Current 的说明）。
+        _config = ConfigStore.Current;
         RestoreLayout(_config);
 
         _host = new CollectorHost(Dispatcher);

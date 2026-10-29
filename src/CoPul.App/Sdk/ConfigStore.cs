@@ -37,6 +37,36 @@ public sealed class AppConfig
     /// <summary>折叠的区块 id：<c>"cpu"</c> / <c>"gpu"</c> / <c>"mem"</c> / <c>"disk"</c>（5.4 要求持久化）。</summary>
     public string[] CollapsedBlocks { get; set; } = Array.Empty<string>();
 
+    // ---- 悬浮窗外观（M2）----
+    // 原来主题与浓度只活在 FloatWindow 的字段里，重启就回到「浅色 + 适中」，
+    // 用户每次开机都要重新点一遍，等于没有这个功能。
+
+    /// <summary>玻璃主题：<c>"Light"</c> / <c>"Dark"</c>。存字符串而不是枚举——
+    /// 枚举序号会在插入新值时整体错位，字符串认不出来时还能安全回退默认值。</summary>
+    public string FloatTheme { get; set; } = "Light";
+
+    /// <summary>浓度档 1–7（1 最透）。越界由 FloatWindow 夹取，不抛异常。</summary>
+    public int FloatGlassLevel { get; set; } = 4;
+
+    /// <summary>毛玻璃开关（右键菜单里那一项）。</summary>
+    public bool FloatGlassEnabled { get; set; } = true;
+
+    /// <summary>位置锁定（6.5）：锁定后拖动无效，防止误碰挪走。</summary>
+    public bool FloatLocked { get; set; }
+
+    // ---- 悬浮窗位置（6.7）----
+    // 存「显示器 + 相对比例」而不是绝对像素：换分辨率、改缩放、拔插显示器后，
+    // 绝对坐标会把窗口扔到屏幕外。三个字段是一个整体，Monitor 为空即视为"从未摆放过"。
+
+    /// <summary>显示器设备名（如 <c>\\.\DISPLAY1</c>）。空 = 未记录过位置。</summary>
+    public string FloatMonitor { get; set; } = string.Empty;
+
+    /// <summary>窗口左上角相对该显示器**工作区**（已扣任务栏）的横向比例，0–1。</summary>
+    public double FloatRatioX { get; set; } = double.NaN;
+
+    /// <summary>纵向比例，0–1。</summary>
+    public double FloatRatioY { get; set; } = double.NaN;
+
     public int ConfigVersion { get; set; } = 1;
 
     /// <summary>读配置时遇到的异常（读不出来就用默认值，不弹窗、不阻断启动）。诊断用。</summary>
@@ -50,6 +80,20 @@ public static class ConfigStore
     private const string FolderName = "CoPul";
     private const string FileName = "config.json";
 
+    /// <summary>
+    /// 全进程共享的唯一一份配置。
+    ///
+    /// <para>
+    /// 为什么必须是单例：<see cref="MainWindow"/> 与 <see cref="FloatWindow"/> 都会改配置
+    /// （大窗口存几何、悬浮窗存外观与位置），而 <see cref="Save"/> 是整份覆盖写。
+    /// 两边各 <c>Load</c> 一份的话，后写的那个会把它读到的旧值盖回去 ——
+    /// 表现为"刚调好的浓度，关掉大窗口又变回去了"。
+    /// </para>
+    /// </summary>
+    public static AppConfig Current => _current ??= LoadFromDisk();
+
+    private static AppConfig? _current;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -62,7 +106,8 @@ public static class ConfigStore
     public static string Path => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName, FileName);
 
-    public static AppConfig Load()
+    /// <summary>从磁盘读一次。外部请用 <see cref="Current"/>，不要绕过缓存。</summary>
+    private static AppConfig LoadFromDisk()
     {
         string path = Path;
         try
@@ -84,7 +129,7 @@ public static class ConfigStore
     /// A-07：先写 <c>config.json.tmp</c> 并落盘，再用 <see cref="File.Replace"/> 原子替换。
     ///
     /// 为什么不能直接 <c>File.WriteAllText</c>：那个调用在写了一半时断电/被杀进程，
-    /// 留下的就是一个语法不完整的 JSON，下次启动 <see cref="Load"/> 抛异常 —— 用户表现为
+    /// 留下的就是一个语法不完整的 JSON，下次启动 <see cref="LoadFromDisk"/> 抛异常 —— 用户表现为
     /// "设置一直保存不上"。Replace 在 NTFS 上是原子的，要么旧文件、要么新文件。
     ///
     /// 只在退出与用户改设置时调用，不进采集循环（11 章：配置写入频率仅退出/变更时）。
@@ -99,19 +144,10 @@ public static class ConfigStore
             string? dir = System.IO.Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            // LoadError 不该写回磁盘，否则下次读出来还以为又出错了
-            var snapshot = new AppConfig
-            {
-                WindowLeft = config.WindowLeft,
-                WindowTop = config.WindowTop,
-                WindowWidth = config.WindowWidth,
-                WindowHeight = config.WindowHeight,
-                WindowMaximized = config.WindowMaximized,
-                CollapsedBlocks = config.CollapsedBlocks,
-                ConfigVersion = config.ConfigVersion
-            };
-
-            string json = JsonSerializer.Serialize(snapshot, JsonOptions);
+            // 直接序列化整份配置。以前这里手抄了一个 snapshot 白名单，结果是每次加新字段
+            // 都得记得同步改两处，漏了就是"设置存不上"且没有任何报错（M2 差点踩第二次）。
+            // LoadError 标了 [JsonIgnore]，本来就不会落盘 —— 以后新增的运行时字段照此办理。
+            string json = JsonSerializer.Serialize(config, JsonOptions);
 
             // 必须显式 Flush(true)：只写进 OS 缓存就返回的话，"原子替换"换上去的可能还是空内容。
             using (var fs = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -139,4 +175,7 @@ public static class ConfigStore
             return false;
         }
     }
+
+    /// <summary>把共享实例落盘。悬浮窗改一次外观调一次，不需要自己拿配置引用。</summary>
+    public static bool SaveCurrent() => Save(Current);
 }
