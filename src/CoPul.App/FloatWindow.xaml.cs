@@ -41,21 +41,30 @@ public partial class FloatWindow : Window
     /// <para>
     /// 数值来自实测而不是拍脑袋：在 6 DIP 棋盘格背景上，浅色档三档的窗内亮度是
     /// 153 / 178 / 225（棋盘平均 142），对应遮盖约 11% / 35% / 80%。
-    /// 五档按这条曲线插值到 15%–92%，跨度均匀，每一档都能看出差别。
+    /// 七档按这条曲线插值，跨度均匀，每一档都能看出差别。
     /// </para>
     ///
     /// <para>
     /// 深浅两套仍然分开：浅色是"白雾提亮"，深色是"暗雾压暗"，同名档位的遮盖值不同。
-    /// 序号与菜单一一对应：0 = 很透 … 4 = 很实，默认取 2（适中）。
+    /// 序号与菜单一一对应：0 = 极透 … 6 = 极实，默认取 3（适中）。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>前两档是"透到几乎没有着色"，只能调 accent 的 tint。</b>Shell 遮罩已经到 0 了，
+    /// 再往下压就会变负；此时唯一的着色来源是 accent 层，所以这两档把 accent 从 0.10
+    /// 压到 0.04 / 0.00。0.00 那档等于"只模糊、不叠色"——背景是什么颜色，窗口就是它的模糊版，
+    /// <b>浅色主题下遇到暗壁纸时深色文字会读不清</b>，这是这条路的物理下限，不是参数没调够。
     /// </para>
     /// </summary>
-    private static readonly (double Accent, double Shell)[] LightSteps =
+    private static readonly (double Accent, double Shell, bool BlurOnly)[] LightSteps =
     {
-        (0.10, 0.00),   // 很透（实测遮盖 ~20%）
-        (0.10, 0.25),
-        (0.10, 0.47),   // 适中（默认，~60%）
-        (0.10, 0.69),
-        (0.10, 0.88),   // 很实（~93%）
+        (0.00, 0.00, true),    // 极透：BLURBEHIND 基底为 0，实测遮盖 2%（无模糊）
+        (0.00, 0.00, false),   // 很透：亚克力自带的 17% 基底就是下限
+        (0.10, 0.14, false),   // 较透 ~36%
+        (0.10, 0.47, false),   // 适中（默认）~60%
+        (0.10, 0.69, false),   // 较实 ~77%
+        (0.10, 0.88, false),   // 很实 ~94%
+        (0.10, 0.97, false),   // 极实 ~98%
     };
 
     /// <summary>
@@ -63,17 +72,19 @@ public partial class FloatWindow : Window
     /// 窗口内颜色与背景差不到 1/255），浓度全由 Shell 那层深色遮罩决定，给了也是白给。
     /// 这里靠 <c>AccentState</c> 继续拿到模糊，靠 Shell 拿到压暗。
     /// </summary>
-    private static readonly (double Accent, double Shell)[] DarkSteps =
+    private static readonly (double Accent, double Shell, bool BlurOnly)[] DarkSteps =
     {
-        (0.00, 0.10),   // 很透
-        (0.00, 0.32),
-        (0.00, 0.52),   // 适中（默认）
-        (0.00, 0.72),
-        (0.00, 0.90),   // 很实
+        (0.00, 0.00, true),    // 极透（无模糊）
+        (0.00, 0.00, false),   // 很透 ~17%
+        (0.00, 0.22, false),   // 较透 ~36%
+        (0.00, 0.52, false),   // 适中（默认）~52%
+        (0.00, 0.72, false),   // 较实 ~72%
+        (0.00, 0.90, false),   // 很实 ~90%
+        (0.00, 0.97, false),   // 极实 ~97%
     };
 
     private GlassTheme _theme = GlassTheme.Light;
-    private int _level = 2;      // 0-based：2 = 适中
+    private int _level = 3;      // 0-based：3 = 适中
     private bool _glass = true;
 
     /// <summary>
@@ -125,13 +136,16 @@ public partial class FloatWindow : Window
         }
     }
 
-    /// <summary>浓度档 1–5（1 最透）。越界会被夹住，不抛异常——菜单 Tag 解析失败也不该炸窗口。</summary>
+    /// <summary>浓度档总数。档位表、菜单项、越界夹取都从这一处取，加档时改这里就够。</summary>
+    private const int LevelCount = 7;
+
+    /// <summary>浓度档 1–7（1 最透）。越界会被夹住，不抛异常——菜单 Tag 解析失败也不该炸窗口。</summary>
     public int GlassLevel
     {
         get => _level + 1;
         set
         {
-            int index = Math.Clamp(value, 1, 5) - 1;
+            int index = Math.Clamp(value, 1, LevelCount) - 1;
             if (_level == index) return;
             _level = index;
             SyncMenuChecks();
@@ -200,18 +214,26 @@ public partial class FloatWindow : Window
             WindowGlass.Clear(this);
             GlassMode = "关闭";
             Shell.Background = light ? Palette.Brush("BrushGlassSolid") : Palette.Brush("BrushBg");
+            _edgeIdle = _edgeNormal;   // 有实底了，描边回到常态那一档
             return;
         }
 
-        (double accent, double shell) = (light ? LightSteps : DarkSteps)[_level];
+        (double accent, double shell, bool blurOnly) = (light ? LightSteps : DarkSteps)[_level];
 
-        // 深浅只差 dark 标志与 tint 的 RGB，accent 那条路是同一段代码（A-36）
-        GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic, dark: !light, tintOpacity: accent);
+        // 深浅只差 dark 标志与 tint 的 RGB，accent 那条路是同一段代码（A-36）。
+        // blurOnly 只对「极透」档为真：那一档放弃模糊换 2% 的遮盖（A-37）。
+        GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic, dark: !light,
+            tintOpacity: accent, blurOnly: blurOnly);
 
         // Shell 遮罩：浅色铺白、深色铺 Palette 背景色，alpha 由档位给
         Shell.Background = Tint(
             light ? Color.FromRgb(0xF6, 0xF8, 0xFB) : Color.FromRgb(0x0F, 0x12, 0x16),
             shell);
+
+        // 极透档几乎没有底色，淡描边会完全看不见边界，窗口像"文字直接浮在桌面上"。
+        // 这一档借用悬停档的描边作为常驻值，用户至少能找到窗口的四条边。
+        _edgeIdle = blurOnly ? _edgeHover : _edgeNormal;
+        Shell.BorderBrush = _edgeIdle;
     }
 
     private void ApplyTextTheme(bool light)
@@ -227,6 +249,12 @@ public partial class FloatWindow : Window
 
     private Brush _edgeNormal = Palette.Brush("BrushGlassEdge");
     private Brush _edgeHover = Palette.Brush("BrushGlassEdgeHover");
+
+    /// <summary>
+    /// 鼠标不在窗口上时实际用的描边。平时等于 <see cref="_edgeNormal"/>；
+    /// 「极透」档没有底色打底，1px 淡描边根本看不见边界，这时换成 <see cref="_edgeHover"/> 那一档。
+    /// </summary>
+    private Brush _edgeIdle = Palette.Brush("BrushGlassEdge");
 
     private static SolidColorBrush Tint(Color rgb, double alpha)
     {
@@ -278,7 +306,7 @@ public partial class FloatWindow : Window
     /// </summary>
     private void Shell_MouseEnter(object sender, MouseEventArgs e) => Shell.BorderBrush = _edgeHover;
 
-    private void Shell_MouseLeave(object sender, MouseEventArgs e) => Shell.BorderBrush = _edgeNormal;
+    private void Shell_MouseLeave(object sender, MouseEventArgs e) => Shell.BorderBrush = _edgeIdle;
 
     private void ShowMain_Click(object sender, RoutedEventArgs e)
         => MainWindowRequested?.Invoke(this, EventArgs.Empty);
@@ -307,11 +335,14 @@ public partial class FloatWindow : Window
         ThemeLightMenu.IsChecked = _theme == GlassTheme.Light;
         ThemeDarkMenu.IsChecked = _theme == GlassTheme.Dark;
 
-        Level1Menu.IsChecked = _level == 0;
-        Level2Menu.IsChecked = _level == 1;
-        Level3Menu.IsChecked = _level == 2;
-        Level4Menu.IsChecked = _level == 3;
-        Level5Menu.IsChecked = _level == 4;
+        // 档位用数组走循环：加档时只要 XAML 补一项、LevelCount 加一，这里不用动
+        MenuItem?[] levels =
+        {
+            Level1Menu, Level2Menu, Level3Menu, Level4Menu,
+            Level5Menu, Level6Menu, Level7Menu,
+        };
+        for (int i = 0; i < levels.Length; i++)
+            if (levels[i] is { } item) item.IsChecked = _level == i;
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();

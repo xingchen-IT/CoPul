@@ -105,7 +105,7 @@ internal static class WindowGlass
     /// accent tint 的 alpha，0–1。这是"模糊层之上的那层颜色有多浓"，
     /// 不直接等于最终遮盖率——窗口自身的 Shell 遮罩还会再叠一层。
     /// </param>
-    public static string Apply(Window window, Backdrop kind, bool dark, double tintOpacity)
+    public static string Apply(Window window, Backdrop kind, bool dark, double tintOpacity, bool blurOnly = false)
     {
         IntPtr hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == IntPtr.Zero) return "未取到 HWND（必须在 SourceInitialized 之后调用）";
@@ -133,7 +133,7 @@ internal static class WindowGlass
         // 原因是 WPF 的非 layered 窗口走的是不透明 DXGI swapchain（alpha 被 DWM 忽略），
         // SYSTEMBACKDROP_TYPE 即使返回 S_OK 也画不出来——实测窗口内部像素级均匀的纯色。
         // accent 是 DWM 在窗口后方注入的一层，不依赖 swapchain alpha，是 WPF 上真正能出模糊那条路。
-        if (TryApplyAccent(hwnd, kind, dark, tintOpacity))
+        if (TryApplyAccent(hwnd, kind, dark, tintOpacity, blurOnly))
             return kind == Backdrop.Mica ? "Accent Blur（Mica 不可用，降级为模糊）" : "Accent Acrylic";
 
         int type = kind == Backdrop.Mica ? DWMSBT_MAINWINDOW : DWMSBT_TRANSIENTWINDOW;
@@ -154,7 +154,14 @@ internal static class WindowGlass
     /// </summary>
     internal static int AccentFlagsOverride = 0;
 
-    private static bool TryApplyAccent(IntPtr hwnd, Backdrop kind, bool dark, double tintOpacity)
+    /// <summary>
+    /// 自测钩子：覆盖 <c>AccentState</c>（0 = 不覆盖，用 <c>ACRYLICBLURBEHIND</c>）。
+    /// 用来验证「极透档能不能压到 17% 以下」——亚克力自带一层约 17% 的 basal tint，
+    /// 那是它和 <c>BLURBEHIND</c> 的差别所在。
+    /// </summary>
+    internal static int AccentStateOverride = 0;
+
+    private static bool TryApplyAccent(IntPtr hwnd, Backdrop kind, bool dark, double tintOpacity, bool blurOnly)
     {
         // GradientColor 是 AABBGGRR。alpha 不是随便取的：accent 路径的 tint 会**再叠一次**
         // 窗口自己的半透明底（FloatWindow 的 Shell），两层相乘才是最终"遮住背景"的比例。
@@ -172,13 +179,21 @@ internal static class WindowGlass
         int b = dark ? 0x16 : 0xFB;
         int color = (alpha << 24) | (b << 16) | (g << 8) | r;
 
+        // BLURBEHIND(3) 在 Win11 上**不模糊**（A-37 实测：棋盘格在它下面纹丝不动），
+        // 但它的着色基底是 0，而 ACRYLICBLURBEHIND 自带约 17% 的固有 tint（accent alpha
+        // 已经给到 0 也压不掉）。所以它只用在"极透"那一档：既要透到几乎看不见玻璃，
+        // 就注定不能再要模糊——两者的下限互斥，这里是明确的取舍，不是降级。
+        int accentState = AccentStateOverride != 0
+            ? AccentStateOverride
+            : blurOnly ? ACCENT_ENABLE_BLURBEHIND : ACCENT_ENABLE_ACRYLICBLURBEHIND;
+
         var policy = new AccentPolicy
         {
             // 深浅两档都用 Acrylic，只换 GradientColor 的 RGB。
             // **不要**给浅色单独用 ACCENT_ENABLE_BLURBEHIND(3)：它在 Win11 上已被掏空，
             // 既不做模糊也不吃 tint，实测窗口内是纯黑 + 窗口自身遮罩（#2C2D2F 正好等于
             // "16% 白叠纯黑"），看起来像一块不透明的灰板。
-            AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
+            AccentState = accentState,
             AccentFlags = AccentFlagsOverride,
             GradientColor = color,
             AnimationId = 0,

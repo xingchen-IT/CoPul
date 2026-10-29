@@ -43,12 +43,14 @@
                 </MenuItem>
 
                 <MenuItem Header="浓度">
-                    <MenuItem x:Name="Level1Menu" Header="很透" IsCheckable="True" Click="Level_Click" Tag="1" />
-                    <MenuItem x:Name="Level2Menu" Header="较透" IsCheckable="True" Click="Level_Click" Tag="2" />
-                    <MenuItem x:Name="Level3Menu" Header="适中" IsCheckable="True" IsChecked="True"
-                              Click="Level_Click" Tag="3" />
-                    <MenuItem x:Name="Level4Menu" Header="较实" IsCheckable="True" Click="Level_Click" Tag="4" />
-                    <MenuItem x:Name="Level5Menu" Header="很实" IsCheckable="True" Click="Level_Click" Tag="5" />
+                    <MenuItem x:Name="Level1Menu" Header="极透（无模糊）" IsCheckable="True" Click="Level_Click" Tag="1" />
+                    <MenuItem x:Name="Level2Menu" Header="很透" IsCheckable="True" Click="Level_Click" Tag="2" />
+                    <MenuItem x:Name="Level3Menu" Header="较透" IsCheckable="True" Click="Level_Click" Tag="3" />
+                    <MenuItem x:Name="Level4Menu" Header="适中" IsCheckable="True" IsChecked="True"
+                              Click="Level_Click" Tag="4" />
+                    <MenuItem x:Name="Level5Menu" Header="较实" IsCheckable="True" Click="Level_Click" Tag="5" />
+                    <MenuItem x:Name="Level6Menu" Header="很实" IsCheckable="True" Click="Level_Click" Tag="6" />
+                    <MenuItem x:Name="Level7Menu" Header="极实" IsCheckable="True" Click="Level_Click" Tag="7" />
                 </MenuItem>
 
                 <MenuItem x:Name="GlassMenu" Header="毛玻璃" IsCheckable="True" IsChecked="True"

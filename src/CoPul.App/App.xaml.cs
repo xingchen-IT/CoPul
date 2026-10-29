@@ -109,6 +109,7 @@ public partial class App : Application
             // 自测开关必须在 Show 之前设：Show 之后 HWND 就绪，玻璃会按当时的值画一遍。
             if (e.Args.Contains("--glass-dark")) f.Theme = FloatWindow.GlassTheme.Dark;
             if (int.TryParse(ArgValue(e.Args, "--accent-flags"), out int flags)) WindowGlass.AccentFlagsOverride = flags;
+            if (int.TryParse(ArgValue(e.Args, "--accent-state"), out int astate)) WindowGlass.AccentStateOverride = astate;
             if (int.TryParse(ArgValue(e.Args, "--glass-level"), out int lv)) f.GlassLevel = lv;
 
             f.Show();
