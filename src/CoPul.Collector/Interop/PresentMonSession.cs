@@ -4,8 +4,18 @@ using System.Text;
 
 namespace CoPul.Collector.Interop;
 
-/// <summary>一帧呈现记录（F01/F03/F04 的原料）。</summary>
-public readonly record struct PresentFrame(int Pid, string App, double BetweenMs);
+/// <summary>
+/// 一帧呈现记录（F01/F03/F04 的原料）。
+///
+/// <paramref name="TsMs"/> 是**呈现时刻**（已重基到本进程的 Stopwatch 时钟），不是收到这一行的
+/// 时刻。这两者必须分开：PresentMon 是把若干行攒起来再写的，读者被饿一会儿就会一次性收到
+/// 几百行，用到达时刻当时间轴等于把这些帧压进几毫秒，算出来就是几万 FPS（2026-10-29 实机
+/// 复现：71000 FPS / 帧时间 0.0ms，而 1% Low 却是正常的 14）。
+///
+/// <paramref name="NewEpoch"/>：本帧触发了时基重对齐（PresentMon 重启，TimeInSeconds 归零）。
+/// 此时旧的帧时间戳全部失效，上层必须清掉已攒的历史。
+/// </summary>
+public readonly record struct PresentFrame(int Pid, string App, double BetweenMs, long TsMs, bool NewEpoch);
 
 /// <summary>
 /// PresentMon 子进程会话：负责起进程、读 stdout 的 CSV 流、把每行解析成 <see cref="PresentFrame"/>。
@@ -30,6 +40,12 @@ public sealed class PresentMonSession : IDisposable
     private const int RestartIntervalMs = 3000;
     private const int MaxConsecutiveRestarts = 5;
 
+    /// <summary>
+    /// 判定"时基跳变"的容差。正常积压最多让到达时刻比呈现时刻晚一两秒，
+    /// 超过 10 秒只可能是 PresentMon 换了会话（TimeInSeconds 归零）。
+    /// </summary>
+    private const long EpochSlackMs = 10_000;
+
     private readonly object _gate = new();
     private Process? _proc;
     private Thread? _reader;
@@ -41,6 +57,14 @@ public sealed class PresentMonSession : IDisposable
     private long _frameCount;
     private long _parseErrors;
     private long _eventsLost;
+
+    /// <summary>
+    /// 呈现时刻 → 本进程时钟的偏移量：<c>本机时刻 - TimeInSeconds*1000</c>。
+    /// 第一个帧算一次，之后一直沿用；PresentMon 换会话后 TimeInSeconds 从 0 重来，
+    /// 偏移会差出一大截，靠 <see cref="EpochSlackMs"/> 判定并重算。
+    /// </summary>
+    private long _epochOffset;
+    private bool _epochValid;
 
     /// <summary>最近一次失败原因（stderr 原文，或"找不到 exe"），直接进状态栏。</summary>
     public string? LastError { get; private set; }
@@ -203,6 +227,8 @@ public sealed class PresentMonSession : IDisposable
             HeaderParsed = false;
         }
         _running = true;
+        // 新会话的 TimeInSeconds 从 0 重来，必须重新对齐时基（否则头几帧的时间戳落在过去）。
+        _epochValid = false;
 
         _reader = new Thread(() => ReadLoop(proc))
         {
@@ -231,7 +257,7 @@ public sealed class PresentMonSession : IDisposable
         };
         proc.BeginErrorReadLine();
 
-        int iApp = -1, iPid = -1, iPresent = -1, iDisplay = -1;
+        int iApp = -1, iPid = -1, iPresent = -1, iDisplay = -1, iTime = -1;
 
         try
         {
@@ -270,6 +296,9 @@ public sealed class PresentMonSession : IDisposable
                         // 而 2.x 自己的宽表用大写 MsBetweenPresents，两边都要认。
                         iPresent = FindCol(cols, "msBetweenPresents");
                         iDisplay = FindCol(cols, "msBetweenDisplayChange");
+                        // TimeInSeconds：本帧呈现的绝对时刻（会话时钟，秒）。FPS 的时间轴必须
+                        // 建立在它上面，不能用"读到这一行"的时刻（见 PresentFrame.TsMs 注释）。
+                        iTime = FindCol(cols, "TimeInSeconds");
 
                         HeaderParsed = iApp >= 0 && iPid >= 0 && (iPresent >= 0 || iDisplay >= 0);
                         if (!HeaderParsed)
@@ -288,7 +317,7 @@ public sealed class PresentMonSession : IDisposable
                     continue;
                 }
 
-                ParseRow(line, iApp, iPid, iPresent, iDisplay);
+                ParseRow(line, iApp, iPid, iPresent, iDisplay, iTime);
             }
         }
         catch (Exception ex)
@@ -334,7 +363,7 @@ public sealed class PresentMonSession : IDisposable
             Interlocked.Exchange(ref _eventsLost, v);
     }
 
-    private void ParseRow(string line, int iApp, int iPid, int iPresent, int iDisplay)
+    private void ParseRow(string line, int iApp, int iPid, int iPresent, int iDisplay, int iTime)
     {
         // 手工切分而不是 Split(',')：每帧一次，高帧率下这是每秒几百次的分配点。
         Span<Range> ranges = stackalloc Range[32];
@@ -351,9 +380,42 @@ public sealed class PresentMonSession : IDisposable
         if (double.IsNaN(ms) && iDisplay >= 0 && iDisplay < n) TryParseMs(line[ranges[iDisplay]], out ms);
         if (double.IsNaN(ms) || ms <= 0) { Interlocked.Increment(ref _parseErrors); return; }
 
+        long arrival = NowMs();
+        ResolveTimestamp(line, ranges, n, iTime, arrival, out long ts, out bool newEpoch);
+
         Interlocked.Increment(ref _frameCount);
-        Frame?.Invoke(new PresentFrame(pid, line[ranges[iApp]], ms));
+        Frame?.Invoke(new PresentFrame(pid, line[ranges[iApp]], ms, ts, newEpoch));
     }
+
+    /// <summary>
+    /// 把 TimeInSeconds 换算成本进程时钟上的呈现时刻。列缺失或值非法时退回到到达时刻
+    /// （旧行为，会在批量到达时虚高，但总比丢帧好）。
+    /// </summary>
+    private void ResolveTimestamp(string line, Span<Range> ranges, int n, int iTime,
+                                  long arrival, out long ts, out bool newEpoch)
+    {
+        ts = arrival;
+        newEpoch = false;
+
+        if (iTime < 0 || iTime >= n) return;
+        if (!double.TryParse(line[ranges[iTime]], NumberStyles.Float, CultureInfo.InvariantCulture,
+                             out double sec) || double.IsNaN(sec) || sec < 0)
+            return;
+
+        long csv = (long)(sec * 1000.0);
+
+        // 首个帧、或偏移量跳变超过容差（换会话）：重新对齐，并通知上层清历史。
+        if (!_epochValid || Math.Abs(arrival - csv - _epochOffset) > EpochSlackMs)
+        {
+            _epochOffset = arrival - csv;
+            _epochValid = true;
+            newEpoch = true;
+        }
+
+        ts = csv + _epochOffset;
+    }
+
+    private static long NowMs() => (long)(Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency);
 
     /// <summary>按列名找下标，大小写不敏感（1.x 兼容表头用小写 m，2.x 宽表用大写 M）。</summary>
     private static int FindCol(string[] cols, string name)

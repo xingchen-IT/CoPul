@@ -220,16 +220,22 @@ public sealed class FpsProvider : IMetricProvider
     {
         if (!_enabled) return;
 
-        long now = NowMs();
-
         lock (_gate)
         {
+            // 时基重对齐（PresentMon 换了会话）：旧帧的时间戳全部作废。
+            if (f.NewEpoch)
+            {
+                _tracks.Clear();
+                _low1Pid = -1;
+            }
+
             if (!_tracks.TryGetValue(f.Pid, out var track))
             {
                 track = new Track { App = f.App };
                 _tracks[f.Pid] = track;
             }
-            track.Add(now, f.BetweenMs);
+            // 用呈现时刻而不是收到这一行的时刻（见 PresentFrame.TsMs 注释）。
+            track.Add(f.TsMs, f.BetweenMs);
         }
     }
 

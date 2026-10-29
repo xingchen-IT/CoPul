@@ -13,6 +13,11 @@
 //
 // 帧模型：基础 60 FPS，每 300 帧插一次 50ms 的长帧 —— 这样 1% Low 应该明显低于
 // 平均帧率（约 1000/50 = 20 FPS），能一眼看出 1% Low 有没有被算成平均值。
+//
+// **发送方式（2026-10-29 补）：按批次突发写出，不是逐帧。** 真实 PresentMon 是攒够一批
+// 才 fflush 的，CoPul 那侧一旦被饿一会儿就会一次性收到几百行。若按"收到时刻"当时间轴，
+// 这几百帧会被压进几毫秒，帧率虚高到几万（实机见过 71000 FPS / 帧时间 0.0ms）。
+// 夹具故意保留这个突发特性：60 FPS 的模型无论怎么攒批，CoPul 都必须显示 ~60。
 
 using System.Diagnostics;
 using System.Text;
@@ -20,6 +25,9 @@ using System.Text;
 const double BaseMs = 1000.0 / 60.0;
 const double HitchMs = 50.0;
 const int HitchEvery = 300;
+
+// 每批帧数：12 帧≈200ms 的量，一笔写出，模拟 PresentMon 的批量 fflush。
+const int BatchSize = 12;
 
 string exeDir = AppContext.BaseDirectory;
 
@@ -45,6 +53,7 @@ int pid = Environment.ProcessId;
 var sw = Stopwatch.StartNew();
 long frame = 0;
 double nextMs = 0;
+var batch = new StringBuilder();
 
 // 参数被忽略：CoPul 会传 --output_stdout 等，这里照单全收。
 while (true)
@@ -52,18 +61,27 @@ while (true)
     double now = sw.Elapsed.TotalMilliseconds;
     if (now < nextMs)
     {
+        // 攒够一批再一次性写出（不 Flush，等凑满 BatchSize）
         Thread.Sleep(1);
         continue;
     }
 
-    double between = frame == 0 ? BaseMs : (frame % HitchEvery == 0 ? HitchMs : BaseMs);
-    nextMs += between;
-    frame++;
+    // 一拍生成 BatchSize 帧，时间戳按真实间隔递进 —— 但它们几乎同时被写出。
+    for (int k = 0; k < BatchSize; k++)
+    {
+        double between = frame == 0 ? BaseMs : (frame % HitchEvery == 0 ? HitchMs : BaseMs);
+        double tsMs = nextMs;
+        nextMs += between;
+        frame++;
 
-    // 列顺序：0 Application, 1 ProcessID, 9 msBetweenPresents, 14 msBetweenDisplayChange
-    w.WriteLine(
-        $"fakegame.exe,{pid},0x0,DXGI,1,0,0," +
-        $"{now / 1000.0:F6},0.12,{between:F6},1,0," +
-        $"1.20,4.50,{between:F6},0.80");
+        // 列顺序：0 Application, 1 ProcessID, 9 msBetweenPresents, 14 msBetweenDisplayChange
+        batch.Append("fakegame.exe,").Append(pid).Append(",0x0,DXGI,1,0,0,")
+             .Append((tsMs / 1000.0).ToString("F6")).Append(",0.12,")
+             .Append(between.ToString("F6")).Append(",1,0,1.20,4.50,")
+             .Append(between.ToString("F6")).Append(",0.80\r\n");
+    }
+
+    w.Write(batch);
     w.Flush();
+    batch.Clear();
 }
