@@ -64,6 +64,9 @@ internal static class Taskbar
     [DllImport("user32.dll")]
     private static extern IntPtr GetParent(IntPtr hwnd);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
 
@@ -121,6 +124,46 @@ internal static class Taskbar
     }
 
     /// <summary>把窗口从任务栏摘下来，恢复成顶层窗口。</summary>
+    /// <summary>
+    /// 把窗口变成"盖在任务栏那块区域上的顶层窗口"（需求 7.1 的 A 方案）。
+    ///
+    /// <para>
+    /// <b>为什么最终选了 A 而不是 B。</b>B 方案（`SetParent` 到 `Shell_TrayWnd` + `WS_CHILD`）
+    /// 在 Win11 build 26200 上确实能挂上、能画、坐标也对，但有个绕不过去的缺陷：
+    /// 窗口消失后 <b>DWM 不会重绘任务栏那一块</b>。任务栏的可见内容由 XAML 岛
+    /// （`DesktopWindowContentBridge`）用 Composition 渲染，不响应 GDI 重绘，
+    /// 于是退出后画面上留着一张冻结的仪表盘 —— 进程没了、`EnumChildWindows` 找不到、
+    /// 鼠标点得穿，但就是擦不掉。实测 `Hide`、`Detach`、`DwmFlush`、把窗口移出父客户区、
+    /// 销毁前 `Opacity=0`、关掉透明表面，六种手段全部无效，只有重启 explorer 能清。
+    /// </para>
+    ///
+    /// <para>
+    /// A 方案下窗口是独立顶层窗口，有自己完整的 DWM 表面，销毁时 DWM 正常合成，
+    /// 不会留任何东西。代价是要自己跟随任务栏的位置/大小/自动隐藏 —— 1 Hz 巡检
+    /// 本来就在跑，顺带做掉。
+    /// </para>
+    /// </summary>
+    public static bool AttachAsTopLevel(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        // 万一之前用 B 方案挂过，先把 WS_CHILD 清掉还原成弹出式顶层窗口
+        IntPtr style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        long next = ((long)style & ~WS_CHILD) | WS_POPUP;
+        SetWindowLongPtr(hwnd, GWL_STYLE, (IntPtr)next);
+
+        // WS_EX_TOOLWINDOW：不进 Alt+Tab，任务栏上也不留按钮。
+        // 这里**不加** WS_EX_NOACTIVATE —— 加了之后右键菜单会弹不出来（A-33 实测过）。
+        IntPtr ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        long exNext = (long)ex | WS_EX_TOOLWINDOW;
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, (IntPtr)exNext);
+
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+        return true;
+    }
+
     public static void Detach(IntPtr child, bool wasChildWindow)
     {
         if (child == IntPtr.Zero) return;
@@ -135,6 +178,58 @@ internal static class Taskbar
             SetWindowPos(child, IntPtr.Zero, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
         }
+    }
+
+    /// <summary>
+    /// 等 DWM 完成一次合成。
+    ///
+    /// <para>
+    /// 退出流程里<b>必须</b>用：`Hide()` 只是把窗口标记为不可见，屏幕上那块画面
+    /// 要等 DWM 下一次合成才会被擦掉。如果 Hide 之后立刻销毁窗口，
+    /// DWM 会认为"没有内容要更新"，那块就永远停在隐藏前的最后一帧 ——
+    /// 进程已经没了、`EnumChildWindows` 找不到、`ChildWindowFromPointEx` 返回 0、
+    /// `RedrawWindow` 与改任务栏尺寸全部无效，只有重启 explorer 才能清掉。
+    /// </para>
+    ///
+    /// <para>
+    /// 实测：同一条在**进程存活**时 Hide 是干净的（DWM 有充足时间重绘），
+    /// 只有"Hide 完马上销毁"才留残影，所以卡的是时序而不是 Hide 本身。
+    /// </para>
+    /// </summary>
+    public static void FlushComposition()
+    {
+        try
+        {
+            DwmFlush();
+
+            // DwmFlush 在没有待合成帧时会立即返回，而 Hide 引发的重绘可能还没排队。
+            // 给一次短暂的等待再 flush，确保那一帧真的被合成掉了。
+            System.Threading.Thread.Sleep(60);
+            DwmFlush();
+        }
+        catch
+        {
+            // dwmapi 不可用（极老系统）时退化为纯等待
+            System.Threading.Thread.Sleep(60);
+        }
+    }
+
+    /// <summary>
+    /// 把子窗口挪到父客户区外面（远到不可能可见的地方）。
+    ///
+    /// <para>
+    /// 退出流程用：光 <c>Hide</c> 不够 —— 实测 DWM 不会为父窗口重绘那一块，
+    /// 任务栏上会留下一张冻结的画面。挪走是"位置真的变了"，
+    /// 父窗口必须响应 <c>WM_WINDOWPOSCHANGED</c> 并重绘，DWM 才会把那一块擦干净。
+    /// 尺寸一起改，比只改位置更容易触发重绘。
+    /// </para>
+    /// </summary>
+    public static void MoveOutOfParent(IntPtr child)
+    {
+        if (child == IntPtr.Zero) return;
+
+        SetWindowPos(child, IntPtr.Zero, -20000, -20000, 8, 8,
+            SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     /// <summary>

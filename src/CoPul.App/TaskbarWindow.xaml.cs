@@ -60,6 +60,9 @@ public partial class TaskbarWindow : Window
     private bool _attached;
     private InkMode _ink = InkMode.Auto;
 
+    /// <summary>当前实际生效的毛玻璃方式，由 <see cref="WindowGlass.Apply"/> 返回，用于诊断输出。</summary>
+    public string GlassMode { get; private set; } = "未设置";
+
     /// <summary>Auto 模式下最近一次成功测得的"任务栏是浅底吗"。采样失败时沿用这个值。</summary>
     private bool _autoIsLight;
 
@@ -157,7 +160,12 @@ public partial class TaskbarWindow : Window
 
             // 子窗口不需要 DWM 的整窗 accent —— 7.5 默认「跟随系统」= 完全透明，
             // 底色由任务栏自己提供。这里只把 WPF 的窗口底刷成透明。
-            WindowGlass.MakeClientTransparent(this);
+            //
+            // --tray-opaque 是排障开关：窗口表面带 alpha 时，DWM 会把它和父窗口
+            // 的表面做混合，混合结果可能被永久留在父窗口那边（见 OnClosing 的说明）。
+            // 关掉透明可以验证"残影是不是 alpha 混合造成的"。
+            if (!Environment.GetCommandLineArgs().Contains("--tray-opaque"))
+                WindowGlass.MakeClientTransparent(this);
 
             Attach();
 
@@ -194,8 +202,8 @@ public partial class TaskbarWindow : Window
 
         if (hwnd == IntPtr.Zero) return;
 
-        _attached = Taskbar.Attach(hwnd, _bar, asChildWindow: true);
-        Trace($"attach: bar=0x{_bar:X} ok={_attached} hwnd=0x{hwnd:X}");
+        _attached = Taskbar.AttachAsTopLevel(hwnd);
+        Trace($"attach(top-level): bar=0x{_bar:X} ok={_attached} hwnd=0x{hwnd:X}");
         Reposition();
     }
 
@@ -233,6 +241,16 @@ public partial class TaskbarWindow : Window
             return;
         }
 
+        // 自动隐藏：任务栏整条滑出屏幕时跟着一起藏。
+        // 子窗口时代这是白送的（父窗口裁剪），顶层窗口必须自己处理，
+        // 否则条会孤零零地浮在屏幕边缘，任务栏都收起来了它还在。
+        if (Monitors.TryPrimaryMonitorBounds(out Win32Window.RECT screen) &&
+            (barRect.Bottom <= screen.Top || barRect.Top >= screen.Bottom))
+        {
+            Suppress("任务栏已自动隐藏");
+            return;
+        }
+
         // 高度跟随任务栏（7.3）。宽度取开始按钮左侧的空白，最多用到那里。
         int barHeight = barRect.Bottom - barRect.Top;
         if (barHeight <= 0 || freeWidth <= LeftInset)
@@ -260,13 +278,12 @@ public partial class TaskbarWindow : Window
         // 第一版做法是缩到可用宽度并让文字自己出省略号，字段级的砍法留给下一轮。
         int finalWidth = Math.Min(width, Math.Max(neededPx, 1));
 
-        // 坐标必须是**相对任务栏客户区**的，不是屏幕坐标。
-        // 这里曾经传 `barRect.Left + LeftInset, barRect.Top`（屏幕坐标），
-        // 结果子窗口被放到父客户区的 y=1528 处 —— 屏幕外，表现为"什么都看不见"，
-        // 而 GetWindowRect 报 (8,3056) 正好是 2×1528，是父偏移被加了两遍的样子。
+        // A 方案：窗口是独立顶层窗口，坐标是**屏幕物理像素**，直接贴着任务栏那一行摆。
+        // （B 方案时这里传的是相对任务栏客户区的 (LeftInset, 0)，语义完全不同。）
         //
-        // 注意 y 恒为 0：底部和顶部任务栏都成立 —— 相对父客户区，条永远贴在父的左上角。
-        Monitors.SetBounds(_hwnd, LeftInset, 0, finalWidth, barHeight);
+        // topmost 是必须的：任务栏本身在 topmost 组里，普通顶层窗口会被它盖住。
+        Monitors.SetBounds(_hwnd, barRect.Left + LeftInset, barRect.Top, finalWidth, barHeight,
+                           topmost: true);
 
         PlacementDiag = $"bar=({barRect.Left},{barRect.Top})-({barRect.Right},{barRect.Bottom}) " +
                         $"edge={edge} free={freeWidth} need={neededPx} used={finalWidth} " +
@@ -344,6 +361,16 @@ public partial class TaskbarWindow : Window
         Shell.Background = taskbarIsLight
             ? new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF))
             : new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00));
+
+        // A 方案：条从"任务栏的子窗口"变成了独立顶层窗口，不能再指望"父窗口透出来"当背景
+        // —— WPF 非 layered 窗口会丢弃 alpha，纯透明只会变成一块黑。
+        // 用与悬浮窗同一套 DWM accent 亚克力（A-35/A-36：必须 ACRYLICBLURBEHIND
+        // 且 AccentFlags=0，否则 tint 的 alpha 会被整个忽略），深浅跟随任务栏实际亮度。
+        if (_attached)
+        {
+            GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
+                                         dark: !taskbarIsLight, tintOpacity: 0.10);
+        }
 
         AutoInkMenu.IsChecked = _ink == InkMode.Auto;
         LightInkMenu.IsChecked = _ink == InkMode.Light;
@@ -441,20 +468,22 @@ public partial class TaskbarWindow : Window
         // 还没挂上（启动时任务栏没就绪）——交给 Attach 里的重试链，这里不插手
         if (!_attached) return;
 
-        // 自己的窗口没了：explorer 退出时系统会连带销毁它的所有子窗口。
-        // WPF 此时还活在自己的世界里（HWND 已失效），只能整窗重建。
+        // 自己的窗口没了。A 方案下窗口是独立顶层窗口，explorer 重启**不会**再
+        // 连带销毁它（这正是选 A 的原因之一），所以这条只给"桌面重建 / 会话切换"兜底。
         if (!Taskbar.IsAlive(_hwnd))
         {
             Recover(rebuild: true);
             return;
         }
 
-        // 任务栏换了句柄（同一台机器上任务栏被重建）。自己的窗口还在说明
-        // 只是脱离了父子关系，重新 SetParent 即可，不用重建。
-        if (!Taskbar.IsAlive(_bar) || Taskbar.Find() != _bar)
+        // 任务栏换了句柄（explorer 重启）。窗口不用重建，换个锚点重新定位就行。
+        IntPtr bar = Taskbar.Find();
+        if (bar != _bar)
         {
-            Recover(rebuild: false);
-            return;
+            Trace($"watchdog: 任务栏换了（0x{_bar:X} → 0x{bar:X}）");
+            _bar = bar;
+            _lastSig = string.Empty;    // 强制重算几何
+            if (_bar == IntPtr.Zero) { ScheduleReattach(0); return; }
         }
 
         // 广播在提权运行时收不到（见 InstallTaskbarWatcher 的说明），
@@ -487,9 +516,10 @@ public partial class TaskbarWindow : Window
                 return;
             }
 
-            Trace($"watchdog: 任务栏换了（旧 0x{_bar:X}）→ 重挂");
-            Taskbar.Detach(_hwnd, wasChildWindow: true);
-            _attached = false;
+            // A 方案下窗口不随 explorer 重启消失，换个锚点重新定位即可，不需要 Detach
+            Trace($"watchdog: 任务栏换了（旧 0x{_bar:X}）→ 重新定位");
+            _bar = Taskbar.Find();
+            _lastSig = string.Empty;
             Attach();
             ApplyInk();
         }
@@ -520,9 +550,9 @@ public partial class TaskbarWindow : Window
                 return;
             }
 
-            // 父窗口被销毁时，子窗口有时会被系统一并销毁 —— 那种情况只能重建。
-            // 判活必须用缓存的 _hwnd：窗口销毁后 `Handle` 会返回 0，用它判会直接判成
-            // "没初始化"（第一次 7.7 验证失败就是这个原因）。
+            // A 方案下窗口是独立顶层窗口，explorer 重启不会把它带走，
+            // 所以这里只需要重新定位，不再需要 Detach / 重建。
+            // 判活仍用缓存的 _hwnd：窗口真的没了（会话切换）时 Handle 会返回 0。
             if (!Taskbar.IsAlive(_hwnd))
             {
                 Trace($"reattach#{attempt}: alive=False hwnd=0x{_hwnd:X} → 触发重建");
@@ -534,14 +564,31 @@ public partial class TaskbarWindow : Window
 
             Trace($"reattach#{attempt}: alive=True hwnd=0x{_hwnd:X}");
 
-            // 先摘干净（清掉 WS_CHILD）再挂到新任务栏。
-            // 少了 Detach，残留的子窗口样式会让 SetParent 之后的位置计算错位。
-            Taskbar.Detach(_hwnd, wasChildWindow: true);
+            _bar = found;
+            _lastSig = string.Empty;
             _attached = false;
             Attach();
             ApplyInk();
         };
         t.Start();
+    }
+
+    /// <summary>
+    /// A 方案下这里不需要做任何特殊处理。
+    ///
+    /// <para>
+    /// B 方案（`SetParent` 到任务栏当子窗口）时代这里有一大段收尾代码，
+    /// 因为跨进程子窗口消失后 DWM 不会重绘任务栏那一块，退出必留一张冻结的画面。
+    /// 试过 <c>Hide</c>、<c>Hide+Detach</c>、<c>DwmFlush</c>、移出父客户区、
+    /// 销毁前 <c>Opacity=0</c>、关掉透明表面六种手段，全部无效。
+    /// 换成顶层窗口后这个问题从根上不存在了 —— 顶层窗口有完整的 DWM 表面，
+    /// 销毁时 DWM 正常合成，任务栏那一块会被正常重绘。
+    /// </para>
+    /// </summary>
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        _attached = false;
+        base.OnClosing(e);
     }
 
     protected override void OnClosed(EventArgs e)
