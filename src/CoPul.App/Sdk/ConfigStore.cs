@@ -60,6 +60,13 @@ public sealed class AppConfig
     /// </summary>
     public int FloatScale { get; set; } = 100;
 
+    /// <summary>
+    /// 任务栏模式的文字取色策略（7.5）：<c>Auto</c> / <c>Light</c> / <c>Dark</c>。
+    /// Auto 读 <c>SystemUsesLightTheme</c> 自动决定，另两个是用户手动锁定 ——
+    /// Win11 任务栏是半透明的，实际明暗取决于壁纸，注册表读数未必与眼睛看到的一致。
+    /// </summary>
+    public string TaskbarInk { get; set; } = "Light";
+
     // ---- 悬浮窗位置（6.7）----
     // 存「显示器 + 相对比例」而不是绝对像素：换分辨率、改缩放、拔插显示器后，
     // 绝对坐标会把窗口扔到屏幕外。三个字段是一个整体，Monitor 为空即视为"从未摆放过"。

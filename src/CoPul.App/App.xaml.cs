@@ -29,6 +29,28 @@ public partial class App : Application
         InstallCrashLog();
         _uiThreadId = GetCurrentThreadId();
 
+        // 自测：--taskbar-probe <txt 路径>。只读探测任务栏，不建窗口，写完即退。
+        // M3 的地基全是"真实环境长什么样"：任务栏多高、图标区从哪开始、内部结构叫什么。
+        // 这几项在 Win10 / Win11 22H2 / 24H2 上都不一样，只能实测，查文档会写出想当然的代码。
+        if (ArgValue(e.Args, "--taskbar-probe") is { } probePath)
+        {
+            File.WriteAllText(probePath, DescribeTaskbar());
+            Shutdown();
+            return;
+        }
+
+        // 自测：--tray-probe <png> [--tray-child]。把一块纯色板挂到任务栏上再截屏，
+        // 用来确认「SetParent 到 Shell_TrayWnd 到底能不能显示」这个 M3 的唯一硬前提。
+        if (ArgValue(e.Args, "--tray-probe") is { } trayPng)
+        {
+            RunTrayProbe(trayPng,
+                         e.Args.Contains("--tray-child"),
+                         e.Args.Contains("--tray-native"),
+                         e.Args.Contains("--tray-overlay"),
+                         e.Args.Contains("--tray-print"));
+            return;
+        }
+
         var window = new MainWindow();
         MainWindow = window;
 
@@ -51,6 +73,29 @@ public partial class App : Application
                 window.Activate();
             };
             return floating;
+        }
+
+        TaskbarWindow? taskbar = null;
+
+        TaskbarWindow EnsureTaskbar()
+        {
+            if (taskbar is not null) return taskbar;
+
+            taskbar = new TaskbarWindow(window.State, ConfigStore.Current);
+            taskbar.MainWindowRequested += (_, _) =>
+            {
+                taskbar?.Hide();
+                window.Show();
+                window.Activate();
+            };
+            taskbar.FloatRequested += (_, _) =>
+            {
+                taskbar?.Hide();
+                FloatWindow f = EnsureFloat();
+                f.Show();
+                f.Activate();
+            };
+            return taskbar;
         }
 
         // 大窗口标题栏的「切到悬浮窗」按钮走这条回调：MainWindow 不认识 FloatWindow，
@@ -139,6 +184,12 @@ public partial class App : Application
 
             f.Show();
         }
+        else if (e.Args.Contains("--tray"))
+        {
+            // 任务栏模式（第 7 章）。大窗口不 Show，但采集照常跑在它身上。
+            TaskbarWindow t = EnsureTaskbar();
+            t.Show();
+        }
         else if (!hidden) window.Show();
 
         // 自测：--stats <txt 路径> [--seconds 60] [--warmup 10] [--freeze] [--hidden]
@@ -172,7 +223,9 @@ public partial class App : Application
         if (shot is null && shotScreen is null) return;
 
         // 截哪个窗口：悬浮窗可见时截悬浮窗，否则截大窗口
-        Window target = floating is { IsVisible: true } ? floating : window;
+        Window target = taskbar is { IsVisible: true } ? taskbar
+                      : floating is { IsVisible: true } ? floating
+                      : window;
 
         int waitMs = int.TryParse(ArgValue(e.Args, "--wait"), out int w) && w > 0 ? w : 4000;
 
@@ -183,9 +236,55 @@ public partial class App : Application
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+
+            // 任务栏分支要延后关窗（先置顶、等一帧再拍），用这个标志跳过下面的 Shutdown
+            bool deferred = false;
             try
             {
-                if (shotScreen is not null)
+                if (shotScreen is not null && target is TaskbarWindow tb)
+                {
+                    // 任务栏条的截图只能走**屏幕抓取**，两条捷径都已实测证伪：
+                    // 1) 拍子窗口自己 —— 子窗口没有独立的重定向表面，全黑；
+                    // 2) 拍任务栏（PrintWindow）—— 返回 true 但给的是旧表面，
+                    //    拍到的是上一轮实验留下的红块，而那时任务栏上什么都没有。
+                    // 所以：需要任务栏在屏幕上真的可见。--tray-raise 会在截图前把它临时置顶，
+                    // 拍完立刻恢复，不改变用户的任务栏设置。
+                    IntPtr bar = Taskbar.Find();
+                    bool raise = e.Args.Contains("--tray-raise");
+                    if (raise) Taskbar.RaiseForCapture(bar, true);
+
+                    var cap = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(raise ? 500 : 0) };
+                    cap.Tick += (_, _) =>
+                    {
+                        cap.Stop();
+                        try
+                        {
+                            if (bar != IntPtr.Zero && Taskbar.TryGetRect(bar, out Win32Window.RECT br))
+                            {
+                                ScreenCapture.SaveRect(shotScreen, br.Left, br.Top,
+                                                       br.Right - br.Left, br.Bottom - br.Top);
+                                Taskbar.TryGetRect(tb.Handle, out Win32Window.RECT tr);
+                                File.WriteAllText(shotScreen + ".info.txt",
+                                    $"bar  : {br.Right - br.Left}×{br.Bottom - br.Top} px at ({br.Left},{br.Top}){Environment.NewLine}" +
+                                    $"bar  : rect of strip = ({tr.Left},{tr.Top})-({tr.Right},{tr.Bottom}){Environment.NewLine}" +
+                                    $"place: {tb.PlacementDiag}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            File.WriteAllText(shotScreen + ".error.txt", ex.ToString());
+                        }
+                        finally
+                        {
+                            if (raise) Taskbar.RaiseForCapture(bar, false);
+                            Shutdown();
+                        }
+                    };
+                    cap.Start();
+                    deferred = true;
+                    return;      // 延后关窗，交给 cap 定时器
+                }
+                else if (shotScreen is not null)
                 {
                     ScreenCapture.SaveWindow(target, shotScreen, pad);
                     if (target is FloatWindow fw)
@@ -208,10 +307,273 @@ public partial class App : Application
             }
             finally
             {
+                if (!deferred) Shutdown();
+            }
+        };
+        timer.Start();
+    }
+
+    /// <summary>
+    /// <c>--tray-probe</c>：M3 的可行性实验。
+    ///
+    /// <para>
+    /// 只验一件事：把一块纯红板 <c>SetParent</c> 到 <c>Shell_TrayWnd</c> 之后，
+    /// 它到底能不能出现在任务栏上。这块如果不行，需求 7.1 的 B 方案整个作废，
+    /// 只能退回 A（顶层窗口盖在任务栏上方），后面的字段布局、字号全都得跟着改。
+    /// </para>
+    ///
+    /// <para>
+    /// 用纯红而不是真实内容：任务栏本身是深色带模糊的，灰底灰字根本分不清
+    /// "画出来了" 与 "被裁掉了"。红色是任务栏上不可能出现的颜色，出现即证明成功。
+    /// </para>
+    /// </summary>
+    private void RunTrayProbe(string pngPath, bool asChildWindow, bool native, bool overlay, bool print)
+    {
+        IntPtr bar = Taskbar.Find();
+        var log = new System.Text.StringBuilder();
+        log.AppendLine("bar : " + Taskbar.Describe(bar));
+
+        if (bar == IntPtr.Zero)
+        {
+            File.WriteAllText(pngPath + ".info.txt", log.AppendLine("任务栏句柄为空，实验终止").ToString());
+            Shutdown();
+            return;
+        }
+
+        Taskbar.TryGetRect(bar, out Win32Window.RECT barRect);
+        uint dpi = Monitors.DpiForWindow(bar);
+        double scale = dpi == 0 ? 1.0 : dpi / 96.0;
+
+        // 物理尺寸：高取任务栏全高，宽取 600 物理像素（左侧空白是 0~647，放得下）
+        int barH = barRect.Bottom - barRect.Top;
+        int probeW = 600;
+
+        // 截图方式二选一：屏幕抓取会被最上层的全屏游戏完全遮住（实测现场就有），
+        // PrintWindow 直接向任务栏窗口要绘制结果，绕开所有遮挡。
+        void Capture()
+        {
+            if (print)
+                ScreenCapture.SaveWindowPrint(bar, pngPath, barRect.Right - barRect.Left, barH);
+            else
+                ScreenCapture.SaveRect(pngPath, barRect.Left, barRect.Top, barRect.Right - barRect.Left, barH);
+            log.AppendLine($"captured    : {pngPath} ({(print ? "PrintWindow" : "screen")})");
+        }
+
+        if (native)
+        {
+            // 原生 STATIC 子窗口：不经过 WPF，用来判断"任务栏是否根本不吃跨进程子窗口"
+            IntPtr child = Taskbar.CreateNativeChild(bar, 8, 0, probeW, barH);
+            log.AppendLine($"native STATIC = 0x{child:X}");
+            log.AppendLine($"native rect   : {Taskbar.Describe(child)}");
+            Taskbar.BringToTop(child);
+            log.AppendLine("native brought to top");
+
+            var nativeTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+            nativeTimer.Tick += (_, _) =>
+            {
+                nativeTimer.Stop();
+                try
+                {
+                    Capture();
+                }
+                catch (Exception ex) { log.AppendLine("capture 失败: " + ex.Message); }
+                finally
+                {
+                    File.WriteAllText(pngPath + ".info.txt", log.ToString());
+                    Shutdown();
+                }
+            };
+            nativeTimer.Start();
+            return;
+        }
+
+        if (overlay)
+        {
+            // A 方案：顶层窗口盖在任务栏上。任务栏自己是 topmost，所以必须同样 topmost
+            // 且排在它之后（SetWindowPos 的 HWND_TOPMOST 会让它进 topmost 组的最高位）。
+            var ov = new Window
+            {
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Background = Brushes.Red,
+                WindowStartupLocation = WindowStartupLocation.Manual,
+                Width = 100, Height = 100,   // 占位，真正尺寸由 SetBounds 下物理像素
+                Topmost = true,
+            };
+            ov.Show();
+            IntPtr ovh = new System.Windows.Interop.WindowInteropHelper(ov).Handle;
+            Monitors.SetBounds(ovh, barRect.Left + 8, barRect.Top, probeW, barH, topmost: true);
+            log.AppendLine($"overlay      : {Taskbar.Describe(ovh)}");
+
+            var ovTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+            ovTimer.Tick += (_, _) =>
+            {
+                ovTimer.Stop();
+                try
+                {
+                    Capture();
+                }
+                catch (Exception ex) { log.AppendLine("capture 失败: " + ex.Message); }
+                finally
+                {
+                    File.WriteAllText(pngPath + ".info.txt", log.ToString());
+                    Shutdown();
+                }
+            };
+            ovTimer.Start();
+            return;
+        }
+
+        var w = new Window
+        {
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            AllowsTransparency = false,
+            Background = Brushes.Red,
+            Width = probeW / scale,
+            Height = barH / scale,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = 0,
+            Top = 0,
+            Topmost = false,
+        };
+        w.Show();
+
+        IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+        log.AppendLine($"probe before: {Taskbar.Describe(hwnd)}");
+
+        bool ok = Taskbar.Attach(hwnd, bar, asChildWindow);
+        Taskbar.PlaceInTaskbar(hwnd, 8, 0, probeW, barH);
+        Taskbar.BringToTop(hwnd);
+
+        log.AppendLine($"attach({(asChildWindow ? "WS_CHILD" : "popup")}) -> {ok}");
+        log.AppendLine($"parent now  : 0x{Taskbar.ParentOf(hwnd):X} (bar=0x{bar:X})");
+        log.AppendLine($"probe after : {Taskbar.Describe(hwnd)}");
+
+        // 挂载与合成都要几帧，截早了会拍到还没画上的任务栏
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            try
+            {
+                Capture();
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine("capture 失败: " + ex.Message);
+            }
+            finally
+            {
+                File.WriteAllText(pngPath + ".info.txt", log.ToString());
                 Shutdown();
             }
         };
         timer.Start();
+    }
+
+    /// <summary>
+    /// <c>--taskbar-probe</c> 的实现：把任务栏的真实现状打成文本。
+    ///
+    /// <para>
+    /// 为什么值得单独一个探针：M3 的布局全部建立在"任务栏矩形 / 图标区左边界 / DPI"
+    /// 这三个数上，而它们都是系统实现细节 —— Win11 22H2 之后任务栏被改写成 XAML 岛，
+    /// 内部子窗口的类名与前几版完全不同。先量一遍再写代码，比照着文档猜要省事得多。
+    /// </para>
+    /// </summary>
+    private string DescribeTaskbar()
+    {
+        var sb = new System.Text.StringBuilder();
+
+        IntPtr bar = Taskbar.Find();
+        IntPtr secondary = Taskbar.FindSecondary();
+
+        sb.AppendLine("== 任务栏窗口 ==");
+        sb.AppendLine("主屏 Shell_TrayWnd     : " + Taskbar.Describe(bar));
+        sb.AppendLine("副屏 Shell_SecondaryTrayWnd: " + Taskbar.Describe(secondary));
+
+        if (bar != IntPtr.Zero)
+        {
+            uint dpi = GetDpiForWindowSafe(bar);
+            sb.AppendLine($"任务栏 DPI           : {dpi} (缩放 {dpi / 96.0:F2})");
+
+            sb.AppendLine();
+            sb.AppendLine("== 几何关系（物理像素）==");
+            if (Monitors.TryGetRect(bar, out Win32Window.RECT br))
+            {
+                sb.AppendLine($"任务栏矩形           : L={br.Left} T={br.Top} R={br.Right} B={br.Bottom}  " +
+                               $"尺寸 {br.Right - br.Left}x{br.Bottom - br.Top}");
+            }
+
+            if (Monitors.TryPrimary(out MonitorArea work))
+            {
+                sb.AppendLine($"主屏工作区           : L={work.Left} T={work.Top} R={work.Right} B={work.Bottom}  " +
+                               $"尺寸 {work.Width}x{work.Height}  设备={work.Device}");
+            }
+
+            if (Monitors.TryPrimaryMonitorBounds(out Win32Window.RECT mon))
+            {
+                sb.AppendLine($"主屏整屏             : L={mon.Left} T={mon.Top} R={mon.Right} B={mon.Bottom}  " +
+                               $"尺寸 {mon.Right - mon.Left}x{mon.Bottom - mon.Top}");
+                sb.AppendLine($"整屏 - 工作区 差值   : 上 {work.Top - mon.Top}  下 {mon.Bottom - work.Bottom}  " +
+                               $"左 {work.Left - mon.Left}  右 {mon.Right - work.Right}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("== 子窗口（深度 1）==");
+            foreach ((IntPtr hwnd, string cls, string text) in Taskbar.Children(bar))
+            {
+                bool hasRect = Taskbar.TryGetRect(hwnd, out Win32Window.RECT r);
+                string rectText = hasRect
+                    ? $"({r.Left},{r.Top})-({r.Right},{r.Bottom}) {r.Right - r.Left}x{r.Bottom - r.Top}"
+                    : "?";
+                sb.AppendLine($"  0x{hwnd:X}  class={cls}  title=\"{text}\"  rect={rectText}  visible={Taskbar.IsVisible(hwnd)}");
+
+                // 再深一层：ReBarWindow32 下面才有真正的图标工具条
+                foreach ((IntPtr child, string c2, string t2) in Taskbar.Children(hwnd))
+                {
+                    bool ok2 = Taskbar.TryGetRect(child, out Win32Window.RECT r2);
+                    string rt2 = ok2 ? $"({r2.Left},{r2.Top})-({r2.Right},{r2.Bottom}) {r2.Right - r2.Left}x{r2.Bottom - r2.Top}" : "?";
+                    sb.AppendLine($"      └ 0x{child:X}  class={c2}  title=\"{t2}\"  rect={rt2}  visible={Taskbar.IsVisible(child)}");
+                }
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"SystemUsesLightTheme : {ReadLightTheme()}");
+        sb.AppendLine($"OS 版本              : {Environment.OSVersion.VersionString} (build {Environment.OSVersion.Version.Build})");
+
+        // 谁盖住了任务栏区域
+        if (Taskbar.TryGetRect(bar, out Win32Window.RECT area))
+        {
+            sb.AppendLine();
+            sb.AppendLine("== 与任务栏区域相交的顶层窗口（自下而上不易判序，仅列出）==");
+            foreach (string line in Taskbar.WhoCovers(area.Left, area.Top, area.Right, area.Bottom))
+                sb.AppendLine("  " + line);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>任务栏属于 explorer，进程 DPI 感知与自身不同，取不到时按 96 计。</summary>
+    private static uint GetDpiForWindowSafe(IntPtr hwnd)
+    {
+        try { return Monitors.DpiForWindow(hwnd); }
+        catch { return 96; }
+    }
+
+    private static string ReadLightTheme()
+    {
+        try
+        {
+            object? v = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "SystemUsesLightTheme", null);
+            return v?.ToString() ?? "(未设置)";
+        }
+        catch { return "(读取失败)"; }
     }
 
     /// <summary>

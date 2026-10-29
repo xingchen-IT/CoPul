@@ -171,6 +171,20 @@ internal static class Monitors
     }
 
     /// <summary>
+    /// 一次落下位置与尺寸，全部是物理像素。任务栏模式（需求第 7 章）用：
+    /// 那个窗口的坐标必须与任务栏矩形精确对齐，走 DIP 会因取整差 1~2 像素，
+    /// 表现为条与任务栏之间露一条缝。
+    /// </summary>
+    /// <param name="topmost">true = 同时提到 Z 序最顶（<c>HWND_TOPMOST</c>）。</param>
+    public static void SetBounds(IntPtr hwnd, int x, int y, int width, int height, bool topmost = false)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        IntPtr after = topmost ? new IntPtr(-1) : IntPtr.Zero;
+        uint flags = topmost ? SWP_NOACTIVATE : (SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(hwnd, after, x, y, width, height, flags);
+    }
+
+    /// <summary>
     /// 通知系统"窗口框架变了"（<c>SWP_FRAMECHANGED</c>）。
     ///
     /// <para>
@@ -194,5 +208,31 @@ internal static class Monitors
     {
         uint dpi = hwnd == IntPtr.Zero ? 0 : GetDpiForWindow(hwnd);
         return dpi == 0 ? 1.0 : dpi / 96.0;
+    }
+
+    /// <summary>原始 DPI（96 = 100%）。取不到返回 0，调用方自行决定兜底值。</summary>
+    public static uint DpiForWindow(IntPtr hwnd) => hwnd == IntPtr.Zero ? 0 : GetDpiForWindow(hwnd);
+
+    /// <summary>
+    /// 主显示器的**整屏**矩形（不扣任务栏）。与 <see cref="TryPrimary"/> 的区别：
+    /// 那个给的是工作区。任务栏模式要算"任务栏占了哪条边"，必须拿整屏减去工作区，
+    /// 而只靠工作区永远只能算出"少了多少"，不知道少在哪一侧。
+    /// </summary>
+    public static bool TryPrimaryMonitorBounds(out Win32Window.RECT bounds)
+    {
+        bounds = default;
+        var origin = new Win32Window.POINT { X = 0, Y = 0 };
+        IntPtr monitor = MonitorFromPoint(origin, MONITOR_DEFAULTTOPRIMARY);
+        if (monitor == IntPtr.Zero) return false;
+
+        var info = new MONITORINFOEX
+        {
+            cbSize = Marshal.SizeOf<MONITORINFOEX>(),
+            szDevice = string.Empty
+        };
+        if (!GetMonitorInfoW(monitor, ref info)) return false;
+
+        bounds = info.rcMonitor;
+        return true;
     }
 }

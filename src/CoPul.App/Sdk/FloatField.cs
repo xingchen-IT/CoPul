@@ -22,6 +22,9 @@ public sealed class FloatField : INotifyPropertyChanged
     private Brush _lightBrush = Brushes.Gray;
     private Brush _darkBrush = Brushes.Gray;
     private bool _onLight = true;
+
+    /// <summary>第二视图主题；null = 跟随 <see cref="OnLight"/>。</summary>
+    private bool? _onLightAlt;
     private double _width;
 
     public FloatField(string key, double width)
@@ -69,6 +72,30 @@ public sealed class FloatField : INotifyPropertyChanged
     /// </summary>
     public Brush TopBrush => _onLight ? _lightBrush : _darkBrush;
 
+    /// <summary>
+    /// 第二个视图的明暗主题（任务栏模式用）。
+    ///
+    /// <para>
+    /// 为什么需要：悬浮窗和任务栏共用同一批字段，而两者的底色可能相反 ——
+    /// 悬浮窗是浅色玻璃（要深字）时，任务栏可能正处在深色模式（要浅字）。
+    /// 只用一个 <see cref="OnLight"/> 会互相踩。留一个可空的第二开关，
+    /// 未设置时跟随 <see cref="OnLight"/>，所以现有视图的行为完全不变。
+    /// </para>
+    /// </summary>
+    public bool OnLightAlt
+    {
+        get => _onLightAlt ?? _onLight;
+        set
+        {
+            if (_onLightAlt == value) return;
+            _onLightAlt = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrushAlt)));
+        }
+    }
+
+    /// <summary>任务栏用的主值颜色，与 <see cref="TopBrush"/> 互不影响。</summary>
+    public Brush TopBrushAlt => OnLightAlt ? _lightBrush : _darkBrush;
+
     /// <summary>当前用哪套画刷。切浅色/深色时由 <see cref="DashboardState"/> 统一翻。</summary>
     public bool OnLight
     {
@@ -77,7 +104,11 @@ public sealed class FloatField : INotifyPropertyChanged
         {
             if (_onLight == value) return;
             _onLight = value;
+
+            // 第二视图跟随本值时也要重发，否则任务栏那边颜色停在旧值上
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrush)));
+            if (_onLightAlt is null)
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrushAlt)));
         }
     }
 

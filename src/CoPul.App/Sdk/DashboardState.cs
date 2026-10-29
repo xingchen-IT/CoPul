@@ -301,6 +301,13 @@ public sealed class DashboardState : INotifyPropertyChanged
         FloatRam = new FloatField("RAM", 74);
         FloatVram = new FloatField("VRAM", 78);
         FloatNet = new FloatField("NET", 44);
+
+        // 任务栏模式（第 7 章）专用的四格。悬浮窗六格是 Q-03 定死的，
+        // 任务栏的字段集合是另一套（7.4 的 8 项），所以这四格只给任务栏用。
+        FloatDisk = new FloatField("DISK", 36);
+        FloatIo = new FloatField("IO", 48);
+        FloatLat = new FloatField("LAT", 34);
+        FloatPwr = new FloatField("PWR", 44);
     }
 
     // ---- 数值格 ----
@@ -341,6 +348,18 @@ public sealed class DashboardState : INotifyPropertyChanged
     public FloatField FloatVram { get; }
     public FloatField FloatNet { get; }
 
+    /// <summary>任务栏：硬盘温度（上行盘 1、下行盘 2）。</summary>
+    public FloatField FloatDisk { get; }
+
+    /// <summary>任务栏：上传 / 下载（上行 ↑、下行 ↓）。</summary>
+    public FloatField FloatIo { get; }
+
+    /// <summary>任务栏：网络延迟。</summary>
+    public FloatField FloatLat { get; }
+
+    /// <summary>任务栏：整机功耗估算（CPU 封装 + GPU 板卡）。</summary>
+    public FloatField FloatPwr { get; }
+
     /// <summary>
     /// 悬浮窗切浅色 / 深色玻璃时统一翻画刷。六格各自持两套（浅底压暗版 / 原色），
     /// 切换只是换索引，不动字符串，因此不会触发一次无谓的重新格式化。
@@ -354,6 +373,10 @@ public sealed class DashboardState : INotifyPropertyChanged
         FloatRam.OnLight = light;
         FloatVram.OnLight = light;
         FloatNet.OnLight = light;
+        FloatDisk.OnLight = light;
+        FloatIo.OnLight = light;
+        FloatLat.OnLight = light;
+        FloatPwr.OnLight = light;
     }
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
@@ -698,6 +721,23 @@ public sealed class DashboardState : INotifyPropertyChanged
             ? $"v{Fmt.Gb(memUsed.Value)}/{Fmt.Gb(memTotal.Value)}G"
             : "v" + Fmt.Dash;
         FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass, GpuMem.ValueBrush);
+
+        // 任务栏：7.4 第 8 项「整机功耗 ~68W（估算值带 ~）」。
+        // 只累加 CPU 封装 + GPU 板卡两项：主板/硬盘/风扇的功耗 Windows 拿不到，
+        // 加 `~` 就是为了说明这是下限估算而不是实测。
+        FloatPwr.Set(TaskbarPower(), "PWR", CpuPower.ValueBrushOnGlass, CpuPower.ValueBrush);
+    }
+
+    private string TaskbarPower()
+    {
+        bool cpuOk = CpuPower.Value.Length > 0 && CpuPower.Value != Fmt.Dash;
+        bool gpuOk = GpuPower.Value.Length > 0 && GpuPower.Value != Fmt.Dash;
+        if (!cpuOk && !gpuOk) return Fmt.Dash;
+
+        double sum = 0;
+        if (cpuOk && double.TryParse(CpuPower.Value, out double c)) sum += c;
+        if (gpuOk && double.TryParse(GpuPower.Value, out double g)) sum += g;
+        return $"~{sum:F0}W";
     }
 
     private void ApplyMemory(MetricSnapshot snap)
@@ -764,6 +804,26 @@ public sealed class DashboardState : INotifyPropertyChanged
         }
 
         FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
+
+        // 任务栏：上下行分两行（7.4），箭头代替标签 —— 宽度只有 48 DIP，
+        // 写 "UP"/"DOWN" 会挤掉数字本身。
+        FloatIo.Set(TaskbarRate(snap, MetricId.NetUpBytesPerSec, "↑"),
+                    TaskbarRate(snap, MetricId.NetDownBytesPerSec, "↓"),
+                    NetUp.ValueBrushOnGlass, NetUp.ValueBrush);
+
+        FloatLat.Set(WithUnit(NetLatency.Value, "ms"), "LAT",
+                     NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
+    }
+
+    /// <summary>
+    /// 任务栏的速率文本：`↑1.2M`。单位压成单个字母 —— 7.4 原文是 `↑1.2M/s`，
+    /// 但 48 DIP 的列宽放不下 7 个字符，`/s` 是恒定后缀，省掉不影响读解。
+    /// </summary>
+    private static string TaskbarRate(MetricSnapshot snap, MetricId id, string arrow)
+    {
+        if (!snap.TryGet(id, out var s) || !s.IsUsable) return arrow + Fmt.Dash;
+        string text = Fmt.RateAuto(s.Value, out string unit);
+        return arrow + text + (unit.StartsWith("MB", StringComparison.Ordinal) ? "M" : "K");
     }
 
     /// <summary>速率格：数值与单位一起换，避免出现"1024.0 KB/s"这种跨量级读数。</summary>
@@ -806,6 +866,19 @@ public sealed class DashboardState : INotifyPropertyChanged
         DiskSummary = read == Fmt.Dash && write == Fmt.Dash
             ? (hasTemp ? "" : "硬盘温度需管理员权限")
             : $"合计  读 {read} MB/s   写 {write} MB/s";
+
+        // 任务栏：7.4 要求多盘**上下排列**（上行盘 1、下行盘 2）。
+        // 两行字号本来就不同（值 11 / 标签 9），下行天然是小字，不需要再额外缩。
+        FloatDisk.Set(DiskTempText(hasTemp, temps, 0), DiskTempText(hasTemp, temps, 1),
+                      CpuTemp.ValueBrushOnGlass, CpuTemp.ValueBrush);
+    }
+
+    /// <summary>取第 n 块盘的温度文本（`45°`），越界或无效时给 `—`。</summary>
+    private static string DiskTempText(bool has, MetricSeries temps, int index)
+    {
+        if (!has || index >= temps.Values.Length) return Fmt.Dash;
+        double v = temps.Values[index];
+        return double.IsNaN(v) ? Fmt.Dash : v.ToString("F0") + "°";
     }
 
     // ---------------- 内部小工具 ----------------
