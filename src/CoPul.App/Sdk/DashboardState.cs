@@ -292,6 +292,15 @@ public sealed class DashboardState : INotifyPropertyChanged
         NetUp = new MetricCell("上行", "MB/s", "AccentNet");
         NetLatency = new MetricCell("延迟", "ms", "AccentNet");
         NetLoss = new MetricCell("丢包率", "%", "AccentNet");
+
+        // 悬浮窗六格（需求 6.3）。列宽照 6.3 的表填：34/44/44/74/78/44。
+        // 顺序就是屏幕上的阅读顺序，v1 不允许隐藏任何一格（6.3 必填校验）。
+        FloatFps = new FloatField("FPS", 34);
+        FloatCpu = new FloatField("CPU", 44);
+        FloatGpu = new FloatField("GPU", 44);
+        FloatRam = new FloatField("RAM", 74);
+        FloatVram = new FloatField("VRAM", 78);
+        FloatNet = new FloatField("NET", 44);
     }
 
     // ---- 数值格 ----
@@ -322,6 +331,15 @@ public sealed class DashboardState : INotifyPropertyChanged
     public MetricCell NetUp { get; }
     public MetricCell NetLatency { get; }
     public MetricCell NetLoss { get; }
+
+    // ---- 悬浮窗六格（6.3） ----
+    /// <summary>FPS，与 <see cref="FpsValue"/> 同源，但下行固定写 "FPS" 而不是单位格。</summary>
+    public FloatField FloatFps { get; }
+    public FloatField FloatCpu { get; }
+    public FloatField FloatGpu { get; }
+    public FloatField FloatRam { get; }
+    public FloatField FloatVram { get; }
+    public FloatField FloatNet { get; }
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
@@ -567,8 +585,9 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// </summary>
     public void ApplyFps(MetricSnapshot snap, string targetApp, bool collecting, string? unavailableReason = null)
     {
-        if (FpsBlock.Collapsed) return;
-
+        // 这里**不能**因为大窗口的 FPS 区块被折叠就早退：悬浮窗的 FPS 是常显的，
+        // 折叠大窗口再切悬浮窗会看到一格永远不动的旧值。MetricCell / FloatField 内部
+        // 都有变更检测（值没变不触发通知），所以折叠状态下多写一遍几乎没有成本。
         FpsSubtitle = !collecting
             ? (string.IsNullOrWhiteSpace(unavailableReason)
                 ? "PresentMon 未接入 · 详见底部状态栏"
@@ -597,6 +616,8 @@ public sealed class DashboardState : INotifyPropertyChanged
             FpsMax.Unavailable();
             FpsAvg.Unavailable();
         }
+
+        FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrush);
     }
 
     private void ApplyCpu(MetricSnapshot snap)
@@ -618,6 +639,8 @@ public sealed class DashboardState : INotifyPropertyChanged
             CoresText = "各核心占用率不可用";
 
         LoadAvgText = FormatLoadAvg(snap);
+
+        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrush);
     }
 
     private void ApplyGpu(MetricSnapshot snap)
@@ -640,6 +663,15 @@ public sealed class DashboardState : INotifyPropertyChanged
         string enc = TryText(snap, MetricId.GpuEncoderLoad, v => v.ToString("F0"));
         string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
         GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
+
+        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrush);
+
+        // 显存两行都带小写 v（6.3 / Q-04）：只看任意一行都能立刻分清"这是显存不是内存"。
+        string vramPct = memPct.HasValue ? "v" + Fmt.Pct(memPct.Value) + "%" : "v" + Fmt.Dash;
+        string vramSize = memUsed.HasValue && memTotal.HasValue
+            ? $"v{Fmt.Gb(memUsed.Value)}/{Fmt.Gb(memTotal.Value)}G"
+            : "v" + Fmt.Dash;
+        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrush);
     }
 
     private void ApplyMemory(MetricSnapshot snap)
@@ -667,7 +699,18 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         double? pageFile = Value(snap, MetricId.RamPageFileMb);
         MemDetail = pageFile.HasValue ? $"页面文件 ~{pageFile.Value / 1024:F1} GB（推算值）" : "";
+
+        // 悬浮窗的 RAM 下行要 "10.1/31.6G"：34px 高的条上放不下 "10.1 / 31.6 GB"，
+        // 空格和单位都得省（6.3 的列宽 74 就是按这个格式定的）。
+        string ramSize = used.HasValue && total.HasValue
+            ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
+            : Fmt.Dash;
+        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrush);
     }
+
+    /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>
+    private static string WithUnit(string value, string unit)
+        => value.Length == 0 || value == Fmt.Dash ? Fmt.Dash : value + unit;
 
     private void ApplyNetwork(MetricSnapshot snap)
     {
@@ -693,6 +736,8 @@ public sealed class DashboardState : INotifyPropertyChanged
         {
             NetLoss.Unavailable();
         }
+
+        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrush);
     }
 
     /// <summary>速率格：数值与单位一起换，避免出现"1024.0 KB/s"这种跨量级读数。</summary>

@@ -305,5 +305,30 @@
             </Trigger>
         </Style.Triggers>
     </Style>
+    <!--
+        悬浮窗两行式单元格（需求 6.3）：上行 13px 粗、下行 10px。
+        字号与列宽是配套的（34/44/44/74/78/44），改字号前先确认最窄的 FPS 列还放得下 3 位数字。
+        数字用 FontNumeric + Tabular，否则 2Hz 刷新时 60→144 会让整格左右跳。
+    -->
+    <Style x:Key="FloatValue" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        <Setter Property="LineHeight" Value="16" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="FloatLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="LineHeight" Value="13" />
+        <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
 
 </ResourceDictionary>

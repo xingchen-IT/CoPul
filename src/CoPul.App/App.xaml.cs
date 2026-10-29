@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using CoPul.App.Interop;
 
 namespace CoPul.App;
 
@@ -26,7 +27,43 @@ public partial class App : Application
 
         // --hidden：不显示窗口，用来分离「采集器成本」与「WPF 渲染成本」
         bool hidden = e.Args.Contains("--hidden");
-        if (!hidden) window.Show();
+
+        // --float：以悬浮窗模式启动（M2）。大窗口全程不 Show，但它的 Host 照常采集——
+        // 悬浮窗只是同一份 DashboardState 的另一个视图，不自己起第二套 PresentMon。
+        FloatWindow? floating = null;
+
+        FloatWindow EnsureFloat()
+        {
+            if (floating is not null) return floating;
+
+            floating = new FloatWindow(window.State);
+            floating.MainWindowRequested += (_, _) =>
+            {
+                floating?.Hide();
+                window.Show();
+                window.Activate();
+            };
+            return floating;
+        }
+
+        // 大窗口标题栏的「切到悬浮窗」按钮走这条回调：MainWindow 不认识 FloatWindow，
+        // 也不该认识——两者的关系由 App 接线，窗口之间不互相 new。
+        window.FloatRequested = () =>
+        {
+            window.Hide();
+            FloatWindow f = EnsureFloat();
+            f.Show();
+            f.Activate();
+        };
+
+        bool wantFloat = e.Args.Contains("--float");
+        if (wantFloat)
+        {
+            FloatWindow f = EnsureFloat();
+            f.CenterOnScreen = e.Args.Contains("--float-center");   // 验收毛玻璃时用
+            f.Show();
+        }
+        else if (!hidden) window.Show();
 
         // 自测：--stats <txt 路径> [--seconds 60] [--warmup 10] [--freeze] [--hidden]
         string? stats = ArgValue(e.Args, "--stats");
@@ -50,10 +87,21 @@ public partial class App : Application
 
         // 无头验收用：--shot <png 路径> [--wait 毫秒]
         // M1 没有自动化 UI 测试，用它把真实窗口渲染成图片，肉眼核对布局与数值。
+        //
+        // --shot-screen 走另一条路（GDI 抓屏）：毛玻璃是 DWM 在合成阶段画的，
+        // RenderTargetBitmap 只能画 WPF 自己的视觉树，截出来永远是一块纯色。
+        // 验收 6.8 第 1 条（背景确实被模糊）必须用 --shot-screen。
         string? shot = ArgValue(e.Args, "--shot");
-        if (shot is null) return;
+        string? shotScreen = ArgValue(e.Args, "--shot-screen");
+        if (shot is null && shotScreen is null) return;
+
+        // 截哪个窗口：悬浮窗可见时截悬浮窗，否则截大窗口
+        Window target = floating is { IsVisible: true } ? floating : window;
 
         int waitMs = int.TryParse(ArgValue(e.Args, "--wait"), out int w) && w > 0 ? w : 4000;
+
+        // 外扩像素：验收毛玻璃必须看到"窗口内 vs 窗口外"的差别，只截窗口本身永远看不出来
+        int pad = int.TryParse(ArgValue(e.Args, "--shot-pad"), out int p) && p > 0 ? p : 0;
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(waitMs) };
         timer.Tick += (_, _) =>
@@ -61,11 +109,22 @@ public partial class App : Application
             timer.Stop();
             try
             {
-                SavePng(window, shot);
+                if (shotScreen is not null)
+                {
+                    ScreenCapture.SaveWindow(target, shotScreen, pad);
+                    if (target is FloatWindow fw)
+                        File.WriteAllText(shotScreen + ".info.txt",
+                            $"glass: {fw.GlassMode}{Environment.NewLine}" +
+                            $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP");
+                }
+                else
+                {
+                    SavePng(target, shot!);
+                }
             }
             catch (Exception ex)
             {
-                File.WriteAllText(shot + ".error.txt", ex.ToString());
+                File.WriteAllText((shotScreen ?? shot) + ".error.txt", ex.ToString());
             }
             finally
             {

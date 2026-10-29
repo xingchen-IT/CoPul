@@ -44,6 +44,13 @@ public partial class MainWindow : Window
     /// <summary>自测用：允许外部改展示层的自测开关。</summary>
     public DashboardState State => _state;
 
+    /// <summary>
+    /// 「切到悬浮窗」（M2）。由 App 接线：MainWindow 不认识 FloatWindow——
+    /// 两个窗口共享同一份 <see cref="DashboardState"/>，但谁显示谁由 App 决定，
+    /// 窗口之间直接 new 会把"数据只有一份、界面可以有两个"这条约束弄丢。
+    /// </summary>
+    public Action? FloatRequested { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -322,4 +329,19 @@ public partial class MainWindow : Window
 
     private void Settings_Click(object sender, RoutedEventArgs e)
         => _state.ShowHint("设置页（挡位 / 托盘 / 毛玻璃开关）在 M2 实现；v1 固定 0.5s 挡位。");
+
+    /// <summary>
+    /// 切到悬浮窗（M2）。这里只发请求，真正谁 Hide 谁 Show 由 App 决定——
+    /// 悬浮窗需要同一份 DashboardState，自己 new 会变成两套采集。
+    /// </summary>
+    private void Float_Click(object sender, RoutedEventArgs e)
+    {
+        if (FloatRequested is null)
+        {
+            _state.ShowHint("悬浮窗未接线（以 --float 或正常启动时可用）");
+            return;
+        }
+
+        FloatRequested();
+    }
 }
