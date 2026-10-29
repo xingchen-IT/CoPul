@@ -326,13 +326,18 @@ public partial class FloatWindow : Window
     }
 
     /// <summary>
-    /// 松手时贴边（6.5）：距工作区边缘 &lt; 12 DIP 就吸上去，另一轴保持不动。
+    /// 松手时的贴边吸附距离（DIP）。需求 6.5 原文写 12，实测手感偏紧 ——
+    /// 34 DIP 高的条要精确停到距边 12 以内才有反应，正常拖动很难命中，
+    /// 用户反馈"基本吸不上"。放宽到 20（约窗口高度的 3/5），拖到边上松手就能挂住。
     ///
     /// <para>
-    /// 阈值必须按当前显示器缩放换算成物理像素：12 DIP 在 150% 屏上是 18 像素，
-    /// 直接拿 12 去比会让高 DPI 用户觉得"怎么拖都吸不上"。
+    /// 必须按当前显示器缩放换算成物理像素：20 DIP 在 150% 屏上是 30 像素，
+    /// 直接拿 20 去比会让高 DPI 用户觉得"怎么拖都吸不上"。
     /// </para>
     /// </summary>
+    private const double SnapDip = 20;
+
+    /// <summary>松手时贴边（6.5）：距工作区边缘在阈值内就吸上去，另一轴保持不动。</summary>
     private void SnapToWorkAreaEdge()
     {
         IntPtr hwnd = Handle;
@@ -340,7 +345,6 @@ public partial class FloatWindow : Window
         if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
         if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
 
-        const double SnapDip = 12;
         int snap = (int)Math.Round(SnapDip * Monitors.ScaleForWindow(hwnd));
 
         int widthPx = rect.Right - rect.Left;
@@ -365,8 +369,8 @@ public partial class FloatWindow : Window
     ///
     /// <para>
     /// 顺序不能反。先夹紧再吸附的话，被夹到工作区边缘的窗口会被吸附逻辑再挪一次，
-    /// 贴边的手感反而变成"弹一下"。吸附只认 12 DIP 以内，夹紧只认越界，
-    /// 两者作用范围不重叠，先吸后夹是唯一不会互相打架的顺序。
+    /// 贴边的手感反而变成"弹一下"。吸附只在阈值（<see cref="SnapDip"/>）以内生效，
+    /// 夹紧只处理越界，先吸后夹是唯一不会互相打架的顺序。
     /// </para>
     /// </summary>
     private void SettlePlacement()
