@@ -39,6 +39,8 @@ internal static class Monitors
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_FRAMECHANGED = 0x0020;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct MONITORINFOEX
@@ -166,6 +168,22 @@ internal static class Monitors
         if (hwnd == IntPtr.Zero) return;
         SetWindowPos(hwnd, IntPtr.Zero, leftPx, topPx, 0, 0,
             SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    /// <summary>
+    /// 通知系统"窗口框架变了"（<c>SWP_FRAMECHANGED</c>）。
+    ///
+    /// <para>
+    /// 改过 <c>GWL_STYLE</c>（比如为了拿系统阴影加 <c>WS_THICKFRAME</c>）之后必须发一次这个，
+    /// 否则 DWM 仍按旧框架缓存渲染，表现为"新样式没生效"。它不发 <c>WM_NCCALCSIZE</c> 之外的
+    /// 副作用，位置与尺寸都锁住不动。
+    /// </para>
+    /// </summary>
+    public static void NotifyFrameChanged(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
 
     /// <summary>

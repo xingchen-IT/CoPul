@@ -130,6 +130,10 @@ public partial class FloatWindow : Window
         {
             _hwndReady = true;
             WindowGlass.HideFromAltTab(this);
+
+            // 顺序不能反：先改 style 拿系统阴影，再上毛玻璃。反过来的话 accent 会被
+            // 随后那次 SetWindowLong 弄失效（背景退回清晰壁纸）。
+            EnableSystemShadow();
             ApplyGlass(_glass);
             SyncMenuChecks();
         };
@@ -143,6 +147,11 @@ public partial class FloatWindow : Window
         // 拿这个宽度去算「60% 可见」的夹紧范围会算出完全错误的结果。
         ContentRendered += (_, _) =>
         {
+            // 首帧渲染完再补一次玻璃。改过窗口 style 之后 accent 会丢掉（实测背景
+            // 退回清晰壁纸），SourceInitialized 里那次设置不够稳，这里兜底。
+            // 只跑一次、且只是重设同一组画刷，不会有可见闪烁。
+            if (_glass) ApplyGlass(_glass);
+
             if (PersistProbe)
             {
                 // 走 setter，也就是用户点菜单走的同一条路
@@ -455,6 +464,75 @@ public partial class FloatWindow : Window
     /// 自测/截图验收看这个字段就知道是系统背景生效了还是退到了 accent。
     /// </summary>
     public string GlassMode { get; private set; } = "未应用";
+
+    // =================================================================
+    // 投影（6.4）
+    // =================================================================
+
+    /// <summary>是否启用系统阴影。<c>--no-shadow</c> 可关掉，用于排查阴影/边框异常。</summary>
+    public bool SystemShadow { get; set; } = true;
+
+    private const int GWL_STYLE = -16;
+    private const int WS_THICKFRAME = 0x00040000;
+    private const int WM_NCCALCSIZE = 0x0083;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+
+    /// <summary>
+    /// 让 DWM 给这条无边框窗口画系统阴影（6.4：blur 16 / offsetY 4 / alpha 20%）。
+    ///
+    /// <para>
+    /// <b>为什么不用 WPF 的 DropShadowEffect</b>：本窗口 <c>AllowsTransparency=False</c>
+    /// （毛玻璃与硬件加速的前提，A-30），WPF 内容裁在窗口矩形内。唯一的机会是"窗口比内容
+    /// 大一圈，让阴影落在这圈空隙里"，但 accent 是<b>整窗</b>生效的 —— 实测那圈空隙被涂成
+    /// 不透明灰板（窗口变成一个 429×82 的直角灰板嵌着 381×34 的条），比没有阴影更糟。
+    /// 该路线已证伪，见 M2 报告 2.11。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>DWM 只给"有非客户区框架"的窗口画阴影。</b>所以先加 <c>WS_THICKFRAME</c> 让 DWM
+    /// 认为它是有边框窗口，再用 <c>WM_NCCALCSIZE</c> 返回 0 把客户区重新铺满 ——
+    /// 8px 边框在视觉上被吃掉，阴影留下。实测条下方从 112 luma 渐升到 125（远处背景 159），
+    /// 是自然渐隐、没有硬边。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>顺序必须是"先改 style、再 ApplyGlass"</b>：改窗口 style 会让先前设好的 accent 失效
+    /// （实测背景从模糊退回清晰锐利的壁纸）。所以调用点在 SourceInitialized 里排在 ApplyGlass
+    /// 之前，ContentRendered 再补一次兜底。
+    /// </para>
+    /// </summary>
+    private void EnableSystemShadow()
+    {
+        if (!SystemShadow) return;
+
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        HwndSource.FromHwnd(hwnd)?.AddHook(NcCalcSizeHook);
+
+        IntPtr style = GetWindowLongPtr(hwnd, GWL_STYLE);
+        SetWindowLongPtr(hwnd, GWL_STYLE, (IntPtr)((long)style | WS_THICKFRAME));
+
+        // 改完 style 必须通知框架已变，否则 DWM 仍按旧框架缓存渲染。
+        Monitors.NotifyFrameChanged(hwnd);
+    }
+
+    private IntPtr NcCalcSizeHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        // wParam=TRUE 表示"客户区要重新算"。返回 0 = 整个窗口都是客户区，
+        // 于是 WS_THICKFRAME 带来的 8px 边框不可见，但 DWM 仍按"有边框窗口"给它画阴影。
+        if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+        return IntPtr.Zero;
+    }
 
     /// <summary>双击或被菜单要求"回大窗口"。窗口之间不互相引用，由 App 接线。</summary>
     public event EventHandler? MainWindowRequested;

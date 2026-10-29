@@ -125,6 +125,9 @@ public partial class App : Application
             // --float-scale 125：验收三档缩放用（100 / 125 / 150，越界会夹到最近档）
             if (int.TryParse(ArgValue(e.Args, "--float-scale"), out int sc)) f.ScalePercent = sc;
 
+            // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
+            if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;
+
             // --float-snap-probe x,y：摆到 (x,y) 再跑吸附，结果写进 shots 的 sidecar 文件
             string? snapProbe = ArgValue(e.Args, "--float-snap-probe");
             if (snapProbe is not null)
