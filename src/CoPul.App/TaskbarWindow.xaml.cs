@@ -60,6 +60,9 @@ public partial class TaskbarWindow : Window
     private bool _attached;
     private InkMode _ink = InkMode.Auto;
 
+    /// <summary>Auto 模式下最近一次成功测得的"任务栏是浅底吗"。采样失败时沿用这个值。</summary>
+    private bool _autoIsLight;
+
     /// <summary>接收 <c>TaskbarCreated</c> 广播的隐藏顶层窗口。子窗口收不到广播，见 <see cref="InstallTaskbarWatcher"/>。</summary>
     private HwndSource? _watcher;
 
@@ -158,8 +161,9 @@ public partial class TaskbarWindow : Window
 
             Attach();
 
-            // 换主题/换壁纸时系统会广播 WM_SETTINGCHANGE，字色要跟着重算
-            HwndSource.FromHwnd(Handle)?.AddHook(SettingsChangedHook);
+            // 注意：WM_SETTINGCHANGE 挂在 InstallTaskbarWatcher 建的那个**顶层**窗口上，
+            // 不能挂这里。条自己是 WS_CHILD，而系统广播只投递给顶层窗口 ——
+            // 挂在自己身上等于从来没装上过（换主题、挪任务栏都不会有反应）。
 
             InstallTaskbarWatcher();
             StartWatchdog();
@@ -195,16 +199,49 @@ public partial class TaskbarWindow : Window
         Reposition();
     }
 
+    /// <summary>上次摆位时的关键量。<see cref="Reposition"/> 现在被 1 Hz 巡检调用，必须能空转。</summary>
+    private string _lastSig = string.Empty;
+
     /// <summary>按任务栏当前矩形重新摆位。任务栏高度/位置变化（缩放、移动）时也要调。</summary>
     public void Reposition()
     {
         if (!_attached || _bar == IntPtr.Zero) return;
         if (!Taskbar.TryGetRect(_bar, out Win32Window.RECT barRect)) return;
 
+        Taskbar.Edge edge = Taskbar.EdgeOf(_bar);
+        int freeWidth = Taskbar.FreeLeftWidth(_bar);
+        uint dpi = Monitors.DpiForWindow(_bar);
+        bool autoHide = Taskbar.IsAutoHide(_bar);
+
+        // 巡检每秒都会调一次这里，几何没变就必须什么都不做 ——
+        // 哪怕用同样的数值再 SetWindowPos 一次，也会引发 WM_WINDOWPOSCHANGED + WPF 重新布局，
+        // 变成一个每秒一次的免费掉帧。任务栏搬动/改高度/改 DPI 时这几个量才会变。
+        string sig = $"{edge}|{barRect.Left},{barRect.Top},{barRect.Right},{barRect.Bottom}|{freeWidth}|{dpi}";
+        if (sig == _lastSig) return;
+        _lastSig = sig;
+
+        // 7.7 / Q-13 任务栏位置：只做"底部"和"顶部"这两种横向任务栏。
+        // 竖向（左/右）任务栏宽度只有 72 px 左右，八格横排放不下 —— 与其硬塞出一条
+        // 被压扁的怪窗口，不如直接不画（用户在设置里把任务栏挪回上下就自动恢复）。
+        // 检测走 ABM_GETTASKBARPOS 的 uEdge，不用矩形比较：自动隐藏时整条滑出屏幕，
+        // 矩形反推会得出"既不在上也不在下"。
+        bool horizontal = edge is Taskbar.Edge.Bottom or Taskbar.Edge.Top;
+
+        if (!horizontal)
+        {
+            Suppress("竖向任务栏暂不支持");
+            return;
+        }
+
         // 高度跟随任务栏（7.3）。宽度取开始按钮左侧的空白，最多用到那里。
         int barHeight = barRect.Bottom - barRect.Top;
-        int freeWidth = Taskbar.FreeLeftWidth(_bar);
-        if (barHeight <= 0 || freeWidth <= LeftInset) return;
+        if (barHeight <= 0 || freeWidth <= LeftInset)
+        {
+            Suppress("任务栏左侧没有可用空白");
+            return;
+        }
+
+        Unsuppress();
 
         int width = freeWidth - LeftInset;
 
@@ -216,7 +253,6 @@ public partial class TaskbarWindow : Window
         // 最后一列没有右间距
         neededDip -= CellGapDip;
 
-        uint dpi = Monitors.DpiForWindow(_bar);
         double scale = dpi == 0 ? 1.0 : dpi / 96.0;
         int neededPx = (int)Math.Ceiling(neededDip * scale);
 
@@ -228,10 +264,35 @@ public partial class TaskbarWindow : Window
         // 这里曾经传 `barRect.Left + LeftInset, barRect.Top`（屏幕坐标），
         // 结果子窗口被放到父客户区的 y=1528 处 —— 屏幕外，表现为"什么都看不见"，
         // 而 GetWindowRect 报 (8,3056) 正好是 2×1528，是父偏移被加了两遍的样子。
-        Monitors.SetBounds(Handle, LeftInset, 0, finalWidth, barHeight);
+        //
+        // 注意 y 恒为 0：底部和顶部任务栏都成立 —— 相对父客户区，条永远贴在父的左上角。
+        Monitors.SetBounds(_hwnd, LeftInset, 0, finalWidth, barHeight);
 
         PlacementDiag = $"bar=({barRect.Left},{barRect.Top})-({barRect.Right},{barRect.Bottom}) " +
-                        $"free={freeWidth} need={neededPx} used={finalWidth} scale={scale:F2}";
+                        $"edge={edge} free={freeWidth} need={neededPx} used={finalWidth} " +
+                        $"scale={scale:F2} autohide={autoHide}";
+    }
+
+    /// <summary>当前是不是被主动藏起来了（竖向任务栏 / 没有空白）。</summary>
+    private bool _suppressed;
+
+    private void Suppress(string reason)
+    {
+        PlacementDiag = "suppressed: " + reason;
+        if (_suppressed) return;
+
+        _suppressed = true;
+        Taskbar.SetChildVisible(_hwnd, false);
+        Trace($"suppress: {reason}");
+    }
+
+    private void Unsuppress()
+    {
+        if (!_suppressed) return;
+
+        _suppressed = false;
+        Taskbar.SetChildVisible(_hwnd, true);
+        Trace("unsuppress: 恢复显示");
     }
 
     /// <summary>八个字段，按 7.4 的顺序。</summary>
@@ -242,21 +303,31 @@ public partial class TaskbarWindow : Window
     };
 
     /// <summary>
-    /// 7.5 的文字颜色。Auto 读 <c>SystemUsesLightTheme</c>：
-    /// 1 = 系统（任务栏）用浅色 → 浅底 → 深色字。
+    /// 7.5 的文字颜色。Auto 采样任务栏的**实际亮度**，不读
+    /// <c>SystemUsesLightTheme</c>：实测那个说"浅色"而任务栏是深蓝灰（跟随壁纸），
+    /// 按注册表判断会给深底配深字，什么都看不见。
     /// </summary>
     public void ApplyInk()
     {
-        bool taskbarIsLight = _ink switch
+        bool taskbarIsLight;
+        switch (_ink)
         {
-            InkMode.Light => false,
-            InkMode.Dark => true,
+            case InkMode.Light:
+                taskbarIsLight = false;
+                break;
+            case InkMode.Dark:
+                taskbarIsLight = true;
+                break;
+            default:
+                double luma = Taskbar.SampleLuma(_bar);
 
-            // Auto 采样任务栏的**实际亮度**，不读注册表。
-            // 实测 SystemUsesLightTheme=1 而任务栏是深蓝灰（跟随深色壁纸），
-            // 按注册表判断会给深底配深字，什么都看不见。
-            _ => Taskbar.SampleLuma(_bar) > 128,
-        };
+                // luma < 0 = 一点有效像素都没取到（自动隐藏时任务栏整条滑出屏幕）。
+                // 这时**保持上一次的判断**。早先的实现把"没采到"当 128 处理，
+                // 再拿 > 128 一比就翻成浅底 → 深色字，任务栏滑回来是深底深字，一片糊。
+                if (luma >= 0) _autoIsLight = luma > 128;
+                taskbarIsLight = _autoIsLight;
+                break;
+        }
 
         // 走 OnLightAlt 而不是 DashboardState.SetFloatTheme：那个会翻所有字段的
         // OnLight，把悬浮窗的颜色一起改掉。两个视图共用一份字段，主题必须各管各的。
@@ -321,9 +392,32 @@ public partial class TaskbarWindow : Window
         {
             Trace("TaskbarCreated 收到");
             ScheduleReattach(0);
+            return IntPtr.Zero;
         }
+
+        const int WM_SETTINGCHANGE = 0x001A;
+        const int WM_DISPLAYCHANGE = 0x007E;
+
+        // 主题 / DPI / 显示器 / 任务栏位置变化都会发这两条，而且来得非常密。
+        // 排到 Dispatcher 队尾做（窗口过程里不能改窗口尺寸），并用一个标志合并突发的一串。
+        if (msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE)
+        {
+            if (_settingsQueued) return IntPtr.Zero;
+            _settingsQueued = true;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _settingsQueued = false;
+                if (_handedOff) return;
+                ApplyInk();
+                Reposition();
+            }));
+        }
+
         return IntPtr.Zero;
     }
+
+    private bool _settingsQueued;
 
     /// <summary>
     /// 每秒检查一次"条还在不在、任务栏还是不是原来那个"。
@@ -360,6 +454,22 @@ public partial class TaskbarWindow : Window
         if (!Taskbar.IsAlive(_bar) || Taskbar.Find() != _bar)
         {
             Recover(rebuild: false);
+            return;
+        }
+
+        // 广播在提权运行时收不到（见 InstallTaskbarWatcher 的说明），
+        // 所以"任务栏被挪到别的边 / 换了高度 / 换了主题壁纸"只能靠巡检兜底。
+        // Reposition 内部有几何签名短路，没变时只是几次比较，不会真的去 SetWindowPos。
+        Reposition();
+
+        if (_ink == InkMode.Auto)
+        {
+            double luma = Taskbar.SampleLuma(_bar);
+
+            // 加 10 的死区：任务栏是带模糊的半透明层，壁纸动画/视频会让采样值每秒小幅抖动。
+            // 卡着 128 翻来翻去的话字色会一秒一变，比不跟还糟。
+            if (luma >= 0 && (luma > 128) != _autoIsLight && Math.Abs(luma - 128) > 10)
+                ApplyInk();
         }
     }
 
@@ -432,24 +542,6 @@ public partial class TaskbarWindow : Window
             ApplyInk();
         };
         t.Start();
-    }
-
-    private IntPtr SettingsChangedHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        const int WM_SETTINGCHANGE = 0x001A;
-        const int WM_DISPLAYCHANGE = 0x007E;
-
-        if (msg == WM_SETTINGCHANGE || msg == WM_DISPLAYCHANGE)
-        {
-            // 这两个消息来得非常密（主题、DPI、显示器、颜色都会发），
-            // 排到 Dispatcher 队尾去做，避免在窗口过程里改窗口尺寸
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                ApplyInk();
-                Reposition();
-            }));
-        }
-        return IntPtr.Zero;
     }
 
     protected override void OnClosed(EventArgs e)

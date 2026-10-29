@@ -277,17 +277,29 @@ internal static class Taskbar
     /// <para>
     /// 采样点取托盘左侧那段空白：图标区在中间、时钟在最右，那两处一定有内容。
     /// </para>
+    ///
+    /// <para>
+    /// <b>返回 -1 表示"一个有效像素都没取到"</b>，调用方必须保持上一次的判断。
+    /// 任务栏开了自动隐藏时会整条滑出屏幕，这时任务栏矩形完全在屏幕外，
+    /// <c>GetPixel</c> 一律返回 <c>CLR_INVALID</c>；早先的实现把这种"没采到"
+    /// 当成 128（灰色）处理，再拿 <c>&gt; 128</c> 一比就翻成浅底 → 深色字，
+    /// 任务栏滑回来就是深底深字，一片糊。
+    /// </para>
     /// </summary>
     public static double SampleLuma(IntPtr bar)
     {
-        if (bar == IntPtr.Zero || !GetWindowRect(bar, out RECT r)) return 128;
+        if (bar == IntPtr.Zero || !GetWindowRect(bar, out RECT r)) return -1;
+        if (!Monitors.TryPrimaryMonitorBounds(out Win32Window.RECT screen)) return -1;
+
+        // 自动隐藏时任务栏大部分在屏幕外，把采样 y 夹回可见范围（屏幕上最后一条像素）
+        int y = Math.Clamp((r.Top + r.Bottom) / 2, screen.Top, screen.Bottom - 1);
+        if (r.Top >= screen.Bottom || r.Bottom <= screen.Top) return -1;   // 整条都不在屏幕上
 
         IntPtr dc = GetDC(IntPtr.Zero);
-        if (dc == IntPtr.Zero) return 128;
+        if (dc == IntPtr.Zero) return -1;
 
         try
         {
-            int y = (r.Top + r.Bottom) / 2;
             double sum = 0;
             int count = 0;
 
@@ -307,7 +319,7 @@ internal static class Taskbar
                 count++;
             }
 
-            return count == 0 ? 128 : sum / count;
+            return count == 0 ? -1 : sum / count;
         }
         finally
         {
@@ -329,6 +341,100 @@ internal static class Taskbar
         if (bar == IntPtr.Zero) return;
         IntPtr after = topmost ? new IntPtr(-1) : new IntPtr(-2);   // HWND_TOPMOST / HWND_NOTOPMOST
         SetWindowPos(bar, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);   // NOSIZE|NOMOVE|NOACTIVATE
+    }
+
+    /// <summary>任务栏停靠边，取值与 <c>ABE_*</c> 一致。</summary>
+    public enum Edge
+    {
+        Left = 0,
+        Top = 1,
+        Right = 2,
+        Bottom = 3,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct APPBARDATA
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uCallbackMessage;
+        public uint uEdge;
+        public RECT rc;
+        public IntPtr lParam;
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern IntPtr SHAppBarMessage(uint message, ref APPBARDATA data);
+
+    private const uint ABM_GETSTATE = 0x00000004;
+    private const uint ABM_GETTASKBARPOS = 0x00000005;
+
+    private static APPBARDATA NewBarData() => new() { cbSize = Marshal.SizeOf<APPBARDATA>() };
+
+    /// <summary>
+    /// 自测用：强制指定停靠边，<c>null</c> = 用真实值。
+    ///
+    /// <para>
+    /// 为什么要这个开关：验证"竖向任务栏降级"必须先把任务栏挪到左边 ——
+    /// 那是改用户的系统设置，自测跑一次改一次不可接受（而且中途进程被杀就留在那儿了）。
+    /// 只覆盖<b>判定结果</b>，真正的 <c>SetParent</c>、摆位、隐藏全走生产代码路径，
+    /// 所以"降级分支到底会不会把条藏起来"是真验证过的。
+    /// </para>
+    /// </summary>
+    public static Edge? EdgeOverride { get; set; }
+
+    /// <summary>
+    /// 任务栏停在哪条边上（上 / 下 / 左 / 右）。
+    ///
+    /// <para>
+    /// 用 <c>ABM_GETTASKBARPOS</c> 而不是拿任务栏矩形跟屏幕矩形比大小：
+    /// 自动隐藏时任务栏是"整条滑出屏幕"的，矩形会整个跑到屏幕外，
+    /// 靠几何反推会得出"既不在上也不在下"的错误答案。这条消息直接给 <c>uEdge</c>。
+    /// </para>
+    ///
+    /// <para>取不到时按"底部"处理 —— 这是绝大多数机器的情况，也是最不容易造成事故的猜测。</para>
+    /// </summary>
+    public static Edge EdgeOf(IntPtr bar)
+    {
+        if (EdgeOverride is { } forced) return forced;
+        if (bar == IntPtr.Zero) return Edge.Bottom;
+
+        APPBARDATA data = NewBarData();
+        return SHAppBarMessage(ABM_GETTASKBARPOS, ref data) == IntPtr.Zero
+            ? Edge.Bottom
+            : (Edge)data.uEdge;
+    }
+
+    /// <summary>
+    /// 任务栏是否开了"自动隐藏"（<c>ABS_AUTOHIDE</c>）。
+    ///
+    /// <para>
+    /// 这个只用来记日志和诊断：自动隐藏时任务栏整条滑出屏幕，
+    /// 而我们的条是它的<b>子窗口</b>，会被父窗口的可见区域裁剪 ——
+    /// 也就是说"跟着一起滑走"是白送的，不需要额外做什么。
+    /// 真正要防的是<b>采样配色</b>：任务栏滑走后采样点落在屏幕外，
+    /// <c>GetPixel</c> 一律返回 <c>CLR_INVALID</c>，会被当成"白色底"从而把字翻成深色。
+    /// </para>
+    /// </summary>
+    public static bool IsAutoHide(IntPtr bar)
+    {
+        if (bar == IntPtr.Zero) return false;
+        APPBARDATA data = NewBarData();
+        return ((long)SHAppBarMessage(ABM_GETSTATE, ref data) & 0x1L) != 0;   // ABS_AUTOHIDE
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int cmd);
+
+    /// <summary>
+    /// 显示/隐藏子窗口。用 Win32 而不是 <c>Window.Visibility</c>：
+    /// 条是 <c>WS_CHILD</c> 窗口，WPF 的 <c>Visibility</c> 语义是围绕"顶层窗口"设计的，
+    /// 在子窗口上会连带改父窗口的可见性判断，直接用 <c>ShowWindow</c> 最没有副作用。
+    /// </summary>
+    public static void SetChildVisible(IntPtr hwnd, bool visible)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return;
+        ShowWindow(hwnd, visible ? 4 : 0);   // SW_SHOWNOACTIVATE / SW_HIDE
     }
 
     /// <summary>

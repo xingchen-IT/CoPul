@@ -29,6 +29,16 @@ public partial class App : Application
         InstallCrashLog();
         _uiThreadId = GetCurrentThreadId();
 
+        // 自测：--force-edge left|right|top|bottom，只覆盖"任务栏停在哪条边"的判定结果。
+        // 验证 7.7 的竖向任务栏降级必须把任务栏真的挪到左边，那是改用户的系统设置 ——
+        // 跑一次改一次不可接受（中途进程被杀还会留在那儿），所以只伪造判定结果，
+        // SetParent / 摆位 / 隐藏全走生产路径。
+        if (ArgValue(e.Args, "--force-edge") is { } forcedEdge
+            && Enum.TryParse(forcedEdge, ignoreCase: true, out Taskbar.Edge parsedEdge))
+        {
+            Taskbar.EdgeOverride = parsedEdge;
+        }
+
         // 自测：--taskbar-probe <txt 路径>。只读探测任务栏，不建窗口，写完即退。
         // M3 的地基全是"真实环境长什么样"：任务栏多高、图标区从哪开始、内部结构叫什么。
         // 这几项在 Win10 / Win11 22H2 / 24H2 上都不一样，只能实测，查文档会写出想当然的代码。
@@ -525,6 +535,13 @@ public partial class App : Application
         {
             uint dpi = GetDpiForWindowSafe(bar);
             sb.AppendLine($"任务栏 DPI           : {dpi} (缩放 {dpi / 96.0:F2})");
+
+            // 7.7 / Q-13：停靠边决定条能不能画（竖向只放得下几列），自动隐藏决定配色能不能采样
+            sb.AppendLine($"停靠边 (ABM)         : {Taskbar.EdgeOf(bar)}");
+            sb.AppendLine($"自动隐藏 (ABM)       : {(Taskbar.IsAutoHide(bar) ? "开" : "关")}");
+
+            double luma = Taskbar.SampleLuma(bar);
+            sb.AppendLine($"取样亮度             : {(luma < 0 ? "-1（整条在屏幕外，取不到）" : luma.ToString("F1"))}");
 
             sb.AppendLine();
             sb.AppendLine("== 几何关系（物理像素）==");
