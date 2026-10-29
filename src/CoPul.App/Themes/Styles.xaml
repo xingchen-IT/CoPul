@@ -218,5 +218,92 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!--
+        滚动条。WPF 默认是 Aero2 的浅色条（宽 17、带上下箭头按钮），落在 #0F1216 背景上
+        会割裂成一整条白边，所以这里整条重画：10px 细条、无箭头、无轨道底、圆角滑块。
+        滑块底色三档（常态/悬停/拖动）都在 Palette 里，别在这里写死 hex。
+    -->
+    <Style x:Key="ScrollBarThumbStyle" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <!-- Margin 只缩在内层 Border 上：滑块视觉宽 6，Thumb 本身仍占满 10，
+                         命中区不跟着变窄 -->
+                    <Border x:Name="Bd" Background="{StaticResource BrushScrollThumb}"
+                            CornerRadius="3" Margin="2,0" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushScrollThumbHover}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushScrollThumbDrag}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 轨道里的翻页热区：完全透明，只保留点击/长按翻页的行为 -->
+    <Style x:Key="ScrollBarPageButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 隐式样式：ScrollViewer 模板里的 PART_VerticalScrollBar 没有显式 Style，会吃到这里 -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Width" Value="10" />
+        <Setter Property="MinWidth" Value="10" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <!-- 上下留 2px，滑块不顶到窗口圆角上 -->
+                    <Grid Background="{TemplateBinding Background}" Margin="0,2,0,2">
+                        <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}"
+                               IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton x:Name="PageUp" Style="{StaticResource ScrollBarPageButtonStyle}"
+                                              Command="{x:Static ScrollBar.PageUpCommand}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource ScrollBarThumbStyle}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton x:Name="PageDown" Style="{StaticResource ScrollBarPageButtonStyle}"
+                                              Command="{x:Static ScrollBar.PageDownCommand}" />
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- 水平条：方向不反转，翻页命令换左右，否则点轨道会往垂直方向滚 -->
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                            <Setter TargetName="PageUp" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}" />
+                            <Setter TargetName="PageDown" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Height" Value="10" />
+                <Setter Property="MinHeight" Value="10" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
 
 </ResourceDictionary>

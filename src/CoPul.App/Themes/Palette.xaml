@@ -14,6 +14,12 @@
     <SolidColorBrush x:Key="BrushStroke"       Color="#242C35" />
     <SolidColorBrush x:Key="BrushTrack"        Color="#232B33" />
 
+    <!-- 滚动条滑块：常态只比轨道亮一档（不抢视线），悬停/拖动才提对比。
+         三档都是低饱和中性灰，与 10.3「禁止霓虹色」一致。 -->
+    <SolidColorBrush x:Key="BrushScrollThumb"      Color="#39434F" />
+    <SolidColorBrush x:Key="BrushScrollThumbHover" Color="#4C5764" />
+    <SolidColorBrush x:Key="BrushScrollThumbDrag"  Color="#5E6A79" />
+
     <!-- 文字 -->
     <SolidColorBrush x:Key="BrushTextPrimary"   Color="#E8ECF2" />
     <SolidColorBrush x:Key="BrushTextSecondary" Color="#9AA4B2" />

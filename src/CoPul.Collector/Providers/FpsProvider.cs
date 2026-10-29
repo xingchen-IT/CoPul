@@ -300,10 +300,20 @@ public sealed class FpsProvider : IMetricProvider
 
         sink.Set(MetricId.FpsPresent, current);
         sink.Set(MetricId.FpsFrameTimeMs, 1000.0 / current);
-        sink.Set(MetricId.FpsMin60, min);
-        sink.Set(MetricId.FpsMax60, max);
-        sink.Set(MetricId.FpsAvg60, avg);
-        sink.Set(MetricId.FpsLow1Pct, _low1);
+
+        // min/max/avg/1%Low 在窗口还没攒够时是 NaN。IsUsable 只看 State、不看值是否有限，
+        // 直接 Set 会让 UI 打出 "NaN"（刚启动那几秒就是这个样子），所以统一退成 `—`。
+        SetFinite(sink, MetricId.FpsMin60, min);
+        SetFinite(sink, MetricId.FpsMax60, max);
+        SetFinite(sink, MetricId.FpsAvg60, avg);
+        SetFinite(sink, MetricId.FpsLow1Pct, _low1);
+    }
+
+    /// <summary>有限值才写 Ok；NaN / ±Inf 一律标记为不可用。</summary>
+    private static void SetFinite(MetricSnapshot sink, MetricId id, double v)
+    {
+        if (double.IsFinite(v)) sink.Set(id, v);
+        else sink.SetUnavailable(id);
     }
 
     /// <summary>
