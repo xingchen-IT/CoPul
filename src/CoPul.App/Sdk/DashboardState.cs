@@ -341,6 +341,21 @@ public sealed class DashboardState : INotifyPropertyChanged
     public FloatField FloatVram { get; }
     public FloatField FloatNet { get; }
 
+    /// <summary>
+    /// 悬浮窗切浅色 / 深色玻璃时统一翻画刷。六格各自持两套（浅底压暗版 / 原色），
+    /// 切换只是换索引，不动字符串，因此不会触发一次无谓的重新格式化。
+    /// 大窗口不受影响：它读的是 <see cref="MetricCell.ValueBrush"/>，与这里无关。
+    /// </summary>
+    public void SetFloatTheme(bool light)
+    {
+        FloatFps.OnLight = light;
+        FloatCpu.OnLight = light;
+        FloatGpu.OnLight = light;
+        FloatRam.OnLight = light;
+        FloatVram.OnLight = light;
+        FloatNet.OnLight = light;
+    }
+
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
     /// <summary>进程表行。行对象复用，只改字段。</summary>
@@ -617,7 +632,7 @@ public sealed class DashboardState : INotifyPropertyChanged
             FpsAvg.Unavailable();
         }
 
-        FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrushOnGlass);
+        FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrushOnGlass, FpsValue.ValueBrush);
     }
 
     private void ApplyCpu(MetricSnapshot snap)
@@ -640,7 +655,7 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         LoadAvgText = FormatLoadAvg(snap);
 
-        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass);
+        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass, CpuLoad.ValueBrush);
     }
 
     private void ApplyGpu(MetricSnapshot snap)
@@ -664,14 +679,14 @@ public sealed class DashboardState : INotifyPropertyChanged
         string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
         GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
 
-        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrushOnGlass);
+        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrushOnGlass, GpuLoad.ValueBrush);
 
         // 显存两行都带小写 v（6.3 / Q-04）：只看任意一行都能立刻分清"这是显存不是内存"。
         string vramPct = memPct.HasValue ? "v" + Fmt.Pct(memPct.Value) + "%" : "v" + Fmt.Dash;
         string vramSize = memUsed.HasValue && memTotal.HasValue
             ? $"v{Fmt.Gb(memUsed.Value)}/{Fmt.Gb(memTotal.Value)}G"
             : "v" + Fmt.Dash;
-        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass);
+        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass, GpuMem.ValueBrush);
     }
 
     private void ApplyMemory(MetricSnapshot snap)
@@ -705,7 +720,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         string ramSize = used.HasValue && total.HasValue
             ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
             : Fmt.Dash;
-        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass);
+        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass, MemLoad.ValueBrush);
     }
 
     /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>
@@ -737,7 +752,7 @@ public sealed class DashboardState : INotifyPropertyChanged
             NetLoss.Unavailable();
         }
 
-        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass);
+        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
     }
 
     /// <summary>速率格：数值与单位一起换，避免出现"1024.0 KB/s"这种跨量级读数。</summary>

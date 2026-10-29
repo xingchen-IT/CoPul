@@ -97,10 +97,15 @@ internal static class WindowGlass
     }
 
     /// <summary>
-    /// 施加毛玻璃 + 圆角 + 深色模式。返回实际生效的方式，写进自测/日志便于判断
+    /// 施加毛玻璃 + 圆角 + 深浅模式。返回实际生效的方式，写进自测/日志便于判断
     /// "看起来不像毛玻璃"到底是环境不支持还是参数写错了。
     /// </summary>
-    public static string Apply(Window window, Backdrop kind, bool dark, double tintOpacity = 0.35)
+    /// <param name="dark">深色档（tint 用 #0F1216）还是浅色档（tint 用 #F6F8FB）。</param>
+    /// <param name="tintOpacity">
+    /// accent tint 的 alpha，0–1。这是"模糊层之上的那层颜色有多浓"，
+    /// 不直接等于最终遮盖率——窗口自身的 Shell 遮罩还会再叠一层。
+    /// </param>
+    public static string Apply(Window window, Backdrop kind, bool dark, double tintOpacity)
     {
         IntPtr hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == IntPtr.Zero) return "未取到 HWND（必须在 SourceInitialized 之后调用）";
@@ -123,6 +128,7 @@ internal static class WindowGlass
 
         if (kind == Backdrop.None) return "不透明";
 
+
         // 顺序说明：**先 accent，后 DWM systembackdrop**，与"优先用新 API"的直觉相反。
         // 原因是 WPF 的非 layered 窗口走的是不透明 DXGI swapchain（alpha 被 DWM 忽略），
         // SYSTEMBACKDROP_TYPE 即使返回 S_OK 也画不出来——实测窗口内部像素级均匀的纯色。
@@ -138,17 +144,26 @@ internal static class WindowGlass
         return $"失败：Accent 与 DWM 均不可用（DWM hr=0x{hr:X8}）";
     }
 
+    /// <summary>
+    /// <b>必须是 0，不能是 2。</b>这是踩了几轮才定位到的关键：社区里流传的 <c>AccentFlags = 2</c>
+    /// 会让 DWM 走"不透明边框"那条路，**GradientColor 的 alpha 被整个忽略**，底色锁死在
+    /// 系统值（浅色约 88% 白、深色约 85% 深灰），于是"调浓度"像调了个寂寞——
+    /// 实测 alpha 从 0.00 拉到 0.70，窗内亮度只动 7/255。
+    /// 改成 0（或 0x20）后 alpha 立刻生效：同样三档，窗内亮度 153 → 178 → 225，模糊不受影响。
+    /// 保留这个字段只是为了让 <c>--accent-flags</c> 自测参数能复现那次对照实验。
+    /// </summary>
+    internal static int AccentFlagsOverride = 0;
+
     private static bool TryApplyAccent(IntPtr hwnd, Backdrop kind, bool dark, double tintOpacity)
     {
         // GradientColor 是 AABBGGRR。alpha 不是随便取的：accent 路径的 tint 会**再叠一次**
         // 窗口自己的半透明底（FloatWindow 的 Shell），两层相乘才是最终"遮住背景"的比例。
-        // 实测 65% + 35% 遮罩时背景只剩 ~22%，落在暗部壁纸上只差 4/255，肉眼几乎看不出模糊；
-        // 取 45% tint + 20% 遮罩后总着色约 56%，仍在 6.4 要求的 55–70% 内，但透出率翻倍。
-        // 注意：浅色档不能用对称的算法。实测 ACRYLICBLURBEHIND 的白色 tint 在浅色下
-        // 会额外叠一层系统亮度（alpha 只给 50% 时，像素级实测总遮盖已达 ~90%——
-        // 窗口内 #F4EDEB 对背景 #EA3A4D，红字壁纸只剩一点点暖调）。
-        // 所以浅色取 0.35，实测总遮盖落在 65% 上下，才看得出"后方被模糊"。
-        int alpha = (int)Math.Round(Math.Clamp(dark ? 0.45 : 0.30, 0.0, 1.0) * 255);
+        //
+        // 深浅两档的可调范围不一样，别用同一个公式：
+        // 深色档 accent 自己占主导（45% + Shell 20% ≈ 56%），alpha 一改观感立刻跟着变；
+        // 浅色档系统自带约 85% 的白底，alpha 从 0.05 调到 0.50 总遮盖只在 87%–90% 之间浮动，
+        // 所以浅色的"浓度"主要靠 Shell 遮罩来体现，accent 只做微调。
+        int alpha = (int)Math.Round(Math.Clamp(tintOpacity, 0.0, 1.0) * 255);
 
         // RGB 必须跟着深浅走。浅色毛玻璃的"白雾"就是这一层给的：
         // 只把 alpha 调薄、RGB 却仍给 #0F1216，画面上会变成一层灰罩而不是奶白玻璃。
@@ -164,7 +179,7 @@ internal static class WindowGlass
             // 既不做模糊也不吃 tint，实测窗口内是纯黑 + 窗口自身遮罩（#2C2D2F 正好等于
             // "16% 白叠纯黑"），看起来像一块不透明的灰板。
             AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
-            AccentFlags = 2,
+            AccentFlags = AccentFlagsOverride,
             GradientColor = color,
             AnimationId = 0,
         };

@@ -56,9 +56,13 @@
 
     <!-- 玻璃本体 -->
     <SolidColorBrush x:Key="BrushGlassTint"       Color="#29FFFFFF" />  <!-- 白 16%，叠在 accent tint 上 -->
-    <SolidColorBrush x:Key="BrushGlassSolid"      Color="#F2F4F7" />    <!-- 关掉毛玻璃时的不透明底 -->
+    <SolidColorBrush x:Key="BrushGlassSolid"      Color="#F2F4F7" />    <!-- 关掉毛玻璃时的不透明底（浅） -->
     <SolidColorBrush x:Key="BrushGlassEdge"       Color="#1F000000" />  <!-- 黑 12% -->
     <SolidColorBrush x:Key="BrushGlassEdgeHover"  Color="#3D000000" />  <!-- 黑 24% -->
+
+    <!-- 深色玻璃的描边：奶白底上用黑、深色底上用白，各取"能在自己底上看见"的那一头 -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDark"       Color="#1FFFFFFF" />  <!-- 白 12% -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDarkHover"  Color="#38FFFFFF" />  <!-- 白 22% -->
 
     <!-- 文字 -->
     <SolidColorBrush x:Key="BrushTextOnGlass"          Color="#1B2027" />

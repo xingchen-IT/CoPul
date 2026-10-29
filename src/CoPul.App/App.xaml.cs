@@ -16,6 +16,12 @@ public partial class App : Application
     /// <summary>UI 线程的 OS 线程 ID。用于在线程分解里认出"渲染/布局"这一路。</summary>
     private uint _uiThreadId;
 
+    /// <summary>
+    /// 自测用的纯色背景板（<c>--backdrop #RRGGBB</c>）。只在验收毛玻璃时存在，
+    /// 让"窗口内 vs 窗口外"的像素对比有可比性；正常启动恒为 null。
+    /// </summary>
+    private Window? _backdrop;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -57,10 +63,54 @@ public partial class App : Application
         };
 
         bool wantFloat = e.Args.Contains("--float");
+        if (e.Args.Contains("--backdrop"))
+        {
+            // --backdrop #RRGGBB：先铺一块满屏纯色，再让悬浮窗压在上面。
+            // 验收毛玻璃必须这么做——桌面内容一直在变（游戏 / 网页 / 壁纸轮播），
+            // 没有固定背景时同一段采样会得到完全不同的底，像素结论根本不可比。
+            // --backdrop checker：改用 6 DIP 黑白棋盘格。纯色底看不出"有没有模糊"
+            // （糊了也是同一个颜色），只有高频纹理才能区分「真模糊」与「只是半透明」。
+            string? backdrop = ArgValue(e.Args, "--backdrop");
+            Brush? boardBrush = backdrop switch
+            {
+                "checker" => CheckerBrush(),
+                null => null,
+                _ => TryParseColor(backdrop, out Color bgColor) ? new SolidColorBrush(bgColor) : null,
+            };
+
+            if (boardBrush is not null)
+            {
+                // 尺寸取 1200×500 居中，而不是最大化：够铺满"窗口 + pad"的采样范围，
+                // 又不至于整屏盖住用户正在看的画面（自测时会闪几秒）。
+                // 必须 Topmost——不然游戏 / 浏览器是前台，色块会被压在下面，采样全错。
+                double vw = SystemParameters.PrimaryScreenWidth;
+                double vh = SystemParameters.PrimaryScreenHeight;
+                _backdrop = new Window
+                {
+                    WindowStyle = WindowStyle.None,
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Width = Math.Min(1200, vw),
+                    Height = Math.Min(500, vh),
+                    Left = (vw - Math.Min(1200, vw)) / 2,
+                    Top = (vh - Math.Min(500, vh)) / 2,
+                    Background = boardBrush,
+                    Topmost = true,
+                };
+                _backdrop.Show();
+            }
+        }
+
         if (wantFloat)
         {
             FloatWindow f = EnsureFloat();
             f.CenterOnScreen = e.Args.Contains("--float-center");   // 验收毛玻璃时用
+
+            // 自测开关必须在 Show 之前设：Show 之后 HWND 就绪，玻璃会按当时的值画一遍。
+            if (e.Args.Contains("--glass-dark")) f.Theme = FloatWindow.GlassTheme.Dark;
+            if (int.TryParse(ArgValue(e.Args, "--accent-flags"), out int flags)) WindowGlass.AccentFlagsOverride = flags;
+            if (int.TryParse(ArgValue(e.Args, "--glass-level"), out int lv)) f.GlassLevel = lv;
+
             f.Show();
         }
         else if (!hidden) window.Show();
@@ -187,6 +237,46 @@ public partial class App : Application
     {
         int i = Array.IndexOf(args, name);
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
+    /// <summary>解析 <c>#RRGGBB</c>。只接受这一种写法——自测参数，不需要容错各种花样。</summary>
+    private static bool TryParseColor(string text, out Color color)
+    {
+        color = Colors.Black;
+        string hex = text.TrimStart('#');
+        if (hex.Length != 6 || !int.TryParse(hex, System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out int rgb))
+            return false;
+
+        color = Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+        return true;
+    }
+
+    /// <summary>
+    /// 6 DIP 黑白棋盘格。用来判断"模糊到底有没有发生"：真模糊会把高频格子糊成均匀灰，
+    /// 只有半透明的话格子仍然清清楚楚。**纯色背景永远测不出这一条。**
+    /// </summary>
+    private static Brush CheckerBrush()
+    {
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(
+            new SolidColorBrush(Color.FromRgb(0x1E, 0x22, 0x28)), null, new RectangleGeometry(new Rect(0, 0, 12, 12))));
+        group.Children.Add(new GeometryDrawing(
+            Brushes.White, null, new RectangleGeometry(new Rect(0, 0, 6, 6))));
+        group.Children.Add(new GeometryDrawing(
+            Brushes.White, null, new RectangleGeometry(new Rect(6, 6, 6, 6))));
+
+        var brush = new DrawingBrush(group)
+        {
+            TileMode = TileMode.Tile,
+            Viewport = new Rect(0, 0, 12, 12),
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewbox = new Rect(0, 0, 12, 12),
+            ViewboxUnits = BrushMappingMode.Absolute,
+            Stretch = Stretch.None,
+        };
+        brush.Freeze();
+        return brush;
     }
 
     /// <summary>

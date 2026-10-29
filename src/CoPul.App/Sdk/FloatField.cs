@@ -19,7 +19,9 @@ public sealed class FloatField : INotifyPropertyChanged
 {
     private string _top = "—";
     private string _bottom = "";
-    private Brush _topBrush = Brushes.Gray;
+    private Brush _lightBrush = Brushes.Gray;
+    private Brush _darkBrush = Brushes.Gray;
+    private bool _onLight = true;
 
     public FloatField(string key, double width)
     {
@@ -35,18 +37,34 @@ public sealed class FloatField : INotifyPropertyChanged
     public string Top => _top;
     public string Bottom => _bottom;
 
-    /// <summary>主值颜色，跟着阈值走（与 <see cref="MetricCell.ValueBrush"/> 同源）。</summary>
-    public Brush TopBrush => _topBrush;
+    /// <summary>
+    /// 主值颜色，跟着阈值走（与 <see cref="MetricCell.ValueBrush"/> 同源）：
+    /// 浅色玻璃上取压暗版，深色玻璃上取原色。两套都常驻，切换主题只是换索引。
+    /// </summary>
+    public Brush TopBrush => _onLight ? _lightBrush : _darkBrush;
+
+    /// <summary>当前用哪套画刷。切浅色/深色时由 <see cref="DashboardState"/> 统一翻。</summary>
+    public bool OnLight
+    {
+        get => _onLight;
+        set
+        {
+            if (_onLight == value) return;
+            _onLight = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrush)));
+        }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void Set(string top, string bottom, Brush topBrush)
+    public void Set(string top, string bottom, Brush lightBrush, Brush darkBrush)
     {
         bool changed = false;
 
         if (_top != top) { _top = top; changed = true; }
         if (_bottom != bottom) { _bottom = bottom; changed = true; }
-        if (!ReferenceEquals(_topBrush, topBrush)) { _topBrush = topBrush; changed = true; }
+        if (!ReferenceEquals(_lightBrush, lightBrush)) { _lightBrush = lightBrush; changed = true; }
+        if (!ReferenceEquals(_darkBrush, darkBrush)) { _darkBrush = darkBrush; changed = true; }
 
         if (changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
