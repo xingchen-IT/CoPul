@@ -8,17 +8,16 @@ namespace CoPul.App.Interop;
 /// <summary>
 /// 毛玻璃（需求 6.4）与窗口外观（6.1 / 10.1）。
 ///
-/// 两条路，按能力降级：
-/// <list type="number">
-/// <item>Win11 22621+ 的 <c>DWMWA_SYSTEMBACKDROP_TYPE</c>：Acrylic / Mica 由系统合成器直接画，
-/// 模糊在合成器里做，WPF 侧零成本，拖动也不掉帧，圆角交给 <c>DWMWA_WINDOW_CORNER_PREFERENCE</c>。</item>
-/// <item>Win10 1803+ 或方案 1 失败：<c>SetWindowCompositionAttribute</c> +
-/// <c>ACCENT_ENABLE_ACRYLICBLURBEHIND</c>。</item>
-/// </list>
+/// <para>
+/// <b>实际生效的是 <c>SetWindowCompositionAttribute</c> + <c>ACCENT_ENABLE_ACRYLICBLURBEHIND</c></b>，
+/// 深浅两档只差 <c>GradientColor</c> 的 RGB（深 #0F1216 / 浅 #F6F8FB）与 alpha。
+/// 之所以不是"优先用 Win11 新 API"，见 <see cref="Apply"/> 里的顺序说明——
+/// <c>DWMWA_SYSTEMBACKDROP_TYPE</c> 在 WPF 上会返回 S_OK 却什么都不画（A-35）。
+/// </para>
 ///
 /// <para>
 /// <b>硬约束：禁止 <c>AllowsTransparency=true</c>。</b>它会把窗口切成 layered window，
-/// 系统背景直接失效（第 1 条路白走），而且 WPF 会退掉硬件加速——与 1.5% 预算直接冲突（A-30 同源）。
+/// 系统背景直接失效，而且 WPF 会退掉硬件加速——与 1.5% 预算直接冲突（A-30 同源）。
 /// 想让背景透出来，正确做法是把 WPF 自己的底刷成透明（<see cref="Window.Background"/> +
 /// <see cref="CompositionTarget.BackgroundColor"/>），把"画背景"这件事交给合成器。
 /// </para>
@@ -52,6 +51,9 @@ internal static class WindowGlass
     private const int DWMWCP_ROUND = 2;
 
     private const int WCA_ACCENT_POLICY = 19;
+
+    // 仅作记录，**不要用**：ACCENT_ENABLE_BLURBEHIND(3) 在 Win11 上已被掏空，
+    // 既不做模糊也不吃 GradientColor，画面表现为一块不透明的灰板。
     private const int ACCENT_ENABLE_BLURBEHIND = 3;
     private const int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
 
@@ -142,15 +144,26 @@ internal static class WindowGlass
         // 窗口自己的半透明底（FloatWindow 的 Shell），两层相乘才是最终"遮住背景"的比例。
         // 实测 65% + 35% 遮罩时背景只剩 ~22%，落在暗部壁纸上只差 4/255，肉眼几乎看不出模糊；
         // 取 45% tint + 20% 遮罩后总着色约 56%，仍在 6.4 要求的 55–70% 内，但透出率翻倍。
-        int alpha = (int)Math.Round(Math.Clamp(dark ? 0.45 : 0.55, 0.0, 1.0) * 255);
-        int color = (alpha << 24) | (0x16 << 16) | (0x12 << 8) | 0x0F;
+        // 注意：浅色档不能用对称的算法。实测 ACRYLICBLURBEHIND 的白色 tint 在浅色下
+        // 会额外叠一层系统亮度（alpha 只给 50% 时，像素级实测总遮盖已达 ~90%——
+        // 窗口内 #F4EDEB 对背景 #EA3A4D，红字壁纸只剩一点点暖调）。
+        // 所以浅色取 0.35，实测总遮盖落在 65% 上下，才看得出"后方被模糊"。
+        int alpha = (int)Math.Round(Math.Clamp(dark ? 0.45 : 0.30, 0.0, 1.0) * 255);
+
+        // RGB 必须跟着深浅走。浅色毛玻璃的"白雾"就是这一层给的：
+        // 只把 alpha 调薄、RGB 却仍给 #0F1216，画面上会变成一层灰罩而不是奶白玻璃。
+        int r = dark ? 0x0F : 0xF6;
+        int g = dark ? 0x12 : 0xF8;
+        int b = dark ? 0x16 : 0xFB;
+        int color = (alpha << 24) | (b << 16) | (g << 8) | r;
 
         var policy = new AccentPolicy
         {
-            // 浅色模式下 Blur 更接近系统观感，深色模式用 Acrylic
-            AccentState = kind == Backdrop.Mica || !dark
-                ? ACCENT_ENABLE_BLURBEHIND
-                : ACCENT_ENABLE_ACRYLICBLURBEHIND,
+            // 深浅两档都用 Acrylic，只换 GradientColor 的 RGB。
+            // **不要**给浅色单独用 ACCENT_ENABLE_BLURBEHIND(3)：它在 Win11 上已被掏空，
+            // 既不做模糊也不吃 tint，实测窗口内是纯黑 + 窗口自身遮罩（#2C2D2F 正好等于
+            // "16% 白叠纯黑"），看起来像一块不透明的灰板。
+            AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
             AccentFlags = 2,
             GradientColor = color,
             AnimationId = 0,

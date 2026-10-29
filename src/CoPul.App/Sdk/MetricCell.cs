@@ -56,6 +56,12 @@ public sealed class MetricCell : INotifyPropertyChanged
     public Brush ValueBrush => Palette.Brush(BrushKeyFor(_level, AccentKey));
     public Brush BarBrush => ValueBrush;
 
+    /// <summary>
+    /// 浅色玻璃底上的同源色（悬浮窗用）。色相不变、明度压暗一档，
+    /// 否则 <c>#5B8FF9</c> 这类亮色叠在白雾上对比度不足，13px 粗体也会发虚。
+    /// </summary>
+    public Brush ValueBrushOnGlass => Palette.BrushOnLight(BrushKeyFor(_level, AccentKey));
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
@@ -91,6 +97,7 @@ public sealed class MetricCell : INotifyPropertyChanged
         Raise(nameof(Bar));
         Raise(nameof(BarVisibility));
         Raise(nameof(ValueBrush));
+        Raise(nameof(ValueBrushOnGlass));
         Raise(nameof(BarBrush));
     }
 
@@ -133,5 +140,15 @@ internal static class Palette
         if (brush.CanFreeze) brush.Freeze();
         Cache[key] = brush;
         return brush;
+    }
+
+    /// <summary>
+    /// 取浅色底上的同源画刷。约定：资源键加 <c>Light</c> 后缀即为浅底版。
+    /// 没定义的键回退原色——加新语义色时忘了补浅色版只会是观感偏淡，不会取到灰块。
+    /// </summary>
+    public static Brush BrushOnLight(string key)
+    {
+        string lightKey = key + "Light";
+        return Application.Current?.TryFindResource(lightKey) is Brush ? Brush(lightKey) : Brush(key);
     }
 }

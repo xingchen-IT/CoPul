@@ -10,20 +10,29 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display">
 
+    <Window.Resources>
+        <!-- 浅色玻璃上的次值文字：比 BrushTextSecondary 深一档，
+             否则 #9AA4B2 叠在奶白雾上看不清。 -->
+        <Style x:Key="FloatLabelOnGlass" TargetType="TextBlock" BasedOn="{StaticResource FloatLabel}">
+            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondaryLight}" />
+        </Style>
+    </Window.Resources>
+
     <!--
         6.1 形态：无标题栏、无边框按钮、单行圆角长条。
         AllowsTransparency 必须保持 False —— 开了会变成 layered window，DWM 的系统背景
         直接失效、WPF 还会退掉硬件加速（A-30 同源）。背景靠 WindowGlass 把
         Window.Background 与 CompositionTarget.BackgroundColor 一起刷透明来解决。
 
-        底色 #330F1216 = Palette 的 #0F1216 @ 20%。为什么不是 6.4 写的 55–70%：
-        accent 那条路自己还带一层 45% 的 tint（WindowGlass），两层相乘才是"遮住背景"的总量，
-        20% + 45% ≈ 56%，正好落在 6.4 的区间里。两层都吃满会让背景只剩两成、
-        模糊看不出来（实测差 4/255，等于白做）。
-        描边 #1FFFFFFF = 白色 @12%，6.4 要求的"玻璃边缘"。
+        底色 #29FFFFFF = 白色 @16%（浅色毛玻璃的"奶白雾"）。为什么不是 6.4 写的 55–70%：
+        accent 那条路自己还带一层 50% 的白色 tint（WindowGlass），两层相乘才是"遮住背景"的总量，
+        16% + 50% ≈ 58%，正好落在 6.4 的区间里。两层都吃满会让背景只剩两成、
+        模糊看不出来（深色档实测差 4/255，等于白做）。
+        描边用黑 12% 而不是白：白线在奶白玻璃上等于看不见，玻璃质感需要一条能收住边缘的线。
     -->
     <Border x:Name="Shell" Height="34" CornerRadius="10" BorderThickness="1"
-            BorderBrush="#1FFFFFFF" Background="#330F1216" Padding="10,0"
+            BorderBrush="{StaticResource BrushGlassEdge}" Background="{StaticResource BrushGlassTint}"
+            Padding="10,0"
             MouseLeftButtonDown="Shell_MouseLeftButtonDown"
             MouseRightButtonUp="Shell_MouseRightButtonUp"
             MouseEnter="Shell_MouseEnter" MouseLeave="Shell_MouseLeave">
@@ -44,37 +53,37 @@
             <StackPanel Width="{Binding FloatFps.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatFps.Top}"
                            Foreground="{Binding FloatFps.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatFps.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatFps.Bottom}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatCpu.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatCpu.Top}"
                            Foreground="{Binding FloatCpu.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatCpu.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatCpu.Bottom}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatGpu.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatGpu.Top}"
                            Foreground="{Binding FloatGpu.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatGpu.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatGpu.Bottom}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatRam.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatRam.Top}"
                            Foreground="{Binding FloatRam.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatRam.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatRam.Bottom}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatVram.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatVram.Top}"
                            Foreground="{Binding FloatVram.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatVram.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatVram.Bottom}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatNet.Width}" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatNet.Top}"
                            Foreground="{Binding FloatNet.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatNet.Bottom}" />
+                <TextBlock Style="{StaticResource FloatLabelOnGlass}" Text="{Binding FloatNet.Bottom}" />
             </StackPanel>
 
         </StackPanel>

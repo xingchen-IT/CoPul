@@ -3,7 +3,8 @@
 
     <!--
         配色来自需求 10.3「低饱和、工业感，禁止霓虹色」。
-        这里只放深色一档：v1 先只做深色（浅色模式在第 10 章列了值，但没有进 5.3 的必须项）。
+        大窗口（9 区块）走深色一档；浅色只用于 M2 悬浮窗的「浅色毛玻璃」，
+        因此浅色语义色统一用 `Light` 后缀命名，不与深色那组混用。
         所有画刷都 Freeze 过，避免每帧刷新时产生额外开销。
     -->
 
@@ -42,5 +43,39 @@
     <!-- 运行状态（顶部指示灯）。绿色只给「一切正常」，降级仍用 BrushWarn，
          避免出现「黄灯也好看」的错觉：10.3 要求低饱和，这里不用霓虹绿。 -->
     <SolidColorBrush x:Key="BrushOk"     Color="#63A96D" />
+
+    <!-- ===================================================================
+         浅色毛玻璃（悬浮窗专用）
+         白雾底 + 深色文字。要点是语义色必须"压暗"一档：深色档的 #5B8FF9 叠在
+         白雾上对比度只有约 2.6:1，#E0A44A 更是只有 1.9:1，13px 粗体也会发虚。
+         这里保持色相不变、只降明度，色相辨识度还在，可读性拉到 4.5:1 以上。
+
+         边框用淡黑而不是白：白描边在奶白玻璃上等于看不见，
+         而玻璃质感需要一条能"收住边缘"的线。
+         =================================================================== -->
+
+    <!-- 玻璃本体 -->
+    <SolidColorBrush x:Key="BrushGlassTint"       Color="#29FFFFFF" />  <!-- 白 16%，叠在 accent tint 上 -->
+    <SolidColorBrush x:Key="BrushGlassSolid"      Color="#F2F4F7" />    <!-- 关掉毛玻璃时的不透明底 -->
+    <SolidColorBrush x:Key="BrushGlassEdge"       Color="#1F000000" />  <!-- 黑 12% -->
+    <SolidColorBrush x:Key="BrushGlassEdgeHover"  Color="#3D000000" />  <!-- 黑 24% -->
+
+    <!-- 文字 -->
+    <SolidColorBrush x:Key="BrushTextOnGlass"          Color="#1B2027" />
+    <SolidColorBrush x:Key="BrushTextSecondaryLight"   Color="#5C6672" />
+
+    <!-- 语义色（浅底版） -->
+    <SolidColorBrush x:Key="AccentCpuLight"   Color="#2F62C4" />
+    <SolidColorBrush x:Key="AccentGpuLight"   Color="#197A6E" />
+    <SolidColorBrush x:Key="AccentRamLight"   Color="#6350C8" />
+    <SolidColorBrush x:Key="AccentVramLight"  Color="#7B4FB5" />
+    <SolidColorBrush x:Key="AccentNetLight"   Color="#96601A" />
+    <SolidColorBrush x:Key="AccentFpsLight"   Color="#3F7A3B" />
+    <SolidColorBrush x:Key="AccentDiskLight"  Color="#55636F" />
+    <SolidColorBrush x:Key="AccentPowerLight" Color="#A24A26" />
+
+    <!-- 阈值色（浅底版）：仍压过语义色 -->
+    <SolidColorBrush x:Key="BrushWarnLight"   Color="#96601A" />
+    <SolidColorBrush x:Key="BrushDangerLight" Color="#B83232" />
 
 </ResourceDictionary>

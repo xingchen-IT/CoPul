@@ -617,7 +617,7 @@ public sealed class DashboardState : INotifyPropertyChanged
             FpsAvg.Unavailable();
         }
 
-        FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrush);
+        FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrushOnGlass);
     }
 
     private void ApplyCpu(MetricSnapshot snap)
@@ -640,7 +640,7 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         LoadAvgText = FormatLoadAvg(snap);
 
-        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrush);
+        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass);
     }
 
     private void ApplyGpu(MetricSnapshot snap)
@@ -664,14 +664,14 @@ public sealed class DashboardState : INotifyPropertyChanged
         string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
         GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
 
-        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrush);
+        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrushOnGlass);
 
         // 显存两行都带小写 v（6.3 / Q-04）：只看任意一行都能立刻分清"这是显存不是内存"。
         string vramPct = memPct.HasValue ? "v" + Fmt.Pct(memPct.Value) + "%" : "v" + Fmt.Dash;
         string vramSize = memUsed.HasValue && memTotal.HasValue
             ? $"v{Fmt.Gb(memUsed.Value)}/{Fmt.Gb(memTotal.Value)}G"
             : "v" + Fmt.Dash;
-        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrush);
+        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass);
     }
 
     private void ApplyMemory(MetricSnapshot snap)
@@ -705,7 +705,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         string ramSize = used.HasValue && total.HasValue
             ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
             : Fmt.Dash;
-        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrush);
+        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass);
     }
 
     /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>
@@ -737,7 +737,7 @@ public sealed class DashboardState : INotifyPropertyChanged
             NetLoss.Unavailable();
         }
 
-        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrush);
+        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass);
     }
 
     /// <summary>速率格：数值与单位一起换，避免出现"1024.0 KB/s"这种跨量级读数。</summary>

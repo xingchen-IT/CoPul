@@ -22,17 +22,17 @@ namespace CoPul.App;
 public partial class FloatWindow : Window
 {
     /// <summary>
-    /// 着色层。定义在 XAML 里是 #590F1216（35%），这里改成 20%：
-    /// accent 自己已经带了 45% 的 tint，两层叠起来的总着色才是 6.4 要求的那 55–70%。
-    /// 两层都吃满会让背景只剩两成、模糊看不出差别（实测差 4/255）。
+    /// 着色层：白色 @16%（Palette 的 BrushGlassTint）。accent 自己已经带了 50% 的白色 tint，
+    /// 两层叠起来的总着色约 58%，落在 6.4 要求的 55–70% 里。
+    /// 两层都吃满会让背景只剩两成、模糊看不出差别（深色档实测差 4/255）。
     /// </summary>
-    private static readonly SolidColorBrush GlassOverlay = Frozen(Color.FromArgb(0x33, 0x0F, 0x12, 0x16));
+    private static readonly Brush GlassOverlay = Palette.Brush("BrushGlassTint");
 
-    /// <summary>关掉毛玻璃时的不透明底，等同大窗口背景。</summary>
-    private static readonly SolidColorBrush SolidBackdrop = Frozen(Color.FromRgb(0x0F, 0x12, 0x16));
+    /// <summary>关掉毛玻璃时的底：同一套浅色纸面（#F2F4F7），文字颜色因此无需切换。</summary>
+    private static readonly Brush SolidBackdrop = Palette.Brush("BrushGlassSolid");
 
-    private static readonly SolidColorBrush EdgeNormal = Frozen(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
-    private static readonly SolidColorBrush EdgeHover = Frozen(Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush EdgeNormal = Palette.Brush("BrushGlassEdge");
+    private static readonly Brush EdgeHover = Palette.Brush("BrushGlassEdgeHover");
 
     private bool _glass = true;
 
@@ -95,7 +95,8 @@ public partial class FloatWindow : Window
 
         if (on)
         {
-            GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic, dark: true);
+            // 浅色毛玻璃（dark: false）。深色档的路径完全保留，改回来只需换这一个实参。
+            GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic, dark: false);
             Shell.Background = GlassOverlay;
             return;
         }
@@ -141,7 +142,10 @@ public partial class FloatWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>6.5 没有要求悬停反馈，这里只把 1px 描边提亮一档——玻璃边缘的观感，不做展开。</summary>
+    /// <summary>
+    /// 悬停时把描边加深一档。浅色玻璃上"提亮"等于看不见，所以是加深（黑 12% → 24%），
+    /// 观感上就是玻璃边缘被手电照了一下。
+    /// </summary>
     private void Shell_MouseEnter(object sender, MouseEventArgs e) => Shell.BorderBrush = EdgeHover;
 
     private void Shell_MouseLeave(object sender, MouseEventArgs e) => Shell.BorderBrush = EdgeNormal;
@@ -153,11 +157,4 @@ public partial class FloatWindow : Window
         => ApplyGlass(GlassMenu.IsChecked);
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
-
-    private static SolidColorBrush Frozen(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
-    }
 }
