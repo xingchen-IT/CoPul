@@ -1,0 +1,19 @@
+time        : 2026-10-29 17:18:40
+window      : 853×509  state=Normal
+admin       : True
+warmup(s)   : 8  期间 CPU 5000 ms（含 JIT / PDH 初始化 / 冷盘枚举）
+window(s)   : 40.0
+cpu time    : 2516 ms
+single-core : 6.284%
+machine     : 0.3142%
+threads     : 33
+render tier : 2
+frames      : 79  平均 ApplySnapshot 0.871 ms  平均 Layout 12.784 ms
+d04 refresh : 4 次  其中变化 0 次
+thread breakdown (ms):
+  tid 66936      1000 ms    2.50% single-core   <- UI/渲染线程
+  tid 104524      750 ms    1.87% single-core
+  tid 109108      562 ms    1.41% single-core
+  tid 108104      109 ms    0.27% single-core
+  tid 102144       31 ms    0.08% single-core
+  tid 103848       16 ms    0.04% single-core

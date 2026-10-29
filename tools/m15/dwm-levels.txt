@@ -1,0 +1,14 @@
+2026-10-29 17:31:33 预热10s 测量22s
+
+== hidden ==
+  CoPul=2.27%  dwm=31.32%
+  CoPul=2.41%  dwm=16.05%
+
+== lv1-noBlur ==
+  CoPul=3.84%  dwm=36.01%
+  CoPul=2.27%  dwm=28.12%
+
+== lv7-strongBlur ==
+  CoPul=2.34%  dwm=24.43%
+  CoPul=4.33%  dwm=22.16%
+
