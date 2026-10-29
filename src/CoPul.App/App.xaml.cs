@@ -95,6 +95,14 @@ public partial class App : Application
                 f.Show();
                 f.Activate();
             };
+
+            // explorer 重启时原窗口可能已被系统销毁，只能重建（7.7）
+            taskbar.RecreateRequested += (_, _) =>
+            {
+                try { taskbar?.Close(); } catch { /* 窗口已废，Close 可能抛 */ }
+                taskbar = null;
+                EnsureTaskbar().Show();
+            };
             return taskbar;
         }
 
@@ -189,6 +197,20 @@ public partial class App : Application
             // 任务栏模式（第 7 章）。大窗口不 Show，但采集照常跑在它身上。
             TaskbarWindow t = EnsureTaskbar();
             t.Show();
+
+            // 自测：--tray-restart-probe 在 3 秒后重启 explorer，
+            // 配合 --wait 14000 就能验证 7.7「重启后自动恢复」
+            if (e.Args.Contains("--tray-restart-probe"))
+            {
+                var rt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                rt.Tick += (_, _) =>
+                {
+                    rt.Stop();
+                    File.WriteAllText(Path.Combine(Path.GetTempPath(), "copul-explorer.log"),
+                                      Taskbar.RestartExplorer());
+                };
+                rt.Start();
+            }
         }
         else if (!hidden) window.Show();
 
@@ -261,13 +283,18 @@ public partial class App : Application
                         {
                             if (bar != IntPtr.Zero && Taskbar.TryGetRect(bar, out Win32Window.RECT br))
                             {
+                                // 必须读**当前**的 taskbar 实例：explorer 重启后条会被重建，
+                                // 上面那个 `target` 是等待开始时的快照，它的句柄和 PlacementDiag
+                                // 都是老窗口的 —— 用它截图验收会得到"已恢复"的假象或相反。
+                                TaskbarWindow live = taskbar is { IsVisible: true } ? taskbar : tb;
+
                                 ScreenCapture.SaveRect(shotScreen, br.Left, br.Top,
                                                        br.Right - br.Left, br.Bottom - br.Top);
-                                Taskbar.TryGetRect(tb.Handle, out Win32Window.RECT tr);
+                                Taskbar.TryGetRect(live.Handle, out Win32Window.RECT tr);
                                 File.WriteAllText(shotScreen + ".info.txt",
                                     $"bar  : {br.Right - br.Left}×{br.Bottom - br.Top} px at ({br.Left},{br.Top}){Environment.NewLine}" +
                                     $"bar  : rect of strip = ({tr.Left},{tr.Top})-({tr.Right},{tr.Bottom}){Environment.NewLine}" +
-                                    $"place: {tb.PlacementDiag}");
+                                    $"place: {live.PlacementDiag}");
                             }
                         }
                         catch (Exception ex)

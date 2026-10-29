@@ -1,9 +1,11 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CoPul.App.Interop;
 using CoPul.App.Sdk;
 
@@ -58,11 +60,49 @@ public partial class TaskbarWindow : Window
     private bool _attached;
     private InkMode _ink = InkMode.Auto;
 
+    /// <summary>接收 <c>TaskbarCreated</c> 广播的隐藏顶层窗口。子窗口收不到广播，见 <see cref="InstallTaskbarWatcher"/>。</summary>
+    private HwndSource? _watcher;
+
+    private int _taskbarCreatedMsg;
+
+    /// <summary>
+    /// 存活巡检（每秒一次）。为什么不能只靠 <c>TaskbarCreated</c> 广播：
+    /// 本机实测广播<b>根本没到</b> —— 日志里只有 <c>attach</c> 和 <c>watcher</c> 两行，
+    /// 没有任何 <c>TaskbarCreated 收到</c>。最可能的原因是 UIPI：explorer 是中完整性，
+    /// 若本进程提权，跨完整性级别的窗口消息会被直接丢弃。
+    /// 广播是"快"（重启瞬间就能知道），巡检是"准"（不依赖任何消息），两个都要。
+    /// </summary>
+    private DispatcherTimer? _watchdog;
+
+    /// <summary>正在恢复中，挡住巡检重入（重建会同步 Close 本窗口）。</summary>
+    private bool _recovering;
+
+    /// <summary>已经交给 App 重建，本实例不再管任何事。</summary>
+    private bool _handedOff;
+
+    /// <summary>
+    /// 自己的 HWND，在挂载时缓存下来。
+    ///
+    /// <para>
+    /// 不能拿 <see cref="Handle"/> 做存活判断：窗口被父窗口连带销毁后，
+    /// <c>WindowInteropHelper.Handle</c> 会返回 <c>IntPtr.Zero</c>，
+    /// 巡检里 `if (hwnd == 0) return` 会把它当成"还没初始化"直接跳过 ——
+    /// 于是明明窗口已经没了，巡检却什么都不做（第一次就是这么静默失败的）。
+    /// </para>
+    /// </summary>
+    private IntPtr _hwnd;
+
     /// <summary>双击或被菜单要求"回大窗口"。窗口之间不互相引用，由 App 接线。</summary>
     public event EventHandler? MainWindowRequested;
 
     /// <summary>切回悬浮窗（任务栏条上无法做复杂设置，菜单里给一条出口）。</summary>
     public event EventHandler? FloatRequested;
+
+    /// <summary>
+    /// 本窗口已被系统销毁，需要外部重建一个新的（explorer 重启时会发生）。
+    /// App 收到后负责关掉旧实例、new 一个新的并 Show。
+    /// </summary>
+    public event EventHandler? RecreateRequested;
 
     /// <summary>自测时不改写用户的配置。</summary>
     public bool PersistToConfig { get; set; } = true;
@@ -72,6 +112,20 @@ public partial class TaskbarWindow : Window
 
     /// <summary>当前 HWND；窗口未初始化时返回 <c>IntPtr.Zero</c>。</summary>
     public IntPtr Handle => new WindowInteropHelper(this).Handle;
+
+    /// <summary>
+    /// 调试日志。任务栏重挂涉及 4 个异步环节（广播 → 重试 → 检查存活 → 重建），
+    /// 中间任何一环断了，表面现象都只是"条没了"，靠猜会连错三次。
+    /// </summary>
+    private static void Trace(string message)
+    {
+        try
+        {
+            File.AppendAllText(Path.Combine(Path.GetTempPath(), "copul-tray.log"),
+                $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+        }
+        catch { /* 日志失败不能影响主流程 */ }
+    }
 
     public static readonly DependencyProperty LabelBrushProperty =
         DependencyProperty.Register(nameof(LabelBrush), typeof(Brush), typeof(TaskbarWindow),
@@ -106,6 +160,9 @@ public partial class TaskbarWindow : Window
 
             // 换主题/换壁纸时系统会广播 WM_SETTINGCHANGE，字色要跟着重算
             HwndSource.FromHwnd(Handle)?.AddHook(SettingsChangedHook);
+
+            InstallTaskbarWatcher();
+            StartWatchdog();
         };
 
         // 放在 ContentRendered：Auto 模式要采样任务栏亮度，必须先有 _bar
@@ -117,17 +174,24 @@ public partial class TaskbarWindow : Window
     /// </summary>
     public void Attach()
     {
+        // 先缓存自己的 HWND：后面巡检要靠它判断"我还在不在"，而 WindowInteropHelper
+        // 在窗口被销毁后会返回 0（见 _hwnd 的注释）
+        IntPtr hwnd = Handle;
+        if (hwnd != IntPtr.Zero) _hwnd = hwnd;
+
         _bar = Taskbar.Find();
         if (_bar == IntPtr.Zero)
         {
+            // 程序可能比任务栏先起来（开机自启、或正赶上 explorer 重启），等一会儿再试
             PlacementDiag = "attach: Shell_TrayWnd 未找到";
+            ScheduleReattach(0);
             return;
         }
 
-        IntPtr hwnd = Handle;
         if (hwnd == IntPtr.Zero) return;
 
         _attached = Taskbar.Attach(hwnd, _bar, asChildWindow: true);
+        Trace($"attach: bar=0x{_bar:X} ok={_attached} hwnd=0x{hwnd:X}");
         Reposition();
     }
 
@@ -215,6 +279,161 @@ public partial class TaskbarWindow : Window
         DarkInkMenu.IsChecked = _ink == InkMode.Dark;
     }
 
+    /// <summary>
+    /// 装 <c>TaskbarCreated</c> 监听（7.7 的 explorer 重启）。
+    ///
+    /// <para>
+    /// 关键点：这条消息是 <c>HWND_BROADCAST</c> 发出去的，而广播<b>只投递给顶层窗口</b>。
+    /// 我们的条本身是任务栏的子窗口，收不到。必须另开一个不显示的顶层窗口专门收。
+    /// message-only 窗口（<c>HWND_MESSAGE</c>）同样收不到广播，所以不能用它。
+    /// </para>
+    /// </summary>
+    private void InstallTaskbarWatcher()
+    {
+        _taskbarCreatedMsg = Taskbar.RegisterMessage("TaskbarCreated");
+        Trace($"watcher: msg={_taskbarCreatedMsg}");
+        if (_taskbarCreatedMsg == 0) return;
+
+        var p = new HwndSourceParameters("CoPulTaskbarWatcher")
+        {
+            Width = 0,
+            Height = 0,
+            WindowStyle = 0,                    // 不带 WS_VISIBLE → 不显示
+            ExtendedWindowStyle = 0x00000080,   // WS_EX_TOOLWINDOW → 不进 Alt+Tab
+        };
+
+        try
+        {
+            _watcher = new HwndSource(p);
+            _watcher.AddHook(BroadcastHook);
+            Trace($"watcher: hwnd=0x{_watcher.Handle:X}");
+        }
+        catch
+        {
+            // 装不上就退化成"重启 explorer 后手动重开"，不影响其余功能
+            _watcher = null;
+        }
+    }
+
+    private IntPtr BroadcastHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == _taskbarCreatedMsg)
+        {
+            Trace("TaskbarCreated 收到");
+            ScheduleReattach(0);
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// 每秒检查一次"条还在不在、任务栏还是不是原来那个"。
+    /// 只做两次 <c>IsWindow</c>，不进 <c>FindWindow</c>，开销可以忽略。
+    /// </summary>
+    private void StartWatchdog()
+    {
+        if (_watchdog is not null) return;
+
+        Trace($"watchdog: 启动 elevated={Taskbar.IsElevated()}");
+
+        _watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _watchdog.Tick += (_, _) => Poll();
+        _watchdog.Start();
+    }
+
+    private void Poll()
+    {
+        if (_handedOff || _recovering) return;
+
+        // 还没挂上（启动时任务栏没就绪）——交给 Attach 里的重试链，这里不插手
+        if (!_attached) return;
+
+        // 自己的窗口没了：explorer 退出时系统会连带销毁它的所有子窗口。
+        // WPF 此时还活在自己的世界里（HWND 已失效），只能整窗重建。
+        if (!Taskbar.IsAlive(_hwnd))
+        {
+            Recover(rebuild: true);
+            return;
+        }
+
+        // 任务栏换了句柄（同一台机器上任务栏被重建）。自己的窗口还在说明
+        // 只是脱离了父子关系，重新 SetParent 即可，不用重建。
+        if (!Taskbar.IsAlive(_bar) || Taskbar.Find() != _bar)
+        {
+            Recover(rebuild: false);
+        }
+    }
+
+    private void Recover(bool rebuild)
+    {
+        _recovering = true;
+        try
+        {
+            if (rebuild)
+            {
+                Trace($"watchdog: 条 hwnd=0x{_hwnd:X} 已被销毁 → 重建");
+                _handedOff = true;
+                _watchdog?.Stop();
+                RecreateRequested?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            Trace($"watchdog: 任务栏换了（旧 0x{_bar:X}）→ 重挂");
+            Taskbar.Detach(_hwnd, wasChildWindow: true);
+            _attached = false;
+            Attach();
+            ApplyInk();
+        }
+        finally
+        {
+            _recovering = false;
+        }
+    }
+
+    /// <summary>
+    /// explorer 重启后重挂。必须重试 —— 任务栏窗口不是 explorer 一起来就存在的，
+    /// 刚广播完那一下 <c>FindWindow("Shell_TrayWnd")</c> 实测常常还是空。
+    /// </summary>
+    private void ScheduleReattach(int attempt)
+    {
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        t.Tick += (_, _) =>
+        {
+            t.Stop();
+
+            IntPtr found = Taskbar.Find();
+            Trace($"reattach#{attempt}: bar=0x{found:X}");
+            if (found == IntPtr.Zero)
+            {
+                // 20 次 × 700ms ≈ 14 秒。explorer 重启到任务栏真正就绪实测要 2–5 秒，
+                // 早先只留 8 次（5.6 秒）在慢机器上会直接放弃。
+                if (attempt < 20) ScheduleReattach(attempt + 1);
+                return;
+            }
+
+            // 父窗口被销毁时，子窗口有时会被系统一并销毁 —— 那种情况只能重建。
+            // 判活必须用缓存的 _hwnd：窗口销毁后 `Handle` 会返回 0，用它判会直接判成
+            // "没初始化"（第一次 7.7 验证失败就是这个原因）。
+            if (!Taskbar.IsAlive(_hwnd))
+            {
+                Trace($"reattach#{attempt}: alive=False hwnd=0x{_hwnd:X} → 触发重建");
+                _handedOff = true;
+                _watchdog?.Stop();
+                RecreateRequested?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            Trace($"reattach#{attempt}: alive=True hwnd=0x{_hwnd:X}");
+
+            // 先摘干净（清掉 WS_CHILD）再挂到新任务栏。
+            // 少了 Detach，残留的子窗口样式会让 SetParent 之后的位置计算错位。
+            Taskbar.Detach(_hwnd, wasChildWindow: true);
+            _attached = false;
+            Attach();
+            ApplyInk();
+        };
+        t.Start();
+    }
+
     private IntPtr SettingsChangedHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         const int WM_SETTINGCHANGE = 0x001A;
@@ -231,6 +450,20 @@ public partial class TaskbarWindow : Window
             }));
         }
         return IntPtr.Zero;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        Trace("窗口关闭");
+
+        _watchdog?.Stop();
+        _watchdog = null;
+
+        // 监听窗口是独立的顶层窗口，不随本窗口关闭自动销毁，必须显式释放，
+        // 否则重建实例时会多留一个空窗口在后台
+        _watcher?.Dispose();
+        _watcher = null;
+        base.OnClosed(e);
     }
 
     private void Shell_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

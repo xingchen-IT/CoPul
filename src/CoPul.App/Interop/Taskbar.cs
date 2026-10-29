@@ -168,6 +168,98 @@ internal static class Taskbar
 
     public static IntPtr ParentOf(IntPtr hwnd) => GetParent(hwnd);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint RegisterWindowMessageW(string name);
+
+    /// <summary>
+    /// 取一个系统广播消息的 id（这里是 <c>"TaskbarCreated"</c>）。
+    ///
+    /// <para>
+    /// explorer 重启后会广播这条消息，任务栏相关的扩展靠它重新挂载（需求 7.7）。
+    /// 返回值要缓存 —— 每次调用结果相同，但消息循环里逐条比较时不该反复进 user32。
+    /// </para>
+    /// </summary>
+    public static int RegisterMessage(string name)
+    {
+        uint id = RegisterWindowMessageW(name);
+        return unchecked((int)id);
+    }
+
+    /// <summary>窗口句柄是否仍然有效。explorer 重启后子窗口可能已被系统销毁。</summary>
+    public static bool IsAlive(IntPtr hwnd) => hwnd != IntPtr.Zero && IsWindow(hwnd);
+
+    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetTokenInformation(IntPtr token, int infoClass,
+        out int info, int infoLength, out int returnLength);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+
+    /// <summary>
+    /// 当前进程是否提权运行。诊断用，不是功能。
+    ///
+    /// <para>
+    /// 为什么要记这个：<c>TaskbarCreated</c> 是 explorer（中完整性）用
+    /// <c>SendMessageTimeout(HWND_BROADCAST)</c> 发出来的。<b>UIPI 会拦截低完整性进程
+    /// 发给高完整性窗口的消息</b> —— 如果 CoPul 是提权跑的，这条广播永远收不到，
+    /// 表现为"重启 explorer 后条不回来"，而代码本身完全正确。
+    /// 不把这一条写进日志，排查方向会全错。
+    /// </para>
+    /// </summary>
+    public static bool IsElevated()
+    {
+        const uint TOKEN_QUERY = 0x0008;
+        const int TokenElevation = 20;
+
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, out IntPtr token)) return false;
+        try
+        {
+            if (!GetTokenInformation(token, TokenElevation, out int elevated, sizeof(int), out _))
+                return false;
+            return elevated != 0;
+        }
+        finally
+        {
+            CloseHandle(token);
+        }
+    }
+
+    /// <summary>
+    /// 重启 explorer（自测用）。验证 7.7「explorer 重启后任务栏条自动恢复」。
+    ///
+    /// <para>
+    /// 不能用 <c>Process.Start("taskkill")</c> 之后就立刻拉起：explorer 还没退干净时
+    /// 新进程会连到旧的 shell 上，任务栏不一定重建。所以杀完等它真的退出（带超时，
+    /// 杀不掉也不能把自测卡死）。
+    /// </para>
+    /// </summary>
+    public static string RestartExplorer()
+    {
+        try
+        {
+            var kill = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = "/f /im explorer.exe",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            });
+            kill?.WaitForExit(4000);
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                UseShellExecute = true,
+            });
+            return "explorer 已重启";
+        }
+        catch (Exception ex)
+        {
+            return "重启失败: " + ex.Message;
+        }
+    }
+
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr hdc, int x, int y);
