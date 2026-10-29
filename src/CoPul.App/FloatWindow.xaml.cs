@@ -119,6 +119,12 @@ public partial class FloatWindow : Window
         _level = Math.Clamp(config.FloatGlassLevel, 1, LevelCount) - 1;
         _glass = config.FloatGlassEnabled;
         _locked = config.FloatLocked;
+        _scalePercent = NormalizeScale(config.FloatScale);
+
+        // 缩放必须在 Show 之前落定：窗口尺寸会决定 SizeToContent 算出的宽度，
+        // 而定位（ContentRendered）依赖最终尺寸。晚一步改就会出现"先按 100% 摆好，
+        // 再放大成 150%"，结果窗口跑出屏幕。
+        ApplyScale();
 
         SourceInitialized += (_, _) =>
         {
@@ -142,7 +148,8 @@ public partial class FloatWindow : Window
                 // 走 setter，也就是用户点菜单走的同一条路
                 Theme = GlassTheme.Dark;
                 GlassLevel = 6;
-                PlacementDiag = $"persist-probe: theme={Theme} level={GlassLevel}";
+                ScalePercent = 125;
+                PlacementDiag = $"persist-probe: theme={Theme} level={GlassLevel} scale={ScalePercent}";
                 Application.Current.Shutdown();
                 return;
             }
@@ -155,7 +162,14 @@ public partial class FloatWindow : Window
                 PlacementDiag = DescribePlacement("snap-probe");
             }
             else if (CenterOnScreen) PlaceAtCenter();
-            else if (TryRestorePlacement()) PlacementDiag = DescribePlacement("restored");
+            else if (TryRestorePlacement())
+            {
+                // 还原后收紧一次：比例记的是左边界，而窗口换过缩放档 / 换过分辨率后
+                // 右边界可能已经出界。这里的语义是"用户没要求出界"，所以用整窗可见而不是 60%。
+                EnsureFullyVisible();
+                SavePlacement();
+                PlacementDiag = DescribePlacement("restored");
+            }
             else
             {
                 PlaceAtBottomLeft();
@@ -249,6 +263,193 @@ public partial class FloatWindow : Window
         set => SetValue(LabelBrushProperty, value);
     }
 
+    // =================================================================
+    // 缩放（Q-05）：100 / 125 / 150 三档
+    // =================================================================
+
+    /// <summary>100% 档的基准尺寸（需求 6.2 / 6.3 的数值）。所有档位都是它乘乘数。</summary>
+    private const double BaseHeight = 34;
+    private const double BaseValueFont = 13;
+    private const double BaseValueLine = 16;
+    private const double BaseLabelFont = 10;
+    private const double BaseLabelLine = 13;
+    private const double BaseGap = 8;
+
+    private int _scalePercent = 100;
+
+    /// <summary>
+    /// 当前缩放档位（100 / 125 / 150）。越界会夹到最近的有效档，不抛异常 ——
+    /// 配置被手改坏、或命令行参数乱写时，窗口照常打开比崩掉好。
+    /// </summary>
+    public int ScalePercent
+    {
+        get => _scalePercent;
+        set
+        {
+            int v = NormalizeScale(value);
+            if (_scalePercent == v) return;
+            _scalePercent = v;
+            ApplyScale();
+            SyncMenuChecks();
+            PersistAppearance();
+
+            // 放大后窗口可能有一部分跑出工作区（原来贴右下角的条会顶到屏幕外）。
+            // 位置按比例保存，比例本身没变，但当前这一帧得先夹回来；
+            // 布局是延迟的，不 UpdateLayout 的话 GetWindowRect 拿到的还是旧尺寸。
+            if (_hwndReady)
+            {
+                UpdateLayout();
+                EnsureFullyVisible();
+                SavePlacement();
+            }
+        }
+    }
+
+    /// <summary>把任意输入夹到三档之一。取"最接近的档"而不是直接拒绝：手改配置写成 120 时，
+    /// 用户期望的是"差不多大"，不是"回到 100"。</summary>
+    private static int NormalizeScale(int value)
+    {
+        int[] steps = { 100, 125, 150 };
+        int best = steps[0];
+        int bestDiff = int.MaxValue;
+        foreach (int s in steps)
+        {
+            int diff = Math.Abs(s - value);
+            if (diff < bestDiff) { bestDiff = diff; best = s; }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// 把档位乘数刷进所有尺寸。这是"改 DIP 后重新布局"，不是缩放渲染结果（理由见 XAML 顶部注释）。
+    /// </summary>
+    private void ApplyScale()
+    {
+        double s = _scalePercent / 100.0;
+
+        // 窗口高度与 Shell 高度一起改：只改一个的话 Border 会被 Window 拉伸，
+        // TotalHeight 与 ShellHeight 白填，圆角上下沿会错位。
+        Height = BaseHeight * s;
+        ShellHeight = BaseHeight * s;
+
+        ValueFontSize = BaseValueFont * s;
+        ValueLineHeight = BaseValueLine * s;
+        LabelFontSize = BaseLabelFont * s;
+        LabelLineHeight = BaseLabelLine * s;
+        CellGap = new Thickness(0, 0, BaseGap * s, 0);
+
+        // 圆角、内边距、描边这几个必须走代码：CornerRadius / Thickness 类型绑起来要先写转换器，
+        // 而它们只在切档时变一次，代码直接给更省事。
+        Shell.CornerRadius = new CornerRadius(10 * s);
+        Shell.Padding = new Thickness(10 * s, 0, 10 * s, 0);
+
+        // 描边取整：0.8 DIP 的边框在布局取整后有时变 0、有时变 1，看上去像"描边时有时无"。
+        Shell.BorderThickness = new Thickness(Math.Max(1, Math.Round(s)));
+
+        foreach (FloatField f in AllFields) f.ApplyScale(s);
+    }
+
+    /// <summary>六个字段，按 6.3 的显示顺序。缓存一份，避免每次缩放都分配数组。</summary>
+    private FloatField[] AllFields => new[]
+    {
+        _state.FloatFps, _state.FloatCpu, _state.FloatGpu,
+        _state.FloatRam, _state.FloatVram, _state.FloatNet,
+    };
+
+    /// <summary>
+    /// 缩放诊断串，供截图 sidecar 文件输出。缩放是"每列宽 + 字号 + 条高"一起变，
+    /// 光看截图分不清"确实放大了"和"我只改了字号没改列宽"，把数字打出来最省事。
+    /// </summary>
+    public string ScaleDiag
+    {
+        get
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(_scalePercent).Append("% ");
+            foreach (FloatField f in AllFields)
+                sb.Append(f.Key).Append('=').Append(f.Width.ToString("F1")).Append(' ');
+            sb.Append($"font={ValueFontSize:F1}/{LabelFontSize:F1} h={ShellHeight:F1}");
+
+            // 布局实测：Style Setter 里的绑定是否真的落到元素上，只能看元素的运行值。
+            // 光看 XAML 会误以为"写了就一定生效"——这里把第一列两个 TextBlock 的
+            // 实际高度 / 行高 / 字号打出来，一眼能分清"没绑定"和"绑了但算错"。
+            if (Shell.Child is StackPanel row && row.Children.Count > 0
+                && row.Children[0] is StackPanel col)
+            {
+                sb.Append(" tb=");
+                foreach (UIElement child in col.Children)
+                {
+                    if (child is TextBlock t)
+                        sb.Append($"{t.ActualHeight:F1}/{t.LineHeight:F1}/{t.FontSize:F1} ");
+                }
+            }
+
+            return sb.ToString();
+        }
+    }
+
+    // 下面这组依赖属性只为给 XAML 绑定用。默认值全部取 100% 档，
+    // 这样即使 ApplyScale 没跑到，窗口也是正常大小而不是 0。
+    public static readonly DependencyProperty ShellHeightProperty =
+        DependencyProperty.Register(nameof(ShellHeight), typeof(double), typeof(FloatWindow),
+            new PropertyMetadata(BaseHeight));
+
+    public static readonly DependencyProperty ValueFontSizeProperty =
+        DependencyProperty.Register(nameof(ValueFontSize), typeof(double), typeof(FloatWindow),
+            new PropertyMetadata(BaseValueFont));
+
+    public static readonly DependencyProperty ValueLineHeightProperty =
+        DependencyProperty.Register(nameof(ValueLineHeight), typeof(double), typeof(FloatWindow),
+            new PropertyMetadata(BaseValueLine));
+
+    public static readonly DependencyProperty LabelFontSizeProperty =
+        DependencyProperty.Register(nameof(LabelFontSize), typeof(double), typeof(FloatWindow),
+            new PropertyMetadata(BaseLabelFont));
+
+    public static readonly DependencyProperty LabelLineHeightProperty =
+        DependencyProperty.Register(nameof(LabelLineHeight), typeof(double), typeof(FloatWindow),
+            new PropertyMetadata(BaseLabelLine));
+
+    public static readonly DependencyProperty CellGapProperty =
+        DependencyProperty.Register(nameof(CellGap), typeof(Thickness), typeof(FloatWindow),
+            new PropertyMetadata(new Thickness(0, 0, BaseGap, 0)));
+
+    public double ShellHeight
+    {
+        get => (double)GetValue(ShellHeightProperty);
+        set => SetValue(ShellHeightProperty, value);
+    }
+
+    public double ValueFontSize
+    {
+        get => (double)GetValue(ValueFontSizeProperty);
+        set => SetValue(ValueFontSizeProperty, value);
+    }
+
+    public double ValueLineHeight
+    {
+        get => (double)GetValue(ValueLineHeightProperty);
+        set => SetValue(ValueLineHeightProperty, value);
+    }
+
+    public double LabelFontSize
+    {
+        get => (double)GetValue(LabelFontSizeProperty);
+        set => SetValue(LabelFontSizeProperty, value);
+    }
+
+    public double LabelLineHeight
+    {
+        get => (double)GetValue(LabelLineHeightProperty);
+        set => SetValue(LabelLineHeightProperty, value);
+    }
+
+    public Thickness CellGap
+    {
+        get => (Thickness)GetValue(CellGapProperty);
+        set => SetValue(CellGapProperty, value);
+    }
+
     /// <summary>
     /// 实际生效的毛玻璃方式，由 <see cref="WindowGlass.Apply"/> 返回。
     /// 自测/截图验收看这个字段就知道是系统背景生效了还是退到了 accent。
@@ -311,6 +512,10 @@ public partial class FloatWindow : Window
     /// <summary>记录当前位置。拖动结束、锁定切换时调用；失败静默（下次启动回默认位置而已）。</summary>
     private void SavePlacement()
     {
+        // 自测参数（--float-scale / --glass-dark 等）只是临时改外观，不该动用户的配置。
+        // 位置和外观共用同一个开关：一次验收把配置里的位置也改了，下次启动会莫名跳一下。
+        if (!PersistToConfig) return;
+
         IntPtr hwnd = Handle;
         if (hwnd == IntPtr.Zero) return;
         if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
@@ -390,6 +595,46 @@ public partial class FloatWindow : Window
         int left = rect.Left;
         int top = rect.Top;
         FloatPlacement.Clamp(work, rect.Right - rect.Left, rect.Bottom - rect.Top, ref left, ref top);
+
+        if (left == rect.Left && top == rect.Top) return;
+        Monitors.MoveWindowTo(hwnd, left, top);
+    }
+
+    /// <summary>
+    /// 把窗口整个收进工作区（不是 60%，是全部可见）。
+    ///
+    /// <para>
+    /// 和 <see cref="ClampInsideWorkArea"/> 的分工：那个是"用户把窗口拖出屏幕"时的宽松限制
+    /// （6.5 只要求 60% 可见，尊重用户意图）；这个是"用户没有要求出界"时用的严格版 ——
+    /// 启动还原位置、切缩放档位都属于这一类。两者混用会出现图片里那种情况：
+    /// 位置记住了左边界（比例语义），窗口从 571 放大到 857 后右边界溢出 74px，
+    /// 而 60% 规则认为"露了 91%"完全合格，于是留半截在屏幕外。
+    /// </para>
+    ///
+    /// <para>
+    /// 窗口比工作区还大时（极少见：150% 档 + 很小的屏），不能硬夹成负坐标，
+    /// 那种情况交回 <see cref="ClampInsideWorkArea"/> 的 60% 规则处理。
+    /// </para>
+    /// </summary>
+    private void EnsureFullyVisible()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryForWindow(hwnd, out MonitorArea work)) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
+
+        int widthPx = rect.Right - rect.Left;
+        int heightPx = rect.Bottom - rect.Top;
+        if (widthPx <= 0 || heightPx <= 0) return;
+
+        if (widthPx > work.Width || heightPx > work.Height)
+        {
+            ClampInsideWorkArea();
+            return;
+        }
+
+        int left = Math.Clamp(rect.Left, work.Left, work.Right - widthPx);
+        int top = Math.Clamp(rect.Top, work.Top, work.Bottom - heightPx);
 
         if (left == rect.Left && top == rect.Top) return;
         Monitors.MoveWindowTo(hwnd, left, top);
@@ -552,6 +797,13 @@ public partial class FloatWindow : Window
         PersistAppearance();
     }
 
+    private void Scale_Click(object sender, RoutedEventArgs e)
+    {
+        // Tag 里是百分比整数；解析不出来就当作没点（菜单结构被改坏也不该炸窗口）
+        if (sender is MenuItem { Tag: string tag } && int.TryParse(tag, out int percent))
+            ScalePercent = percent;
+    }
+
     private void ToggleLock_Click(object sender, RoutedEventArgs e)
     {
         // IsCheckable 的菜单项点下去时 WPF 已经先把 IsChecked 翻过了，这里读到的就是新状态
@@ -571,6 +823,7 @@ public partial class FloatWindow : Window
         _config.FloatTheme = _theme.ToString();
         _config.FloatGlassLevel = _level + 1;
         _config.FloatGlassEnabled = _glass;
+        _config.FloatScale = _scalePercent;
         ConfigStore.SaveCurrent();
     }
 
@@ -598,6 +851,14 @@ public partial class FloatWindow : Window
         };
         for (int i = 0; i < levels.Length; i++)
             if (levels[i] is { } item) item.IsChecked = _level == i;
+
+        // 缩放三档同理：值写在 Tag 里，勾选状态由当前档位反推，不另存一份真值
+        if (Scale100Menu is not null)
+        {
+            Scale100Menu.IsChecked = _scalePercent == 100;
+            Scale125Menu.IsChecked = _scalePercent == 125;
+            Scale150Menu.IsChecked = _scalePercent == 150;
+        }
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();

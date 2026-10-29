@@ -54,6 +54,12 @@ public sealed class AppConfig
     /// <summary>位置锁定（6.5）：锁定后拖动无效，防止误碰挪走。</summary>
     public bool FloatLocked { get; set; }
 
+    /// <summary>
+    /// 界面缩放档位（Q-05）：100 / 125 / 150。存整数百分比而不是枚举，
+    /// 与配置里其它"人能读懂的数值"保持一致；越界由 <see cref="CoPul.App.FloatWindow"/> 夹取。
+    /// </summary>
+    public int FloatScale { get; set; } = 100;
+
     // ---- 悬浮窗位置（6.7）----
     // 存「显示器 + 相对比例」而不是绝对像素：换分辨率、改缩放、拔插显示器后，
     // 绝对坐标会把窗口扔到屏幕外。三个字段是一个整体，Monitor 为空即视为"从未摆放过"。

@@ -11,6 +11,34 @@
         TextOptions.TextFormattingMode="Display">
 
     <!--
+        Q-05 三档缩放（100 / 125 / 150）的落点。
+
+        做法是**改 DIP 字面值后重新布局**，不是套 Viewbox / LayoutTransform。
+        Viewbox 的语义是"先按 13 DIP 排好版，再把结果整体放大"，文字会被当作位图拉伸；
+        本项目所在屏本身就是 150% DPI，再乘 1.5 档等于 2.25 倍像素比，边缘会明显发虚。
+        改 DIP 则是让 WPF 用目标尺寸重新排版，矢量文字在任何档位都锐利。
+
+        因为 FloatValue / FloatLabel 是 App 级的共享样式（大窗口也可能用），
+        这里用 BasedOn 派生两个只在本窗口生效的副本，把 FontSize / LineHeight
+        改成绑到窗口上的一组依赖属性。局部值优先于 Style setter，所以不冲突。
+    -->
+    <Window.Resources>
+        <Style x:Key="FloatValueScaled" TargetType="TextBlock" BasedOn="{StaticResource FloatValue}">
+            <Setter Property="FontSize"
+                    Value="{Binding ValueFontSize, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="LineHeight"
+                    Value="{Binding ValueLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
+        </Style>
+
+        <Style x:Key="FloatLabelScaled" TargetType="TextBlock" BasedOn="{StaticResource FloatLabel}">
+            <Setter Property="FontSize"
+                    Value="{Binding LabelFontSize, RelativeSource={RelativeSource AncestorType=Window}}" />
+            <Setter Property="LineHeight"
+                    Value="{Binding LabelLineHeight, RelativeSource={RelativeSource AncestorType=Window}}" />
+        </Style>
+    </Window.Resources>
+
+    <!--
         6.1 形态：无标题栏、无边框按钮、单行圆角长条。
         AllowsTransparency 必须保持 False —— 开了会变成 layered window，DWM 的系统背景
         直接失效、WPF 还会退掉硬件加速（A-30 同源）。背景靠 WindowGlass 把
@@ -21,7 +49,8 @@
         着色分两层：accent 的 tint（WindowGlass）+ 这里的 Shell 遮罩，
         两层相乘才是"遮住背景"的总量。浅色档系统自带约 85% 白底，所以浓度主要靠 Shell 拉。
     -->
-    <Border x:Name="Shell" Height="34" CornerRadius="10" BorderThickness="1"
+    <Border x:Name="Shell" Height="{Binding ShellHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+            CornerRadius="10" BorderThickness="1"
             BorderBrush="{StaticResource BrushGlassEdge}" Background="{StaticResource BrushGlassTint}"
             Padding="10,0"
             MouseLeftButtonDown="Shell_MouseLeftButtonDown"
@@ -39,6 +68,13 @@
                 <Separator />
 
                 <!-- 单选靠代码互斥（WPF 菜单没有现成的 RadioMenuItem） -->
+                <MenuItem Header="缩放">
+                    <MenuItem x:Name="Scale100Menu" Header="100%" IsCheckable="True" IsChecked="True"
+                              Click="Scale_Click" Tag="100" />
+                    <MenuItem x:Name="Scale125Menu" Header="125%" IsCheckable="True" Click="Scale_Click" Tag="125" />
+                    <MenuItem x:Name="Scale150Menu" Header="150%" IsCheckable="True" Click="Scale_Click" Tag="150" />
+                </MenuItem>
+
                 <MenuItem Header="外观">
                     <MenuItem x:Name="ThemeLightMenu" Header="浅色玻璃" IsCheckable="True" IsChecked="True"
                               Click="ThemeLight_Click" />
@@ -76,45 +112,45 @@
         <!-- 列宽严格照 6.3：34 / 44 / 44 / 74 / 78 / 44，间距 8，两端内边距各 10 -->
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
-            <StackPanel Width="{Binding FloatFps.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatFps.Top}"
+            <StackPanel Width="{Binding FloatFps.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatFps.Top}"
                            Foreground="{Binding FloatFps.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatFps.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatCpu.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatCpu.Top}"
+            <StackPanel Width="{Binding FloatCpu.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatCpu.Top}"
                            Foreground="{Binding FloatCpu.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatCpu.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatGpu.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatGpu.Top}"
+            <StackPanel Width="{Binding FloatGpu.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatGpu.Top}"
                            Foreground="{Binding FloatGpu.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatGpu.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatRam.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatRam.Top}"
+            <StackPanel Width="{Binding FloatRam.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatRam.Top}"
                            Foreground="{Binding FloatRam.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatRam.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatVram.Width}" Margin="0,0,8,0" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatVram.Top}"
+            <StackPanel Width="{Binding FloatVram.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatVram.Top}"
                            Foreground="{Binding FloatVram.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatVram.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
             <StackPanel Width="{Binding FloatNet.Width}" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource FloatValue}" Text="{Binding FloatNet.Top}"
+                <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatNet.Top}"
                            Foreground="{Binding FloatNet.TopBrush}" />
-                <TextBlock Style="{StaticResource FloatLabel}" Text="{Binding FloatNet.Bottom}"
+                <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 

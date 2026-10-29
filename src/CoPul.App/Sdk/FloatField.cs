@@ -22,17 +22,43 @@ public sealed class FloatField : INotifyPropertyChanged
     private Brush _lightBrush = Brushes.Gray;
     private Brush _darkBrush = Brushes.Gray;
     private bool _onLight = true;
+    private double _width;
 
     public FloatField(string key, double width)
     {
         Key = key;
-        Width = width;
+        BaseWidth = width;
+        _width = width;
     }
 
     /// <summary>字段名，仅用于自测输出与 XAML 可读性。</summary>
     public string Key { get; }
 
-    public double Width { get; }
+    /// <summary>6.3 表格里的基准列宽（100% 档），缩放时以它为底。</summary>
+    public double BaseWidth { get; }
+
+    /// <summary>
+    /// 当前实际列宽。会随 <see cref="ApplyScale"/> 变化，所以是普通的可通知属性。
+    ///
+    /// <para>
+    /// 为什么列宽要随档位变，而不是让整个窗口套一层 Viewbox：Viewbox 是"先按原尺寸布局
+    /// 再整体缩放"，文字会被当成图片拉伸，在 150% DPI × 1.5 档（2.25 倍像素比）下边缘发虚。
+    /// 改列宽则是让 WPF 用目标尺寸<b>重新排版</b>，矢量文字始终锐利。
+    /// </para>
+    /// </summary>
+    public double Width
+    {
+        get => _width;
+        private set
+        {
+            if (Math.Abs(_width - value) < 0.01) return;
+            _width = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Width)));
+        }
+    }
+
+    /// <summary>按档位乘数重算列宽。乘数来自 <see cref="CoPul.App.FloatWindow"/> 的 Q-05 档位。</summary>
+    public void ApplyScale(double scale) => Width = BaseWidth * scale;
 
     public string Top => _top;
     public string Bottom => _bottom;
