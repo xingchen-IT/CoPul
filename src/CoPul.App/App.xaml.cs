@@ -207,6 +207,22 @@ public partial class App : Application
             }
         }
 
+        // ---- 纯探测型探针：必须在任何窗口 Show 之前分流 ----
+        //
+        // 为什么位置这么靠前：--fullscreen-probe 要读**真实的**前台窗口来判断全屏，
+        // 而下面 `else if (!hidden) window.Show()` 会把我们自己的大窗口推到前台，
+        // 于是探测永远得到 `veto:self`（实测踩到，探针等于什么都没测）。
+        // 探针不该建任何窗口，就不该等窗口代码跑完。
+        string? fsProbePathEarly = ArgValue(e.Args, "--fullscreen-probe");
+        if (fsProbePathEarly is not null)
+        {
+            Probes.FullScreenProbe.Run(fsProbePathEarly, e.Args.Contains("--fs-fake"),
+                int.TryParse(ArgValue(e.Args, "--fs-polls"), out int fp) && fp > 0 ? fp : 6,
+                timer => timer.Start(),
+                Shutdown);
+            return;
+        }
+
         if (wantFloat)
         {
             FloatWindow f = EnsureFloat();
@@ -270,14 +286,13 @@ public partial class App : Application
 
         // ---- 全屏自动切换（第 8 章 / F-11）----
         // 放在窗口 Show 之后：状态机要知道当前视图，而视图是上面这段决定的。
-        // 大窗口模式（含 --hidden）同样要装 —— 8.6 规定它"不动作"，但探针要能验到这一点。
+        // 大窗口模式（含 --hidden）同样要装 —— 8.6 规定它"不动作"，但状态机要能装到。
         //
         // 探针模式下**不启动**状态机：--view-probe 要逐步切视图并数可见窗口，
         // 而状态机每 500ms 会按真实全屏状态抢切一次，两边互相打架（实测踩到过：
         // 游戏正在全屏时跑 view-probe，第 3 步就被状态机切走了）。
-        // 探针要验的东西各自独立，混在一起跑无法归因。
-        bool probeMode = ArgValue(e.Args, "--fullscreen-probe") is not null
-                         || ArgValue(e.Args, "--view-probe") is not null;
+        // 纯探测的 --fullscreen-probe 已在更前面分流（它不该建任何窗口）。
+        bool probeMode = ArgValue(e.Args, "--view-probe") is not null;
         if (!probeMode)
         {
             auto = new FullScreenAutoSwitch { CurrentView = view };
@@ -298,23 +313,6 @@ public partial class App : Application
                 ShowView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-exit", userInitiated: false);
 
             auto.Start();
-        }
-
-        // 自测：--fullscreen-probe <txt 路径> [--fs-fake] [--fs-polls N]
-        //
-        // 为什么要有"伪造数据"这条路径：验 8.2 的 floatOrigin 与整条状态迁移，
-        // 必须让"任务栏 → 全屏 → 悬浮 → 退全屏 → 任务栏"真的跑一遍。但真跑需要
-        // 独占全屏（开个游戏，跑一次占一次整块屏，中途被杀还留在全屏里），
-        // 与 --force-edge / --float-snap-probe 的取舍一致：只伪造**输入**，
-        // 状态机、防抖、来源标记全部走生产代码（见 Probes/FullScreenProbe.cs）。
-        string? fsProbePath = ArgValue(e.Args, "--fullscreen-probe");
-        if (fsProbePath is not null)
-        {
-            Probes.FullScreenProbe.Run(fsProbePath, e.Args.Contains("--fs-fake"),
-                int.TryParse(ArgValue(e.Args, "--fs-polls"), out int fp) && fp > 0 ? fp : 6,
-                timer => timer.Start(),
-                Shutdown);
-            return;
         }
 
         // 自测：--view-probe <txt 路径> [--view-probe-start main|float|tray]

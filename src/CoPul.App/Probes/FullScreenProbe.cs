@@ -87,7 +87,69 @@ internal static class FullScreenProbe
         sb.AppendLine($"  前台矩形匹配整屏 : {now.RectMatchesMonitor}");
         sb.AppendLine($"  前台无标题栏     : {now.Captionless}");
         sb.AppendLine();
+
+        sb.Append(RunDecideTable());
         return sb;
+    }
+
+    /// <summary>
+    /// 判定组合自检表：穷举「QUNS × 矩形铺满 × 无标题栏」的全部 8 种组合，逐行对照期望。
+    ///
+    /// <para>
+    /// <b>为什么必须有这张表。</b>踩过一次严重误判：前台是普通浏览器窗口
+    /// （矩形不铺满、有标题栏），QUNS 却报 2。按需求 8.4 原文「主判据 QUNS ∈ {2,3}」
+    /// 的写法会把它判成全屏，任务栏条平白消失。修成「QUNS_BUSY 必须有几何旁证」之后，
+    /// 又引入漏判风险（改狠了会把真全屏判掉）。这张表把两侧都锁死：
+    /// 误判那行必须 false，真全屏那几行必须 true。
+    /// </para>
+    ///
+    /// <para>
+    /// 纯逻辑、无需真开全屏应用 —— 这类规则就该这样验，而不是开个游戏碰运气。
+    /// </para>
+    /// </summary>
+    private static string RunDecideTable()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("== 判定组合自检表（DecideIsFullScreen，与 Probe 同一份规则）==");
+        sb.AppendLine("   QUNS | 矩形铺满 | 无标题栏 | 期望 | 实际 | 结果  说明");
+        sb.AppendLine("  ------+----------+----------+------+------+------  ----");
+
+        // (quns, rectMatches, captionless, expected, note)
+        var cases = new (int Quns, bool Rect, bool NoCaption, bool Expect, string Note)[]
+        {
+            // ---- 必须判为全屏（真全屏的两种形态）----
+            (3, true, true, true, "D3D 独占全屏（QUNS=3）"),
+            (3, false, false, true, "D3D 独占全屏 + 几何取整差异（QUNS=3 不看几何）"),
+            (2, true, true, true, "无边框全屏 + QUNS 也报忙（《剑星》实测是这条）"),
+            (5, true, true, true, "无边框全屏但 QUNS 未置位（辅判据单独成立）"),
+            (6, true, true, true, "专注时段 + 几何铺满（弱判据加旁证）"),
+
+            // ---- 必须判为非全屏（误判案例）----
+            (2, false, false, false, "普通浏览器窗口 + QUNS=2 ← 实测踩到的误判"),
+            (2, false, true, false, "有 QUNS 但未铺满、缺标题栏（半屏应用）"),
+            (2, true, false, false, "铺满但有标题栏（最大化窗口，不是全屏）"),
+            (5, false, false, false, "普通桌面状态"),
+            (6, false, true, false, "专注时段但没全屏"),
+            (0, false, true, false, "锁屏 / 无前台"),
+        };
+
+        int pass = 0, fail = 0;
+        foreach (var c in cases)
+        {
+            bool actual = FullScreenDetector.DecideIsFullScreen(c.Quns, c.Rect, c.NoCaption);
+            bool ok = actual == c.Expect;
+            if (ok) pass++; else fail++;
+
+            sb.AppendLine($"  {c.Quns,4} | {(c.Rect ? "是" : "否"),8} | {(c.NoCaption ? "是" : "否"),8} | " +
+                          $"{(c.Expect ? "全屏" : "否"),4} | {(actual ? "全屏" : "否"),4} | " +
+                          $"{(ok ? "✓" : "✗ 不符")}   {c.Note}");
+        }
+
+        sb.AppendLine($"  ------+----------+----------+------+------+------");
+        sb.AppendLine($"  通过 {pass} / 失败 {fail}");
+        sb.AppendLine($"  判定 : {(fail == 0 ? "通过（两条边界都被锁住）" : "失败 —— 上面 ✗ 的行是误判或漏判")}");
+        sb.AppendLine();
+        return sb.ToString();
     }
 
     /// <summary>真实探测：连跑 N 轮看稳定性。桌面静止时每一轮结论都应当一致且为 notfull。</summary>

@@ -210,15 +210,18 @@ internal static class FullScreenDetector
         // 静默时段 / 应用模式 / 演示模式：单靠 QUNS 会误判，必须再要一条"矩形铺满且无标题栏"的旁证。
         // 8.5（Q-15）已定不做进程白名单，所以 PPT 放映 / 浏览器 F11 / 视频全屏一律照切。
         bool accordOnly = quns is QUNS_QUIET_TIME or QUNS_APP or QUNS_PRESENTATION_MODE;
-        bool isFull = qunsFull || auxFull || (accordOnly && rectMatches && captionless);
+
+        // 判定走 DecideIsFullScreen，与自检表同一份规则（避免"改一处忘一处"）
+        bool isFull = DecideIsFullScreen(quns, rectMatches, captionless);
 
         string reason =
-            (qunsFull ? $"quns={quns}" : string.Empty) +
-            (rectMatches ? " +rect" : string.Empty) +
-            (captionless ? " -caption" : string.Empty) +
+            (quns == QUNS_RUNNING_D3D_FULL_SCREEN ? $"quns={quns}(d3d)" : string.Empty) +
+            (quns == QUNS_BUSY ? "quns=2(需几何旁证)" : string.Empty) +
+            (rectMatches ? "+rect" : "-rect") +
+            (captionless ? "-caption" : "+caption") +
+            (auxFull ? " ⇒ aux-full" : string.Empty) +
             (accordOnly && isFull ? " (quns-weak+aux)" : string.Empty);
-        if (reason.Length == 0) reason = quns == QUNS_NOT_PRESENT ? "quns=locked" : "none";
-
+        if (reason.Length == 0 || !isFull) reason = "not-full: " + reason.Trim(' ', '+', '-');
         return new FullScreenInfo(isFull, reason.Trim(), quns, fg, className, title.ToString(),
                                   pid, rectMatches, captionless, device);
     }
@@ -252,4 +255,27 @@ internal static class FullScreenDetector
     };
 
     private static bool NearlyEqual(int a, int b) => Math.Abs(a - b) <= RectTolerancePx;
+
+    /// <summary>
+    /// 判定逻辑的**纯函数版**，供自检表用。与 <see cref="Probe"/> 走同一套规则，
+    /// 抽出来是为了能穷举「QUNS × 矩形 × 标题栏」的组合而不必真开全屏应用。
+    ///
+    /// <para>
+    /// <b>为什么这条规则值得单独自检。</b>踩过一次严重误判：前台是个普通浏览器窗口
+    /// （矩形不铺满、有标题栏），QUNS 却报 2，按「8.4 原文只认 QUNS」的写法会把它判成全屏，
+    /// 任务栏条平白消失。修法是「QUNS_BUSY / 弱判据 必须有几何旁证」，
+    /// 但这同时是个**漏判风险点**：改狠了会把真全屏也判掉。
+    /// 所以用表把两侧都锁死：误判那行必须为 false，真全屏那几行必须为 true。
+    /// </para>
+    /// </summary>
+    internal static bool DecideIsFullScreen(int quns, bool rectMatches, bool captionless)
+    {
+        bool auxFull = rectMatches && captionless;
+
+        // 3 = D3D 独占全屏：系统直接告诉我们是全屏，不需要几何旁证
+        if (quns == QUNS_RUNNING_D3D_FULL_SCREEN) return true;
+
+        // 几何铺满 + 无标题栏：这是「无边框全屏」的硬证据，不管 QUNS 说什么都认
+        return auxFull;
+    }
 }
