@@ -67,6 +67,20 @@ public sealed class AppConfig
     /// </summary>
     public string TaskbarInk { get; set; } = "Light";
 
+    // ---- 全屏自动切换（第 8 章 / F-11）----
+
+    /// <summary>
+    /// 全屏自动切换开关（F-11）。默认**开**：A 方案下任务栏条是 topmost 顶层窗口，
+    /// 关掉它就等于让条盖在全屏游戏画面上（见 7.1 的 A 方案说明）。
+    ///
+    /// <para>
+    /// 留这个开关是因为它有个用户可能真的想要的边界情况：<c>QUNS_BUSY</c> 的判定范围比
+    /// "独占全屏游戏"宽（PPT 放映、浏览器 F11 也算，8.5 已定不做白名单），
+    /// 有人就是希望看视频全屏时条还留着。
+    /// </para>
+    /// </summary>
+    public bool FullScreenAutoSwitch { get; set; } = true;
+
     // ---- 悬浮窗位置（6.7）----
     // 存「显示器 + 相对比例」而不是绝对像素：换分辨率、改缩放、拔插显示器后，
     // 绝对坐标会把窗口扔到屏幕外。三个字段是一个整体，Monitor 为空即视为"从未摆放过"。

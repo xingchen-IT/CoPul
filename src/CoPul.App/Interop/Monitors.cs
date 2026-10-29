@@ -160,6 +160,46 @@ internal static class Monitors
     public static bool TryGetRect(IntPtr hwnd, out Win32Window.RECT rect) => GetWindowRect(hwnd, out rect);
 
     /// <summary>
+    /// 窗口所在显示器的**整屏**矩形（不扣任务栏），物理像素。附设备名。
+    ///
+    /// <para>
+    /// <see cref="TryForWindow"/> 给的是工作区，判"窗口是否铺满整块屏"必须用整屏 ——
+    /// 全屏检测（需求 8.4 辅判据）就是拿前台窗口矩形跟这个比。两者差一个任务栏的高度，
+    /// 用错了会把"最大化窗口"也判成全屏。
+    /// </para>
+    /// </summary>
+    public static bool TryMonitorBoundsForWindow(IntPtr hwnd, out Win32Window.RECT bounds, out string device)
+    {
+        bounds = default;
+        device = string.Empty;
+        if (hwnd == IntPtr.Zero) return false;
+
+        IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero) return false;
+
+        var info = new MONITORINFOEX
+        {
+            cbSize = Marshal.SizeOf<MONITORINFOEX>(),
+            szDevice = string.Empty
+        };
+        if (!GetMonitorInfoW(monitor, ref info)) return false;
+
+        bounds = info.rcMonitor;
+        device = info.szDevice ?? string.Empty;
+        return true;
+    }
+
+    /// <summary>整屏矩形 + 工作区一起取，供全屏自动切换摆悬浮窗用（8.6 要落到全屏那块屏）。</summary>
+    public static bool TryMonitorAreaForWindow(IntPtr hwnd, out MonitorArea screen)
+    {
+        screen = default;
+        if (!TryMonitorBoundsForWindow(hwnd, out Win32Window.RECT bounds, out string device)) return false;
+
+        screen = new MonitorArea(device, bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
+        return screen.IsValid;
+    }
+
+    /// <summary>
     /// 只挪位置不改尺寸。用 <c>SetWindowPos</c> 而不是 <c>Window.Left/Top</c>：
     /// 后者按 DIP 解释，跨 DPI 时会落在错误位置；这里坐标本来就是物理像素，直接落地。
     /// </summary>
@@ -212,6 +252,54 @@ internal static class Monitors
 
     /// <summary>原始 DPI（96 = 100%）。取不到返回 0，调用方自行决定兜底值。</summary>
     public static uint DpiForWindow(IntPtr hwnd) => hwnd == IntPtr.Zero ? 0 : GetDpiForWindow(hwnd);
+
+    /// <summary>
+    /// 指定显示器的缩放（1.0 = 100%）。按**设备名**查，供"窗口还没 Show、拿不到自己的 HWND"
+    /// 时使用 —— <see cref="ScaleForWindow"/> 依赖 HWND，而全屏自动切换要在 Show 之前就把
+    /// 悬浮窗摆到目标屏上（否则会先在左上角闪一下再跳过去，实测 600ms 才归位）。
+    ///
+    /// <para>
+    /// 走 <c>GetDpiForMonitor</c>（shcore.dll）。它返回的是"该显示器"的 DPI，与窗口无关；
+    /// 混合 DPI 多屏时必须用这个，不能用主屏的 DPI 顶替（A-27）。
+    /// 取不到时返回 1.0（按 100% 处理），调用方只用于预摆位，差几像素会被随后的物理像素校正吃掉。
+    /// </para>
+    /// </summary>
+    public static double ScaleForMonitor(string device)
+    {
+        if (string.IsNullOrEmpty(device)) return 1.0;
+
+        foreach (MonitorArea area in All())
+        {
+            if (!string.Equals(area.Device, device, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var origin = new Win32Window.POINT { X = area.Left, Y = area.Top };
+            IntPtr monitor = MonitorFromPoint(origin, MONITOR_DEFAULTTONEAREST);
+            if (monitor == IntPtr.Zero) return 1.0;
+
+            if (TryGetDpiForMonitor(monitor, out uint dpiX, out _) && dpiX > 0) return dpiX / 96.0;
+            return 1.0;
+        }
+        return 1.0;
+    }
+
+    private const int MDT_EFFECTIVE_DPI = 0;
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    private static bool TryGetDpiForMonitor(IntPtr monitor, out uint dpiX, out uint dpiY)
+    {
+        dpiX = dpiY = 96;
+        try
+        {
+            // Win8.1+ 才有；老系统或受限环境下失败就按 100% 处理
+            return GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out dpiX, out dpiY) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// 主显示器的**整屏**矩形（不扣任务栏）。与 <see cref="TryPrimary"/> 的区别：

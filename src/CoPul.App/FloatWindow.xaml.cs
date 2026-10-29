@@ -152,6 +152,8 @@ public partial class FloatWindow : Window
             // 只跑一次、且只是重设同一组画刷，不会有可见闪烁。
             if (_glass) ApplyGlass(_glass);
 
+            _contentRenderedOnce = true;
+
             if (PersistProbe)
             {
                 // 走 setter，也就是用户点菜单走的同一条路
@@ -170,6 +172,14 @@ public partial class FloatWindow : Window
                 SettlePlacement();
                 PlacementDiag = DescribePlacement("snap-probe");
             }
+            else if (_pendingAutoPlace is not null)
+            {
+                // 全屏自动切换（8.6）已经把窗口摆到全屏那块屏上了，这里**不能**再按配置还原：
+                // 那会把窗口挪回"上次手动摆的位置"，而用户此刻正看着另一块屏上的游戏。
+                // 实测症状：自动切过来的悬浮窗先出现在 (24,1453)，紧接着自己被挪到
+                // (1989,0) —— 位置对了半秒然后跳走，比一直错更难排查。
+                ApplyAutoPlace(_pendingAutoPlace);
+            }
             else if (CenterOnScreen) PlaceAtCenter();
             else if (TryRestorePlacement())
             {
@@ -185,6 +195,97 @@ public partial class FloatWindow : Window
                 PlacementDiag = DescribePlacement("default");
             }
         };
+    }
+
+    /// <summary>
+    /// 全屏自动切换请求的目标显示器（8.6）。在 <see cref="ContentRendered"/> 之前落地，
+    /// 那里再真正摆位 —— 因为 SizeToContent 的窗口在 Show 之后宽度还没定型，
+    /// 此时量到的宽度是错的（见 ContentRendered 的注释），直接摆会算错底边。
+    /// </summary>
+    private string? _pendingAutoPlace;
+
+    /// <summary>
+    /// 请求把悬浮窗摆到指定显示器。由全屏自动切换调用（8.6）。
+    ///
+    /// <para>
+    /// <b>会在 Show 之前就把窗口预摆到目标屏</b>（用 DIP 算），这样首帧就出现在正确位置。
+    /// 少了这一步，实测会出现"窗口先闪现在屏幕左上角 (38,38)，600ms 后才跳到左下角" ——
+    /// 全屏游戏上那一闪非常显眼，用户会以为程序抽风。
+    /// </para>
+    ///
+    /// <para>
+    /// 预摆位之后 <see cref="ContentRendered"/> 还会用物理像素再校一次
+    /// （<see cref="ApplyAutoPlace"/>）：预摆位用的是 DIP，而 SizeToContent 的宽度那时还没定型，
+    /// 底边对齐一定差几个像素。两步各管一半。
+    /// </para>
+    /// </summary>
+    public void PlaceOnMonitor(string device)
+    {
+        if (string.IsNullOrEmpty(device)) return;
+
+        // 第一步：Show 之前先按 DIP 预摆（此时没有 HWND，只能操作 Window.Left/Top）
+        if (!_contentRenderedOnce)
+        {
+            PrePlaceBeforeShow(device);
+            _pendingAutoPlace = device;
+            return;
+        }
+
+        ApplyAutoPlace(device);
+    }
+
+    /// <summary>
+    /// Show 之前的预摆位。用目标屏的 DPI 把"左下角 + 12 DIP 内缩"换算成 DIP 坐标。
+    ///
+    /// <para>
+    /// 这段必须能容忍"还没有句柄/还没布局"：拿不到实际尺寸时用 <see cref="SizeToContent"/>
+    /// 之前已知的 100% 基准高度估，误差由随后的物理像素校正吸收。
+    /// </para>
+    /// </summary>
+    private void PrePlaceBeforeShow(string device)
+    {
+        if (!Monitors.TryFind(device, out MonitorArea work) || !work.IsValid) return;
+
+        double scale = Monitors.ScaleForMonitor(device);
+        if (scale <= 0) scale = 1.0;
+
+        // 目标屏工作区的 DIP 坐标（工作区是物理像素，除缩放换 DIP）
+        double workLeftDip = work.Left / scale;
+        double workBottomDip = work.Bottom / scale;
+
+        // 高度是确定的（尺寸由 ScalePercent 决定，不依赖内容测量）；宽度交给 SizeToContent，
+        // 所以横向按"左边界 = 工作区左 + 12 DIP"锚定，不参与右边界对齐。
+        double heightDip = BaseHeight * (_scalePercent / 100.0);
+        Left = workLeftDip + 12;
+        Top = workBottomDip - heightDip - 12;
+    }
+
+    /// <summary>是否已经过首帧渲染（决定 PlaceOnMonitor 是立刻摆还是延后）。</summary>
+    private bool _contentRenderedOnce;
+
+    /// <summary>把窗口摆到指定显示器的左下角（8.6 的副屏规则）。</summary>
+    private void ApplyAutoPlace(string device)
+    {
+        _pendingAutoPlace = null;
+
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryFind(device, out MonitorArea work) || !work.IsValid) return;
+
+        UpdateLayout();
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT rect)) return;
+
+        int widthPx = rect.Right - rect.Left;
+        int heightPx = rect.Bottom - rect.Top;
+        if (widthPx <= 0 || heightPx <= 0) return;
+
+        int scale = (int)Math.Round(Monitors.ScaleForWindow(hwnd));
+        if (scale <= 0) scale = 1;
+        int inset = 12 * scale;
+
+        // 左边界贴工作区左侧、底边贴工作区底部（全屏时那块屏没有任务栏，工作区≈整屏）
+        Monitors.MoveWindowTo(hwnd, work.Left + inset, work.Bottom - heightPx - inset);
+        PlacementDiag = DescribePlacement("auto-fullscreen:" + device);
     }
 
     /// <summary>验收毛玻璃时把窗口挪到屏幕中间，方便连同背景一起截（--float-center）。</summary>

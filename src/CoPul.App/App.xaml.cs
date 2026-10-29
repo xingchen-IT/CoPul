@@ -67,8 +67,17 @@ public partial class App : Application
         // --hidden：不显示窗口，用来分离「采集器成本」与「WPF 渲染成本」
         bool hidden = e.Args.Contains("--hidden");
 
-        // --float：以悬浮窗模式启动（M2）。大窗口全程不 Show，但它的 Host 照常采集——
-        // 悬浮窗只是同一份 DashboardState 的另一个视图，不自己起第二套 PresentMon。
+        // =====================================================================
+        // 三视图互斥编排（A-06 / 8.1）：任意时刻只有一个视图可见。
+        //
+        // 为什么把 Show/Hide 收到这一个函数里（M4 重构）：全屏自动切换要自己切视图，
+        // 而用户点标题栏 ▭ / ▤、双击条、右键菜单也在切视图。两边各写一套 Hide/Show，
+        // 状态机的 CurrentView 立刻与事实不符 —— 表现就是"退出全屏后没回落"或
+        // "回落了两次"。现在所有视图切换都过 ShowView，状态机在同一个地方同步。
+        // =====================================================================
+        FullScreenAutoSwitch? auto = null;
+        FullScreenAutoSwitch.View view = FullScreenAutoSwitch.View.Main;
+
         FloatWindow? floating = null;
 
         FloatWindow EnsureFloat()
@@ -76,12 +85,7 @@ public partial class App : Application
             if (floating is not null) return floating;
 
             floating = new FloatWindow(window.State, ConfigStore.Current);
-            floating.MainWindowRequested += (_, _) =>
-            {
-                floating?.Hide();
-                window.Show();
-                window.Activate();
-            };
+            floating.MainWindowRequested += (_, _) => ShowView(FullScreenAutoSwitch.View.Main, "float→main");
             return floating;
         }
 
@@ -92,48 +96,77 @@ public partial class App : Application
             if (taskbar is not null) return taskbar;
 
             taskbar = new TaskbarWindow(window.State, ConfigStore.Current);
-            taskbar.MainWindowRequested += (_, _) =>
-            {
-                taskbar?.Hide();
-                window.Show();
-                window.Activate();
-            };
-            taskbar.FloatRequested += (_, _) =>
-            {
-                taskbar?.Hide();
-                FloatWindow f = EnsureFloat();
-                f.Show();
-                f.Activate();
-            };
+            taskbar.MainWindowRequested += (_, _) => ShowView(FullScreenAutoSwitch.View.Main, "tray→main");
+            taskbar.FloatRequested += (_, _) => ShowView(FullScreenAutoSwitch.View.Float, "tray→float");
 
             // explorer 重启时原窗口可能已被系统销毁，只能重建（7.7）
             taskbar.RecreateRequested += (_, _) =>
             {
+                bool wasShowing = view == FullScreenAutoSwitch.View.Taskbar;
                 try { taskbar?.Close(); } catch { /* 窗口已废，Close 可能抛 */ }
                 taskbar = null;
-                EnsureTaskbar().Show();
+
+                // 重建后要恢复"当前视图"：全屏自动切换场景下条是被动重建的，
+                // 这时若直接 Show 会无视状态机（条可能正该藏在悬浮窗后面）。
+                if (wasShowing) EnsureTaskbar().Show();
             };
             return taskbar;
         }
 
+        /// <summary>
+        /// 切换视图。userInitiated=false 表示这是全屏自动切换自己发起的（8.2 要区分来源）。
+        /// </summary>
+        void ShowView(FullScreenAutoSwitch.View target, string reason, bool userInitiated = true)
+        {
+            FullScreenAutoSwitch.View previous = view;
+            view = target;
+
+            // 先藏掉别的视图（A-06：不得同时可见）
+            if (target != FullScreenAutoSwitch.View.Main && window.IsVisible) window.Hide();
+            if (target != FullScreenAutoSwitch.View.Float) floating?.Hide();
+            if (target != FullScreenAutoSwitch.View.Taskbar) taskbar?.Hide();
+
+            switch (target)
+            {
+                case FullScreenAutoSwitch.View.Main:
+                    window.Show();
+                    window.Activate();
+                    break;
+                case FullScreenAutoSwitch.View.Float:
+                    FloatWindow f = EnsureFloat();
+                    f.Show();
+                    f.Activate();
+                    break;
+                case FullScreenAutoSwitch.View.Taskbar:
+                    EnsureTaskbar().Show();
+                    break;
+            }
+
+            // 状态机同步 + 来源标记（8.2）：用户主动切到悬浮窗 = manual，切走 = 归位
+            if (auto is not null)
+            {
+                auto.CurrentView = view;
+                if (userInitiated)
+                {
+                    if (target == FullScreenAutoSwitch.View.Float) auto.NoteUserChoseFloat();
+                    else auto.NoteUserLeftFloat();
+                }
+
+                // 视图变了，探测的需求也跟着变（大窗口 / manual 悬浮窗都完全不需要探测）。
+                // 少了这一句，从任务栏切到大窗口后定时器还在 2 Hz 空转（0.11% 单核）。
+                auto.SyncTimer();
+            }
+
+            Interop.Trace.Log("view", $"{previous}→{view} by={reason} user={userInitiated}");
+        }
+
         // 大窗口标题栏的「切到悬浮窗」按钮走这条回调：MainWindow 不认识 FloatWindow，
         // 也不该认识——两者的关系由 App 接线，窗口之间不互相 new。
-        window.FloatRequested = () =>
-        {
-            window.Hide();
-            FloatWindow f = EnsureFloat();
-            f.Show();
-            f.Activate();
-        };
+        window.FloatRequested = () => ShowView(FullScreenAutoSwitch.View.Float, "main→float");
 
         // 同上，「切到任务栏条」（M3）。这条让大窗口能进入任务栏模式——
         // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
-        window.TrayRequested = () =>
-        {
-            window.Hide();
-            TaskbarWindow t = EnsureTaskbar();
-            t.Show();
-        };
+        window.TrayRequested = () => ShowView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
 
         bool wantFloat = e.Args.Contains("--float");
         if (e.Args.Contains("--backdrop"))
@@ -210,12 +243,14 @@ public partial class App : Application
             }
 
             f.Show();
+            view = FullScreenAutoSwitch.View.Float;
         }
         else if (e.Args.Contains("--tray"))
         {
             // 任务栏模式（第 7 章）。大窗口不 Show，但采集照常跑在它身上。
             TaskbarWindow t = EnsureTaskbar();
             t.Show();
+            view = FullScreenAutoSwitch.View.Taskbar;
 
             // 自测：--tray-restart-probe 在 3 秒后重启 explorer，
             // 配合 --wait 14000 就能验证 7.7「重启后自动恢复」
@@ -232,6 +267,97 @@ public partial class App : Application
             }
         }
         else if (!hidden) window.Show();
+
+        // ---- 全屏自动切换（第 8 章 / F-11）----
+        // 放在窗口 Show 之后：状态机要知道当前视图，而视图是上面这段决定的。
+        // 大窗口模式（含 --hidden）同样要装 —— 8.6 规定它"不动作"，但探针要能验到这一点。
+        //
+        // 探针模式下**不启动**状态机：--view-probe 要逐步切视图并数可见窗口，
+        // 而状态机每 500ms 会按真实全屏状态抢切一次，两边互相打架（实测踩到过：
+        // 游戏正在全屏时跑 view-probe，第 3 步就被状态机切走了）。
+        // 探针要验的东西各自独立，混在一起跑无法归因。
+        bool probeMode = ArgValue(e.Args, "--fullscreen-probe") is not null
+                         || ArgValue(e.Args, "--view-probe") is not null;
+        if (!probeMode)
+        {
+            auto = new FullScreenAutoSwitch { CurrentView = view };
+            auto.ApplyConfig(ConfigStore.Current.FullScreenAutoSwitch && !e.Args.Contains("--no-fullscreen-switch"));
+
+            // 两个自动动作都必须走 ShowView，不能自己 Show/Hide：
+            // 绕过编排的话，另一条视图就不会被 Hide（A-06 违反，两窗口叠着），
+            // 而且状态机的 CurrentView 会与实际不符，下一次判定就跟着错。
+            auto.EnterAutoFloat = monitor =>
+            {
+                // 顺序关键：先把悬浮窗预摆到目标屏，再 Show。
+                // 反过来的话首帧会出现在屏幕左上角，600ms 后才跳到左下角
+                // —— 全屏游戏上那一闪非常显眼（实测就是 (38,38) → (24,1453)）。
+                EnsureFloat().PlaceOnMonitor(monitor);
+                ShowView(FullScreenAutoSwitch.View.Float, "fullscreen-enter", userInitiated: false);
+            };
+            auto.ExitToTaskbar = () =>
+                ShowView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-exit", userInitiated: false);
+
+            auto.Start();
+        }
+
+        // 自测：--fullscreen-probe <txt 路径> [--fs-fake] [--fs-polls N]
+        //
+        // 为什么要有"伪造数据"这条路径：验 8.2 的 floatOrigin 与整条状态迁移，
+        // 必须让"任务栏 → 全屏 → 悬浮 → 退全屏 → 任务栏"真的跑一遍。但真跑需要
+        // 独占全屏（开个游戏，跑一次占一次整块屏，中途被杀还留在全屏里），
+        // 与 --force-edge / --float-snap-probe 的取舍一致：只伪造**输入**，
+        // 状态机、防抖、来源标记全部走生产代码（见 Probes/FullScreenProbe.cs）。
+        string? fsProbePath = ArgValue(e.Args, "--fullscreen-probe");
+        if (fsProbePath is not null)
+        {
+            Probes.FullScreenProbe.Run(fsProbePath, e.Args.Contains("--fs-fake"),
+                int.TryParse(ArgValue(e.Args, "--fs-polls"), out int fp) && fp > 0 ? fp : 6,
+                timer => timer.Start(),
+                Shutdown);
+            return;
+        }
+
+        // 自测：--view-probe <txt 路径> [--view-probe-start main|float|tray]
+        //
+        // 验的是**真的** Show/Hide 编排（A-06 / 8.1）：逐步切换三视图，
+        // 每步数"当前有几个窗口可见"，必须恰好 1 个。
+        // 与 --fullscreen-probe --fs-fake 分工：那条验状态机（记账，不碰窗口），这条验编排。
+        string? viewProbePath = ArgValue(e.Args, "--view-probe");
+        if (viewProbePath is not null)
+        {
+            FullScreenAutoSwitch.View vStart = FullScreenAutoSwitch.View.Main;
+            if (ArgValue(e.Args, "--view-probe-start") is { } vs
+                && Enum.TryParse(vs, ignoreCase: true, out FullScreenAutoSwitch.View parsed))
+                vStart = parsed;
+
+            ShowView(vStart, "view-probe-start", userInitiated: false);
+
+            Probes.ViewProbe.Run(
+                target => ShowView(target, "view-probe", userInitiated: false),
+                () => DescribeViewState(window, floating, taskbar),
+                viewProbePath, vStart, t => t.Start(), Shutdown);
+            return;
+        }
+
+        // 自测：--fs-switch-probe <txt 路径>
+        //
+        // 端到端验"全屏自动切换"：探测结果与时钟伪造，但 EnterAutoFloat / ExitToTaskbar
+        // 是**生产接线**（真的 Show 悬浮窗、真的 Hide 任务栏条）。
+        // 与另两个探针的分工见 Probes/FullScreenSwitchProbe.cs 的注释。
+        string? fsSwitchPath = ArgValue(e.Args, "--fs-switch-probe");
+        if (fsSwitchPath is not null && auto is not null)
+        {
+            // 先停掉生产的 2 Hz 真实探测定时器：它会往同一个状态机里喂真实结果，
+            // 与下面喂的伪造结果互相覆盖，跑出来的迁移序列就没法读了。
+            // （这正是"探针必须与生产定时器互斥"的又一例。）
+            auto.Stop();
+
+            Probes.FullScreenSwitchProbe.Run(
+                auto,
+                () => DescribeViewState(window, floating, taskbar),
+                fsSwitchPath, t => t.Start(), Shutdown);
+            return;
+        }
 
         // 自测：--stats <txt 路径> [--seconds 60] [--warmup 10] [--freeze] [--hidden]
         string? stats = ArgValue(e.Args, "--stats");
@@ -627,6 +753,31 @@ public partial class App : Application
             return v?.ToString() ?? "(未设置)";
         }
         catch { return "(读取失败)"; }
+    }
+
+    /// <summary>
+    /// 三个视图的可见性与几何，一行文本。<c>--view-probe</c> 每步打一次，
+    /// 用来数"当前有几个窗口可见"（A-06 要求恰好 1 个）。
+    ///
+    /// <para>
+    /// 用 <see cref="Window.IsVisible"/> 而不是 <c>Visibility</c>：后者只反映 WPF 的属性，
+    /// 窗口被 <c>Hide()</c> 之后两者都会变，但被系统连带销毁（explorer 重启）时
+    /// <c>IsVisible</c> 会变 false 而 <c>Visibility</c> 可能还留着 —— 判"屏幕上真的有"用前者。
+    /// </para>
+    /// </summary>
+    private static string DescribeViewState(MainWindow main, FloatWindow? floating, TaskbarWindow? taskbar)
+    {
+        string One(string name, Window? w)
+        {
+            if (w is null) return $"{name}=(未创建) ";
+            IntPtr h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+            if (h == IntPtr.Zero) return $"{name}=hwnd=0 ";
+            if (!Monitors.TryGetRect(h, out Win32Window.RECT r))
+                return $"{name}=visible={w.IsVisible} rect=? ";
+            return $"{name}=visible={w.IsVisible} ({r.Left},{r.Top})-({r.Right},{r.Bottom}) ";
+        }
+
+        return One("main", main) + One("float", floating) + One("tray", taskbar);
     }
 
     /// <summary>
