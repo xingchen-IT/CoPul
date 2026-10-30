@@ -22,7 +22,18 @@
     <Product>CoPul 芯脉</Product>
     <AssemblyTitle>CoPul 芯脉</AssemblyTitle>
     <Version>0.1.0</Version>
+    <!-- 托盘图标同时用作 exe 图标（资源管理器里看到的就是它），由 tools/make-tray-icon.py 生成 -->
+    <ApplicationIcon>assets\copul.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 托盘图标：运行时按路径加载（LoadImage），必须落到输出目录 -->
+    <None Include="assets\copul.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets\copul.ico</Link>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CoPul.Collector\CoPul.Collector.csproj" />

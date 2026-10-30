@@ -67,6 +67,17 @@ public sealed class AppConfig
     /// </summary>
     public string TaskbarInk { get; set; } = "Light";
 
+    /// <summary>
+    /// 任务栏条是否点击穿透（7.6 / Q-12 采纳方案 2）。默认**穿透**：
+    /// 条只负责显示，任何鼠标操作走托盘右键，符合"不抢占"原则。
+    ///
+    /// <para>
+    /// 保留这个开关是因为穿透之后条上收不到右键，文字颜色就调不了了 ——
+    /// 用户可以从托盘菜单临时把它关掉，调完再打开。
+    /// </para>
+    /// </summary>
+    public bool TaskbarClickThrough { get; set; } = true;
+
     // ---- 全屏自动切换（第 8 章 / F-11）----
 
     /// <summary>

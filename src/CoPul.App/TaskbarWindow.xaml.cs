@@ -60,6 +60,9 @@ public partial class TaskbarWindow : Window
     private bool _attached;
     private InkMode _ink = InkMode.Auto;
 
+    /// <summary>点击是否穿透（7.6 / Q-12）。true 时 WM_NCHITTEST 一律返回 HTTRANSPARENT。</summary>
+    private bool _clickThrough = true;
+
     /// <summary>当前实际生效的毛玻璃方式，由 <see cref="WindowGlass.Apply"/> 返回，用于诊断输出。</summary>
     public string GlassMode { get; private set; } = "未设置";
 
@@ -152,22 +155,35 @@ public partial class TaskbarWindow : Window
         _config = config;
 
         if (Enum.TryParse(config.TaskbarInk, out InkMode saved)) _ink = saved;
+        _clickThrough = config.TaskbarClickThrough;
 
         SourceInitialized += (_, _) =>
         {
-            // 先拿掉 Alt+Tab 里的条目，再挂父窗口：顺序反了会先在任务栏闪一个空壳
+            // 先拿掉 Alt+Tab 里的条目，再挂到任务栏位置：顺序反了会先闪一个空壳
             WindowGlass.HideFromAltTab(this);
 
-            // 子窗口不需要 DWM 的整窗 accent —— 7.5 默认「跟随系统」= 完全透明，
+            // 自己不需要 DWM 的整窗 accent —— 7.5 默认「跟随系统」= 完全透明，
             // 底色由任务栏自己提供。这里只把 WPF 的窗口底刷成透明。
             //
             // --tray-opaque 是排障开关：窗口表面带 alpha 时，DWM 会把它和父窗口
-            // 的表面做混合，混合结果可能被永久留在父窗口那边（见 OnClosing 的说明）。
-            // 关掉透明可以验证"残影是不是 alpha 混合造成的"。
+            // 的表面做混合，混合结果可能被永久留在父窗口那边。关掉透明可以验证
+            // "残影是不是 alpha 混合造成的"。
             if (!Environment.GetCommandLineArgs().Contains("--tray-opaque"))
                 WindowGlass.MakeClientTransparent(this);
 
             Attach();
+
+            // 点击穿透（7.6 / Q-12 采纳方案 2）。
+            //
+            // 用 WM_NCHITTEST 返回 HTTRANSPARENT，而不是给窗口加 WS_EX_TRANSPARENT：
+            // 后者在 WPF 上要配 WS_EX_LAYERED 才跨进程生效，而 layered 会让 WPF
+            // 换成软件合成路径，毛玻璃和文字渲染都会变（M2 试过整窗 alpha 的代价）。
+            // HTTRANSPARENT 只影响命中测试，不碰渲染 —— 画面一个像素都不变。
+            //
+            // 穿透之后条上收不到任何鼠标事件，右键菜单也就没了。这是 Q-12 选方案 2
+            // 的已知代价：全部操作走托盘右键。需要临时调文字颜色时，用托盘菜单
+            // 里的「任务栏条可点击」把穿透关掉。
+            HwndSource.FromHwnd(Handle)?.AddHook(HitTestHook);
 
             // 注意：WM_SETTINGCHANGE 挂在 InstallTaskbarWatcher 建的那个**顶层**窗口上，
             // 不能挂这里。条自己是 WS_CHILD，而系统广播只投递给顶层窗口 ——
@@ -413,9 +429,56 @@ public partial class TaskbarWindow : Window
         }
     }
 
-    private IntPtr BroadcastHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    /// <summary>
+    /// 点击穿透开关（7.6 / Q-12）。
+    ///
+    /// <para>
+    /// 改这个不需要重建窗口：<c>WM_NCHITTEST</c> 每次命中测试都读当前字段，
+    /// 关掉之后条立刻恢复可点（能弹右键菜单），打开就恢复穿透。
+    /// </para>
+    /// </summary>
+    public bool ClickThrough
     {
-        if (msg == _taskbarCreatedMsg)
+        get => _clickThrough;
+        set
+        {
+            if (_clickThrough == value) return;
+            _clickThrough = value;
+            Trace($"click-through={value}");
+
+            if (!PersistToConfig) return;
+            _config.TaskbarClickThrough = value;
+            ConfigStore.SaveCurrent();
+        }
+    }
+
+    /// <summary>
+    /// 命中测试穿透。返回 <c>HTTRANSPARENT</c> 后系统会把鼠标消息继续往下层窗口投递，
+    /// 条本身收不到点击 —— 这正是 7.6 要的"不抢占"。
+    ///
+    /// <para>
+    /// 为什么不用 <c>WS_EX_TRANSPARENT</c>：顶层窗口要真正跨进程穿透得配
+    /// <c>WS_EX_LAYERED</c>，而 layered 会把 WPF 换成软件合成路径，
+    /// 毛玻璃和文字渲染都会变样（M2 为整窗 alpha 付过这个代价）。
+    /// 命中测试只影响鼠标，一个像素都不动。
+    /// </para>
+    /// </summary>
+    private IntPtr HitTestHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_NCHITTEST = 0x0084;
+        const int HTTRANSPARENT = -1;
+
+        if (msg == WM_NCHITTEST && _clickThrough)
+        {
+            handled = true;
+            return new IntPtr(HTTRANSPARENT);
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private IntPtr BroadcastHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {        if (msg == _taskbarCreatedMsg)
         {
             Trace("TaskbarCreated 收到");
             ScheduleReattach(0);

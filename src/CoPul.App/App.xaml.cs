@@ -23,6 +23,21 @@ public partial class App : Application
     /// </summary>
     private Window? _backdrop;
 
+    /// <summary>
+    /// 托盘图标。必须活到进程结束 —— 它一旦被 GC 回收，
+    /// 隐藏窗口和 <c>Shell_NotifyIcon</c> 的注册就断了，托盘里会留个点不动的死图标。
+    /// </summary>
+    private TrayIcon? _tray;
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        // 显式摘掉托盘图标：不摘的话 Windows 要等鼠标划过托盘区才清理，中间那段时间
+        // 是一个"点了没反应"的残影，和 M3 那个 DWM 残影是同一种观感问题
+        _tray?.Dispose();
+        _tray = null;
+        base.OnExit(e);
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -167,6 +182,125 @@ public partial class App : Application
         // 同上，「切到任务栏条」（M3）。这条让大窗口能进入任务栏模式——
         // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
         window.TrayRequested = () => ShowView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
+
+        // 托盘图标（G-01 / G-02）。7.6 的 Q-12 采纳「任务栏条默认穿透，全部操作走托盘」，
+        // 所以托盘不是可选装饰：穿透之后条上收不到任何鼠标事件，托盘是唯一出口。
+        // 截图 / 压测 / --hidden 这类测量模式不挂，否则探针会在托盘里留下图标，
+        // 而且托盘窗口会掺进窗口枚举类的结果里，影响判定。
+        bool measurementMode = e.Args.Contains("--shot") || e.Args.Contains("--shot-screen")
+                               || e.Args.Contains("--stats") || e.Args.Contains("--hidden");
+        if (!measurementMode) _tray = CreateTray();
+
+        TrayIcon CreateTray()
+        {
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "assets", "copul.ico");
+            var icon = new TrayIcon(iconPath, "CoPul 芯脉");
+
+            // 装没装上必须打日志：Shell_NotifyIcon 失败时返回值是 false，界面毫无提示，
+            // 表现只是"托盘里没有图标"，和"图标被 Win11 收进溢出区"肉眼无法区分
+            Interop.Trace.Log("tray", $"added={icon.IsAdded} ico={iconPath} exists={File.Exists(iconPath)}");
+
+            // 左键 = 显示/隐藏当前模式的窗口（G-01）。「当前模式」读的是状态机里的 view，
+            // 不另存一份，否则全屏自动切换改了视图之后这里会跟事实脱节。
+            icon.LeftClick = () =>
+            {
+                Window? current = view switch
+                {
+                    FullScreenAutoSwitch.View.Main => window,
+                    FullScreenAutoSwitch.View.Float => floating,
+                    FullScreenAutoSwitch.View.Taskbar => taskbar,
+                    _ => null,
+                };
+
+                if (current is { IsVisible: true }) current.Hide();
+                else ShowView(view, "tray-toggle");
+
+                UpdateTrayTooltip(icon);
+            };
+
+            // 右键 = 全局菜单（G-02）。设置页 / 开机自启还没做，先给灰色条目占位，
+            // 这样用户知道功能存在、只是没做完，而不是以为程序残缺。
+            icon.RightClick = () =>
+            {
+                var entries = new List<TrayMenuEntry>
+                {
+                    TrayMenuEntry.Item("显示大窗口", isChecked: view == FullScreenAutoSwitch.View.Main),
+                    TrayMenuEntry.Item("显示悬浮窗", isChecked: view == FullScreenAutoSwitch.View.Float),
+                    TrayMenuEntry.Item("显示任务栏条", isChecked: view == FullScreenAutoSwitch.View.Taskbar),
+                    TrayMenuEntry.Separator(),
+                    // 穿透开着时条上收不到右键，文字颜色就调不了 —— 这里给唯一出口
+                    TrayMenuEntry.Item("任务栏条可点击", isChecked: !ConfigStore.Current.TaskbarClickThrough),
+                    TrayMenuEntry.Separator(),
+                    TrayMenuEntry.Item("设置…", enabled: false),
+                    TrayMenuEntry.Item("开机自启", enabled: false),
+                    TrayMenuEntry.Separator(),
+                    TrayMenuEntry.Item("退出"),
+                };
+
+                RunTrayCommand(icon.ShowMenu(entries));
+                UpdateTrayTooltip(icon);
+            };
+
+            return icon;
+        }
+
+        /// <summary>
+        /// 托盘菜单命令的分发。抽出来是为了能被 <c>--tray-menu-probe</c> 直接调用：
+        /// 菜单的弹出、勾选、灰色项、分隔线已经用真实截图验过，剩下的
+        /// 「id → 动作」这一环不该靠模拟鼠标去点（本机 SetCursorPos 不可靠，
+        /// 光标位置会被真实鼠标挪走），而是让探针走同一份 switch。
+        /// </summary>
+        void RunTrayCommand(int id)
+        {
+            switch (id)
+            {
+                case 1: ShowView(FullScreenAutoSwitch.View.Main, "tray-menu"); break;
+                case 2: ShowView(FullScreenAutoSwitch.View.Float, "tray-menu"); break;
+                case 3: ShowView(FullScreenAutoSwitch.View.Taskbar, "tray-menu"); break;
+
+                case 5:
+                    // 开关穿透。条实例可能还没建（用户没进过任务栏模式），
+                    // 那种情况只改配置，等它建出来时从配置里读。
+                    bool through = !ConfigStore.Current.TaskbarClickThrough;
+                    if (taskbar is not null) taskbar.ClickThrough = through;
+                    else
+                    {
+                        ConfigStore.Current.TaskbarClickThrough = through;
+                        ConfigStore.SaveCurrent();
+                    }
+                    break;
+
+                case 10: Shutdown(); break;
+            }
+        }
+
+        // 自测：--tray-menu-probe <id> 启动 1.5 秒后跑一次菜单命令，
+        // 结果进 trace（view=... 那行）。配合 --shot 截图就能确认切过去了。
+        if (int.TryParse(ArgValue(e.Args, "--tray-menu-probe"), out int probeCmd))
+        {
+            var probeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            probeTimer.Tick += (_, _) =>
+            {
+                probeTimer.Stop();
+                Interop.Trace.Log("tray", $"probe: menu-command={probeCmd}");
+                RunTrayCommand(probeCmd);
+            };
+            probeTimer.Start();
+        }
+
+        void UpdateTrayTooltip(TrayIcon icon)
+        {
+            string name = view switch
+            {
+                FullScreenAutoSwitch.View.Main => "大窗口",
+                FullScreenAutoSwitch.View.Float => "悬浮窗",
+                _ => "任务栏条",
+            };
+
+            // 悬停提示顺带报一下采集状态：托盘是唯一常驻可见的元素，
+            // 采集降级（例如没有管理员权限读不到温度）在这里最容易被发现
+            icon.SetTooltip($"CoPul 芯脉 · {name} · {window.State.RunStateText}");
+        }
 
         bool wantFloat = e.Args.Contains("--float");
         if (e.Args.Contains("--backdrop"))
