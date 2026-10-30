@@ -154,6 +154,10 @@ public partial class TaskbarWindow : Window
         _state = state;
         _config = config;
 
+        // 字段表必须在第一次 Reposition 之前建好（Attach 里就会调）
+        InitFields();
+        RefreshFieldMenu();
+
         if (Enum.TryParse(config.TaskbarInk, out InkMode saved)) _ink = saved;
         _clickThrough = config.TaskbarClickThrough;
 
@@ -240,7 +244,9 @@ public partial class TaskbarWindow : Window
         // 巡检每秒都会调一次这里，几何没变就必须什么都不做 ——
         // 哪怕用同样的数值再 SetWindowPos 一次，也会引发 WM_WINDOWPOSCHANGED + WPF 重新布局，
         // 变成一个每秒一次的免费掉帧。任务栏搬动/改高度/改 DPI 时这几个量才会变。
-        string sig = $"{edge}|{barRect.Left},{barRect.Top},{barRect.Right},{barRect.Bottom}|{freeWidth}|{dpi}";
+        // 字段开关（7.4）也会改所需宽度，所以可见字段集合必须进签名。
+        string fieldSig = string.Join(",", _config.TaskbarHiddenFields ?? Array.Empty<string>());
+        string sig = $"{edge}|{barRect.Left},{barRect.Top},{barRect.Right},{barRect.Bottom}|{freeWidth}|{dpi}|{fieldSig}";
         if (sig == _lastSig) return;
         _lastSig = sig;
 
@@ -279,19 +285,34 @@ public partial class TaskbarWindow : Window
 
         int width = freeWidth - LeftInset;
 
-        // 内容需要的宽度：所有列宽 + 组间距 7 + 两端内边距 6+6（与 TaskbarWindow.xaml 对齐）
-        double neededDip = 0;
-        foreach (FloatField f in AllFields) neededDip += f.Width + CellGapDip;
-        neededDip += PaddingDip * 2;
-
-        // 最后一列没有右间距
-        neededDip -= CellGapDip;
-
+        // 内容需要的宽度：按 7.4 的可见字段算，再按 7.7 在空间不够时自动让位
+        // （组间距 7 + 两端内边距 6+6，与 TaskbarWindow.xaml 对齐）。
         double scale = dpi == 0 ? 1.0 : dpi / 96.0;
-        int neededPx = (int)Math.Ceiling(neededDip * scale);
 
-        // 7.7「任务栏已满」：空白不够时按优先级从右向左截断，先砍功耗、再砍延迟。
-        // 第一版做法是缩到可用宽度并让文字自己出省略号，字段级的砍法留给下一轮。
+        List<(string Key, FloatField Field, FrameworkElement Host)> visible = VisibleCells();
+        int neededPx = NeededPx(visible, scale);
+
+        // 7.7「任务栏已满」：可用空白放不下时按优先级从右向左砍字段
+        // （先功耗、再延迟、再网络速率，FPS 留到最后）。砍掉的字段只是这次不画，
+        // **不改配置** —— 任务栏图标挤走之后条要能自己长回来。
+        var dropped = new List<string>();
+        if (neededPx > width)
+        {
+            foreach (string key in TrayFields.AutoDropOrder)
+            {
+                if (neededPx <= width || visible.Count <= 1) break;
+
+                int index = visible.FindIndex(c => c.Key == key);
+                if (index < 0) continue;
+
+                dropped.Add(key);
+                visible.RemoveAt(index);
+                neededPx = NeededPx(visible, scale);
+            }
+        }
+
+        ApplyCellLayout(visible);
+
         int finalWidth = Math.Min(width, Math.Max(neededPx, 1));
 
         // A 方案：窗口是独立顶层窗口，坐标是**屏幕物理像素**，直接贴着任务栏那一行摆。
@@ -303,7 +324,8 @@ public partial class TaskbarWindow : Window
 
         PlacementDiag = $"bar=({barRect.Left},{barRect.Top})-({barRect.Right},{barRect.Bottom}) " +
                         $"edge={edge} free={freeWidth} need={neededPx} used={finalWidth} " +
-                        $"scale={scale:F2} autohide={autoHide}";
+                        $"scale={scale:F2} autohide={autoHide} " +
+                        $"fields={visible.Count}/{TrayFields.Keys.Length} dropped=[{string.Join(",", dropped)}]";
     }
 
     /// <summary>当前是不是被主动藏起来了（竖向任务栏 / 没有空白）。</summary>
@@ -334,6 +356,162 @@ public partial class TaskbarWindow : Window
         _state.FloatFps, _state.FloatCpu, _state.FloatGpu, _state.FloatRam,
         _state.FloatDisk, _state.FloatIo, _state.FloatLat, _state.FloatPwr,
     };
+
+    /// <summary>
+    /// 字段 key / 数据 / XAML 容器三件套（7.4 / Q-03）。
+    ///
+    /// <para>
+    /// 为什么要有这张表：开关一个字段要同时动三处 —— 布局宽度、WPF 容器的
+    /// <c>Visibility</c>、菜单勾选。按名字逐个写八个 if 迟早会漏一个，
+    /// 而漏掉的表现是"点了没反应"或"关掉了但右边留一段空白"，很难对上号。
+    /// </para>
+    /// </summary>
+    private readonly List<(string Key, FloatField Field, FrameworkElement Host)> _cells = new();
+
+    /// <summary>条右键菜单里的八个勾选项。穿透开着时够不着，同款开关在托盘菜单里。</summary>
+    private readonly List<(string Key, MenuItem Item)> _fieldMenuItems = new();
+
+    /// <summary>在 <c>InitializeComponent</c> 之后调用一次，把 XAML 里的命名容器与数据接起来。</summary>
+    private void InitFields()
+    {
+        _cells.Clear();
+        _cells.Add(("fps", _state.FloatFps, FpsCell));
+        _cells.Add(("cpu", _state.FloatCpu, CpuCell));
+        _cells.Add(("gpu", _state.FloatGpu, GpuCell));
+        _cells.Add(("ram", _state.FloatRam, RamCell));
+        _cells.Add(("disk", _state.FloatDisk, DiskCell));
+        _cells.Add(("io", _state.FloatIo, IoCell));
+        _cells.Add(("lat", _state.FloatLat, LatCell));
+        _cells.Add(("pwr", _state.FloatPwr, PwrCell));
+
+        _fieldMenuItems.Clear();
+        _fieldMenuItems.Add(("fps", FieldFpsMenu));
+        _fieldMenuItems.Add(("cpu", FieldCpuMenu));
+        _fieldMenuItems.Add(("gpu", FieldGpuMenu));
+        _fieldMenuItems.Add(("ram", FieldRamMenu));
+        _fieldMenuItems.Add(("disk", FieldDiskMenu));
+        _fieldMenuItems.Add(("io", FieldIoMenu));
+        _fieldMenuItems.Add(("lat", FieldLatMenu));
+        _fieldMenuItems.Add(("pwr", FieldPwrMenu));
+    }
+
+    /// <summary>按配置选出可见字段。配置若被手改成"全关"，这里兜住最后一列，不留 1 px 的窗口。</summary>
+    private List<(string Key, FloatField Field, FrameworkElement Host)> VisibleCells()
+    {
+        var list = new List<(string Key, FloatField Field, FrameworkElement Host)>(_cells.Count);
+        foreach (var cell in _cells)
+        {
+            if (TrayFields.IsVisible(_config, cell.Key)) list.Add(cell);
+        }
+
+        if (list.Count == 0 && _cells.Count > 0) list.Add(_cells[^1]);
+        return list;
+    }
+
+    /// <summary>
+    /// 这些字段横排需要多宽（物理像素）。
+    /// 7.4 / Q-03 写的是「关闭后宽度自适应收缩，不保留空位」→ 最后一个可见列不带右间距。
+    /// </summary>
+    private static int NeededPx(List<(string Key, FloatField Field, FrameworkElement Host)> cells, double scale)
+    {
+        double dip = PaddingDip * 2;
+        for (int i = 0; i < cells.Count; i++)
+        {
+            dip += cells[i].Field.Width;
+            if (i < cells.Count - 1) dip += CellGapDip;
+        }
+
+        return (int)Math.Ceiling(dip * scale);
+    }
+
+    /// <summary>把可见性 / 间距同步到 XAML。不可见的设 <c>Collapsed</c>（不占位，不是 <c>Hidden</c>）。</summary>
+    private void ApplyCellLayout(List<(string Key, FloatField Field, FrameworkElement Host)> visible)
+    {
+        foreach (var cell in _cells)
+        {
+            int index = -1;
+            for (int v = 0; v < visible.Count; v++)
+            {
+                if (ReferenceEquals(visible[v].Host, cell.Host)) { index = v; break; }
+            }
+
+            if (index < 0)
+            {
+                if (cell.Host.Visibility != Visibility.Collapsed)
+                    cell.Host.Visibility = Visibility.Collapsed;
+                continue;
+            }
+
+            if (cell.Host.Visibility != Visibility.Visible)
+                cell.Host.Visibility = Visibility.Visible;
+
+            Thickness margin = index == visible.Count - 1
+                ? new Thickness(0)
+                : new Thickness(0, 0, CellGapDip, 0);
+
+            if (cell.Host.Margin != margin) cell.Host.Margin = margin;
+        }
+    }
+
+    /// <summary>
+    /// 切换一个字段的显示（7.4 / Q-03）。条上的右键菜单与托盘菜单共用这一条路径。
+    /// </summary>
+    public void ToggleField(string key)
+    {
+        if (!TrayFields.Toggle(_config, key))
+        {
+            // 只剩这一个字段时拒绝关闭：全关会让条缩成 1 px 的竖线，比不给点更让人困惑
+            Trace($"field: 拒绝关闭 {key}（这是最后一个可见字段）");
+            RefreshFieldMenu();
+            return;
+        }
+
+        if (PersistToConfig) ConfigStore.SaveCurrent();
+        ReloadFields();
+
+        Trace($"field: {key} → {(TrayFields.IsVisible(_config, key) ? "显示" : "隐藏")} " +
+              $"hidden=[{string.Join(",", _config.TaskbarHiddenFields ?? Array.Empty<string>())}]");
+    }
+
+    /// <summary>配置被外部改动后重新布一次（App 的托盘菜单会调）。</summary>
+    public void ReloadFields()
+    {
+        _lastSig = string.Empty;    // 强制下一次 Reposition 真算，不走几何签名短路
+        RefreshFieldMenu();
+        Reposition();
+    }
+
+    /// <summary>把勾选与置灰同步到条上的右键菜单。</summary>
+    private void RefreshFieldMenu()
+    {
+        int visibleCount = TrayFields.VisibleCount(_config);
+
+        foreach (var (key, item) in _fieldMenuItems)
+        {
+            bool on = TrayFields.IsVisible(_config, key);
+            item.IsChecked = on;
+
+            // 只剩它一个可见时，这一项置灰 —— 让"不能再关"成为看得见的事实，
+            // 而不是点了没反应
+            item.IsEnabled = !(on && visibleCount <= 1);
+        }
+    }
+
+    /// <summary>
+    /// 菜单每次弹出前同步一次勾选。
+    ///
+    /// <para>
+    /// <c>MenuItem</c> 自身没有 <c>Opened</c> 事件，只能挂在 <c>ContextMenu</c> 上。
+    /// 必须刷新而不能只靠点击时更新：托盘菜单也能改字段开关，
+    /// 而条这边的勾选状态停在旧值上，会出现"菜单里勾着、条上却没有"。
+    /// </para>
+    /// </summary>
+    private void ContextMenu_Opened(object sender, RoutedEventArgs e) => RefreshFieldMenu();
+
+    private void Field_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string key }) ToggleField(key);
+    }
 
     /// <summary>
     /// 7.5 的文字颜色。Auto 采样任务栏的**实际亮度**，不读

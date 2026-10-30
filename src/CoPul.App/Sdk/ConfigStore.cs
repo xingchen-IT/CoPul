@@ -78,6 +78,17 @@ public sealed class AppConfig
     /// </summary>
     public bool TaskbarClickThrough { get; set; } = true;
 
+    /// <summary>
+    /// 任务栏条里被**用户关掉**的字段（7.4 / Q-03：八字段可独立开关、默认全开，
+    /// 关闭后宽度自适应收缩、不保留空位）。
+    ///
+    /// <para>
+    /// 存"关掉的"而不是"打开的"：以后新增字段默认可见，不需要写迁移逻辑把老用户补全。
+    /// key 见 <see cref="TrayFields.Keys"/>。
+    /// </para>
+    /// </summary>
+    public string[] TaskbarHiddenFields { get; set; } = Array.Empty<string>();
+
     // ---- 全屏自动切换（第 8 章 / F-11）----
 
     /// <summary>

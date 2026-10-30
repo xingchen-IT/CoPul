@@ -479,6 +479,17 @@ internal static class Taskbar
     public static Edge? EdgeOverride { get; set; }
 
     /// <summary>
+    /// 可用空白宽度的覆盖值（物理像素），只为自测 7.7「任务栏已满」的字段让位逻辑。
+    ///
+    /// <para>
+    /// 真实触发这个分支得把任务栏图标堆满左边空白 —— 那要往任务栏里塞几十个窗口，
+    /// 不可接受也不可重复。所以只伪造"空白有多少"这一个输入，字段让位、宽度计算、
+    /// 摆位全走生产代码。
+    /// </para>
+    /// </summary>
+    public static int? FreeWidthOverride { get; set; }
+
+    /// <summary>
     /// 任务栏停在哪条边上（上 / 下 / 左 / 右）。
     ///
     /// <para>
@@ -545,6 +556,7 @@ internal static class Taskbar
     /// <returns>0 = 一个都没量到，调用方应放弃在任务栏显示。</returns>
     public static int FreeLeftWidth(IntPtr bar)
     {
+        if (FreeWidthOverride is { } forcedWidth) return forcedWidth;
         if (bar == IntPtr.Zero) return 0;
         if (!GetWindowRect(bar, out RECT barRect)) return 0;
         int barWidth = barRect.Right - barRect.Left;

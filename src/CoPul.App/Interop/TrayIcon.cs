@@ -50,6 +50,7 @@ public sealed class TrayIcon : IDisposable
     private const uint MF_SEPARATOR = 0x00000800;
     private const uint MF_GRAYED = 0x00000001;
     private const uint MF_CHECKED = 0x00000008;
+    private const uint MF_POPUP = 0x00000010;
 
     private const uint TPM_RETURNCMD = 0x0100;
     private const uint TPM_RIGHTBUTTON = 0x0002;
@@ -118,39 +119,28 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <summary>
-    /// 在鼠标位置弹原生菜单，返回被点中项的 id；点空处或按 Esc 返回 0。
+    /// 在鼠标位置弹原生菜单，返回被点中项携带的命令；点空处、按 Esc 或点到灰色项返回 <c>null</c>。
     ///
     /// <para>阻塞式：<c>TrackPopupMenu</c> 自己跑消息循环，返回时菜单已关闭。</para>
     /// </summary>
-    public int ShowMenu(IReadOnlyList<TrayMenuEntry> entries)
+    public string? ShowMenu(IReadOnlyList<TrayMenuEntry> entries)
     {
-        if (!_added || _source is null) return 0;
+        if (!_added || _source is null) return null;
 
         IntPtr hwnd = _source.Handle;
         IntPtr menu = CreatePopupMenu();
-        if (menu == IntPtr.Zero) return 0;
+        if (menu == IntPtr.Zero) return null;
+
+        // id → 命令。不用"下标 +1"：加了子菜单之后先序遍历的序号会整体平移，
+        // 调用方那串 case 1/2/3/5 会**静默**指向别的功能（点退出结果切了视图）。
+        var commands = new Dictionary<int, string?>();
+        int nextId = 1;
 
         try
         {
-            for (int i = 0; i < entries.Count; i++)
-            {
-                TrayMenuEntry e = entries[i];
-                int id = i + 1;     // 0 留给"没选中"
+            BuildMenu(menu, entries, commands, ref nextId);
 
-                if (e.IsSeparator)
-                {
-                    AppendMenu(menu, MF_SEPARATOR, IntPtr.Zero, null);
-                    continue;
-                }
-
-                uint flags = MF_STRING;
-                if (!e.Enabled) flags |= MF_GRAYED;
-                if (e.Checked) flags |= MF_CHECKED;
-
-                AppendMenu(menu, flags, new IntPtr(id), e.Text);
-            }
-
-            if (!GetCursorPos(out POINT pt)) return 0;
+            if (!GetCursorPos(out POINT pt)) return null;
 
             // 不置前台的话，菜单点外面不会消失（TrackPopupMenu 的老毛病）
             bool fg = SetForegroundWindow(hwnd);
@@ -158,17 +148,56 @@ public sealed class TrayIcon : IDisposable
 
             uint cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                       pt.X, pt.Y, 0, hwnd, IntPtr.Zero);
-            Trace.Log("tray", $"menu picked={cmd}");
 
             // 同上：官方文档要求在 TrackPopupMenu 之后补一条空消息，否则菜单可能残留
             PostMessage(hwnd, 0x0000 /* WM_NULL */, IntPtr.Zero, IntPtr.Zero);
 
-            int picked = (int)cmd;
-            return picked >= 1 && picked <= entries.Count ? picked : 0;
+            if (cmd == 0 || !commands.TryGetValue((int)cmd, out string? picked))
+            {
+                Trace.Log("tray", $"menu picked={cmd} → 无命令");
+                return null;
+            }
+
+            Trace.Log("tray", $"menu picked={cmd} → {picked ?? "(空)"}");
+            return picked;
         }
         finally
         {
             DestroyMenu(menu);
+        }
+    }
+
+    /// <summary>递归建菜单。子菜单也归父菜单所有，<c>DestroyMenu</c> 会一并销毁。</summary>
+    private static void BuildMenu(IntPtr parent, IReadOnlyList<TrayMenuEntry> entries,
+                                  Dictionary<int, string?> commands, ref int nextId)
+    {
+        foreach (TrayMenuEntry e in entries)
+        {
+            if (e.IsSeparator)
+            {
+                AppendMenu(parent, MF_SEPARATOR, IntPtr.Zero, null);
+                continue;
+            }
+
+            if (e.Children is { Count: > 0 })
+            {
+                IntPtr sub = CreatePopupMenu();
+                if (sub == IntPtr.Zero) continue;
+
+                // MF_POPUP 时 uIDNewItem 要传子菜单句柄，不是 id
+                AppendMenu(parent, MF_POPUP | (e.Enabled ? 0u : MF_GRAYED), sub, e.Text);
+                BuildMenu(sub, e.Children, commands, ref nextId);
+                continue;
+            }
+
+            int id = nextId++;
+            commands[id] = e.Command;
+
+            uint flags = MF_STRING;
+            if (!e.Enabled) flags |= MF_GRAYED;
+            if (e.Checked) flags |= MF_CHECKED;
+
+            AppendMenu(parent, flags, new IntPtr(id), e.Text);
         }
     }
 
@@ -332,12 +361,32 @@ public sealed class TrayMenuEntry
     private TrayMenuEntry() { }
 
     public string Text { get; private init; } = string.Empty;
+
+    /// <summary>
+    /// 被点中时回传的命令串（如 <c>"view:taskbar"</c> / <c>"field:pwr"</c>）。
+    /// 灰色占位项留 <c>null</c>。
+    ///
+    /// <para>
+    /// 为什么不用数字 id：id 是按先序遍历顺序分配的，加一个子菜单就会让后面所有项平移，
+    /// 而调用方的 <c>switch (id)</c> 不会报错 —— 表现为"点退出却切了视图"这种静默错位。
+    /// </para>
+    /// </summary>
+    public string? Command { get; private init; }
+
     public bool Enabled { get; private init; } = true;
     public bool Checked { get; private init; }
     public bool IsSeparator { get; private init; }
 
-    public static TrayMenuEntry Item(string text, bool enabled = true, bool isChecked = false)
-        => new() { Text = text, Enabled = enabled, Checked = isChecked };
+    /// <summary>子菜单项。非空时这一项本身不携带命令，只负责展开。</summary>
+    public IReadOnlyList<TrayMenuEntry>? Children { get; private init; }
+
+    public static TrayMenuEntry Item(string text, string? command = null,
+                                     bool enabled = true, bool isChecked = false)
+        => new() { Text = text, Command = command, Enabled = enabled, Checked = isChecked };
+
+    public static TrayMenuEntry Submenu(string text, IReadOnlyList<TrayMenuEntry> children,
+                                        bool enabled = true)
+        => new() { Text = text, Children = children, Enabled = enabled };
 
     public static TrayMenuEntry Separator() => new() { IsSeparator = true };
 }

@@ -17,10 +17,13 @@
         - 直角（7.3）：任务栏本身是直角，条再带圆角会显得"贴了张胶布"
         - 字号 11 / 9（7.3），比悬浮窗小一档
         - 背景默认完全透明（7.5「跟随系统」），只画字不画底，看起来就是任务栏自带的
-        - 窗口是 Shell_TrayWnd 的子窗口，不是顶层窗口，所以不能设 Topmost
+        - 窗口是顶层 topmost 窗口（7.1 的 A 方案），贴在任务栏那一行上
 
         AllowsTransparency 仍然保持 False：开它会变 layered window，
         与 DWM 合成/硬件加速冲突（A-30）。透明靠 WindowGlass.MakeClientTransparent。
+
+        各列的右侧间距由代码按"最后一个可见字段"决定（7.4 / Q-03：关闭字段后宽度收缩、
+        不保留空位）。XAML 里的 Margin 只是首帧兜底，Reposition 会统一覆盖。
     -->
     <Window.Resources>
         <Style x:Key="TrayValue" TargetType="TextBlock" BasedOn="{StaticResource FloatValue}">
@@ -39,10 +42,31 @@
             MouseRightButtonUp="Shell_MouseRightButtonUp">
 
         <Border.ContextMenu>
-            <ContextMenu>
+            <ContextMenu Opened="ContextMenu_Opened">
                 <MenuItem Header="显示大窗口" Click="ShowMain_Click" />
 
                 <Separator />
+
+                <!-- 7.4 / Q-03：八字段独立开关。穿透开着时这条路径用不了，
+                     同一份开关也在托盘右键菜单里（托盘是穿透模式下的唯一出口）。 -->
+                <MenuItem x:Name="FieldMenu" Header="显示字段">
+                    <MenuItem x:Name="FieldFpsMenu" Header="FPS" Tag="fps"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldCpuMenu" Header="CPU" Tag="cpu"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldGpuMenu" Header="GPU" Tag="gpu"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldRamMenu" Header="内存" Tag="ram"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldDiskMenu" Header="硬盘温度" Tag="disk"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldIoMenu" Header="上传 / 下载" Tag="io"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldLatMenu" Header="网络延迟" Tag="lat"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldPwrMenu" Header="整机功耗" Tag="pwr"
+                              IsCheckable="True" Click="Field_Click" />
+                </MenuItem>
 
                 <MenuItem Header="文字颜色">
                     <MenuItem x:Name="AutoInkMenu" Header="跟随系统" IsCheckable="True" IsChecked="True"
@@ -60,31 +84,31 @@
             </ContextMenu>
         </Border.ContextMenu>
 
-        <!-- 列宽与间距按 7.3 / 7.4：值行 11 DIP、标签行 9 DIP，组间距 8 DIP -->
+        <!-- 列宽与间距按 7.3 / 7.4：值行 11 DIP、标签行 9 DIP，组间距 7 DIP -->
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
-            <StackPanel Width="{Binding FloatFps.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="FpsCell" Width="{Binding FloatFps.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatFps.Top}"
                            Foreground="{Binding FloatFps.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatFps.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatCpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="CpuCell" Width="{Binding FloatCpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatCpu.Top}"
                            Foreground="{Binding FloatCpu.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatCpu.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatGpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="GpuCell" Width="{Binding FloatGpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatGpu.Top}"
                            Foreground="{Binding FloatGpu.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatGpu.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatRam.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="RamCell" Width="{Binding FloatRam.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatRam.Top}"
                            Foreground="{Binding FloatRam.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatRam.Bottom}"
@@ -92,7 +116,7 @@
             </StackPanel>
 
             <!-- 硬盘温度：7.4 要求上下排列（上行盘 1、下行盘 2） -->
-            <StackPanel Width="{Binding FloatDisk.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="DiskCell" Width="{Binding FloatDisk.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatDisk.Top}"
                            Foreground="{Binding FloatDisk.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatDisk.Bottom}"
@@ -100,21 +124,21 @@
             </StackPanel>
 
             <!-- 上下行：↑ 上、↓ 下 -->
-            <StackPanel Width="{Binding FloatIo.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="IoCell" Width="{Binding FloatIo.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatIo.Top}"
                            Foreground="{Binding FloatIo.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatIo.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatLat.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+            <StackPanel x:Name="LatCell" Width="{Binding FloatLat.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatLat.Top}"
                            Foreground="{Binding FloatLat.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatLat.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 
-            <StackPanel Width="{Binding FloatPwr.Width}" VerticalAlignment="Center">
+            <StackPanel x:Name="PwrCell" Width="{Binding FloatPwr.Width}" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatPwr.Top}"
                            Foreground="{Binding FloatPwr.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatPwr.Bottom}"

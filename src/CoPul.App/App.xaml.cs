@@ -54,6 +54,14 @@ public partial class App : Application
             Taskbar.EdgeOverride = parsedEdge;
         }
 
+        // 自测：--tray-free <px>，只覆盖"任务栏左侧还有多少空白"这个输入，
+        // 用来触发 7.7「任务栏已满」的字段让位。真要触发得往任务栏塞几十个图标，
+        // 不可重复也不该做 —— 和 --force-edge 同一个取舍：伪造输入，其余全走生产路径。
+        if (int.TryParse(ArgValue(e.Args, "--tray-free"), out int forcedFree))
+        {
+            Taskbar.FreeWidthOverride = forcedFree;
+        }
+
         // 自测：--taskbar-probe <txt 路径>。只读探测任务栏，不建窗口，写完即退。
         // M3 的地基全是"真实环境长什么样"：任务栏多高、图标区从哪开始、内部结构叫什么。
         // 这几项在 Win10 / Win11 22H2 / 24H2 上都不一样，只能实测，查文档会写出想当然的代码。
@@ -224,43 +232,89 @@ public partial class App : Application
             {
                 var entries = new List<TrayMenuEntry>
                 {
-                    TrayMenuEntry.Item("显示大窗口", isChecked: view == FullScreenAutoSwitch.View.Main),
-                    TrayMenuEntry.Item("显示悬浮窗", isChecked: view == FullScreenAutoSwitch.View.Float),
-                    TrayMenuEntry.Item("显示任务栏条", isChecked: view == FullScreenAutoSwitch.View.Taskbar),
+                    TrayMenuEntry.Item("显示大窗口", "view:main", isChecked: view == FullScreenAutoSwitch.View.Main),
+                    TrayMenuEntry.Item("显示悬浮窗", "view:float", isChecked: view == FullScreenAutoSwitch.View.Float),
+                    TrayMenuEntry.Item("显示任务栏条", "view:taskbar", isChecked: view == FullScreenAutoSwitch.View.Taskbar),
                     TrayMenuEntry.Separator(),
+
+                    // 7.4 / Q-03 的字段开关。放在托盘而不是只在条上右键：
+                    // 穿透是默认状态（Q-12），条上根本收不到右键，托盘是唯一出口。
+                    TrayMenuEntry.Submenu("显示字段", BuildFieldEntries()),
+
                     // 穿透开着时条上收不到右键，文字颜色就调不了 —— 这里给唯一出口
-                    TrayMenuEntry.Item("任务栏条可点击", isChecked: !ConfigStore.Current.TaskbarClickThrough),
+                    TrayMenuEntry.Item("任务栏条可点击", "toggle:clickthrough",
+                                       isChecked: !ConfigStore.Current.TaskbarClickThrough),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("设置…", enabled: false),
                     TrayMenuEntry.Item("开机自启", enabled: false),
                     TrayMenuEntry.Separator(),
-                    TrayMenuEntry.Item("退出"),
+                    TrayMenuEntry.Item("退出", "exit"),
                 };
 
                 RunTrayCommand(icon.ShowMenu(entries));
                 UpdateTrayTooltip(icon);
             };
 
+            // 八项字段勾选。只剩一个可见时把它置灰 —— 让"不能再关"看得见，
+            // 而不是点了没反应（全关之后条只剩 1 px 宽，用户只会以为程序坏了）。
+            List<TrayMenuEntry> BuildFieldEntries()
+            {
+                AppConfig cfg = ConfigStore.Current;
+                int visibleCount = TrayFields.VisibleCount(cfg);
+
+                var items = new List<TrayMenuEntry>(TrayFields.Keys.Length);
+                for (int i = 0; i < TrayFields.Keys.Length; i++)
+                {
+                    string key = TrayFields.Keys[i];
+                    bool on = TrayFields.IsVisible(cfg, key);
+
+                    items.Add(TrayMenuEntry.Item(TrayFields.Labels[i], "field:" + key,
+                                                 enabled: !(on && visibleCount <= 1),
+                                                 isChecked: on));
+                }
+
+                return items;
+            }
+
             return icon;
         }
 
         /// <summary>
         /// 托盘菜单命令的分发。抽出来是为了能被 <c>--tray-menu-probe</c> 直接调用：
-        /// 菜单的弹出、勾选、灰色项、分隔线已经用真实截图验过，剩下的
-        /// 「id → 动作」这一环不该靠模拟鼠标去点（本机 SetCursorPos 不可靠，
+        /// 菜单的弹出、勾选、灰色项、子菜单已经用真实截图验过，剩下的
+        /// 「命令 → 动作」这一环不该靠模拟鼠标去点（本机 SetCursorPos 不可靠，
         /// 光标位置会被真实鼠标挪走），而是让探针走同一份 switch。
         /// </summary>
-        void RunTrayCommand(int id)
+        void RunTrayCommand(string? cmd)
         {
-            switch (id)
-            {
-                case 1: ShowView(FullScreenAutoSwitch.View.Main, "tray-menu"); break;
-                case 2: ShowView(FullScreenAutoSwitch.View.Float, "tray-menu"); break;
-                case 3: ShowView(FullScreenAutoSwitch.View.Taskbar, "tray-menu"); break;
+            if (string.IsNullOrEmpty(cmd)) return;
 
-                case 5:
-                    // 开关穿透。条实例可能还没建（用户没进过任务栏模式），
-                    // 那种情况只改配置，等它建出来时从配置里读。
+            // 字段开关（7.4）：条实例可能还没建（用户没进过任务栏模式），
+            // 那种情况只改配置 + 落盘，条建出来时会从配置里读到。
+            if (cmd.StartsWith("field:", StringComparison.Ordinal))
+            {
+                string key = cmd[6..];
+
+                if (!TrayFields.Toggle(ConfigStore.Current, key))
+                {
+                    Interop.Trace.Log("tray", $"field: 拒绝关闭最后一个可见字段 {key}");
+                    return;
+                }
+
+                ConfigStore.SaveCurrent();
+                taskbar?.ReloadFields();
+                Interop.Trace.Log("tray", $"field: {key} → " +
+                    $"{(TrayFields.IsVisible(ConfigStore.Current, key) ? "显示" : "隐藏")}");
+                return;
+            }
+
+            switch (cmd)
+            {
+                case "view:main": ShowView(FullScreenAutoSwitch.View.Main, "tray-menu"); break;
+                case "view:float": ShowView(FullScreenAutoSwitch.View.Float, "tray-menu"); break;
+                case "view:taskbar": ShowView(FullScreenAutoSwitch.View.Taskbar, "tray-menu"); break;
+
+                case "toggle:clickthrough":
                     bool through = !ConfigStore.Current.TaskbarClickThrough;
                     if (taskbar is not null) taskbar.ClickThrough = through;
                     else
@@ -270,13 +324,16 @@ public partial class App : Application
                     }
                     break;
 
-                case 10: Shutdown(); break;
+                case "exit": Shutdown(); break;
             }
         }
 
-        // 自测：--tray-menu-probe <id> 启动 1.5 秒后跑一次菜单命令，
+        // 自测：--tray-menu-probe <命令> 启动 1.5 秒后跑一次菜单命令，
         // 结果进 trace（view=... 那行）。配合 --shot 截图就能确认切过去了。
-        if (int.TryParse(ArgValue(e.Args, "--tray-menu-probe"), out int probeCmd))
+        // 参数用命令串（"view:taskbar" / "field:pwr"）而不是编号：
+        // 编号会随菜单结构调整而错位，错位不报错、只会点到别的功能。
+        string? probeCmd = ArgValue(e.Args, "--tray-menu-probe");
+        if (!string.IsNullOrEmpty(probeCmd))
         {
             var probeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
             probeTimer.Tick += (_, _) =>
