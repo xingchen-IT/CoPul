@@ -418,6 +418,32 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 交互 -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="交互" Style="{StaticResource SectionTitle}" />
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="全局热键" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <TextBox x:Name="HotkeyBox" Grid.Column="1" Style="{StaticResource Input}"
+                                             IsReadOnly="True" IsReadOnlyCaretVisible="False" Cursor="Hand"
+                                             GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
+                                             LostKeyboardFocus="HotkeyBox_LostKeyboardFocus"
+                                             PreviewKeyDown="HotkeyBox_PreviewKeyDown" />
+                                    <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="恢复默认"
+                                            Margin="8,0,0,0" Click="HotkeyDefault_Click" />
+                                </Grid>
+                                <TextBlock x:Name="HotkeyHint" Style="{StaticResource SectionHint}"
+                                           Text="点击输入框后直接按下组合键即可录制，Esc 取消。按一次循环切换：大窗口 → 悬浮窗 → 任务栏条。" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 启动 -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>

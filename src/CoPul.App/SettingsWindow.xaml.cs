@@ -47,6 +47,24 @@ internal sealed class SettingsContext
     /// <summary>全屏自动切换的总开关动作（F-11）。设置页不给 true/false 的猜法，直接调它。</summary>
     public Action<bool> SetFullScreenAutoSwitch { get; init; } = _ => { };
 
+    /// <summary>
+    /// 当前**真正生效**的热键写法；<c>null</c> = 没注册上（被占用或写法不认识）。
+    /// 刻意不读配置：配置里存的是"用户想要的"，冲突时两者并不相同。
+    /// </summary>
+    public Func<string?> GetHotkey { get; init; } = () => null;
+
+    /// <summary>
+    /// 换热键。返回 <c>null</c> 表示成功，否则是给用户看的原因。
+    /// 失败时实现方负责把旧热键装回去，设置页不必管回滚。
+    /// </summary>
+    public Func<string, string?> SetHotkey { get; init; } = _ => "热键不可用";
+
+    /// <summary>
+    /// 录键期间暂停全局热键（<c>true</c> = 暂停）。
+    /// 不暂停的话，用户在录制框里按下 <c>Ctrl+Alt+C</c> 会被自己先吃掉。
+    /// </summary>
+    public Action<bool> SuspendHotkey { get; init; } = _ => { };
+
     public string Version { get; init; } = "";
     public string ConfigPath { get; init; } = ConfigStore.Path;
 }
@@ -121,6 +139,13 @@ public partial class SettingsWindow : Window
         };
         AutoStartSwitch.IsEnabled = false;
 
+        // 录到一半直接关窗（Alt+F4 / 点 ✕）时 LostKeyboardFocus 不一定会来，
+        // 热键就会一直停在"被摘掉"的状态 —— 表现为"关掉设置页以后热键彻底失灵"。
+        Closed += (_, _) =>
+        {
+            if (_recordingHotkey) EndHotkeyRecording();
+        };
+
         _loaded = true;
     }
 
@@ -190,6 +215,7 @@ public partial class SettingsWindow : Window
 
         _suppress = false;
         UpdateFieldEnabled();
+        ShowHotkey();       // 问一次"真正注册上的"热键，冲突时这里会显示"未生效"
     }
 
     // =================================================================
@@ -294,6 +320,24 @@ public partial class SettingsWindow : Window
                         "taskbar" => ModeTaskbar,
                         _ => ModeMain,
                     }).IsChecked = true;
+                    break;
+
+                case "capture":
+                    // 模拟"正在录制时按下这组键"：走 PreviewKeyDown 之后的同一段逻辑，
+                    // 包括摘热键、组合、校验、注册、落盘、重画。
+                    if (TryParseProbeKey(value, out Key probeKey, out ModifierKeys probeMods))
+                    {
+                        BeginHotkeyRecording();
+                        HandleHotkeyKey(probeKey, probeMods);
+                        EndHotkeyRecording();
+                    }
+                    break;
+
+                case "hotkey":
+                    // 走"录完之后"的同一条路，不模拟按键：本机 SetCursorPos 不可靠，
+                    // 而且这里要验的是"改键 → 注册 → 落盘"三件事连起来的效果。
+                    // 注意这段跑在打开设置页 1.5s 后，那时全局热键已经注册过一次了。
+                    ApplyHotkey(value);
                     break;
 
                 case "diag":
@@ -588,6 +632,159 @@ public partial class SettingsWindow : Window
         _ctx.SetFullScreenAutoSwitch(on);
 
         Hint(on ? "全屏时自动收起悬浮窗 / 任务栏条" : "全屏自动切换已关闭（条会盖在全屏画面上）");
+    }
+
+    // ---- 交互 ----
+
+    /// <summary>是否正在录制热键。录制期间全局热键被摘掉，退出录制要装回去。</summary>
+    private bool _recordingHotkey;
+
+    private void HotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        => BeginHotkeyRecording();
+
+    private void BeginHotkeyRecording()
+    {
+        if (_recordingHotkey) return;
+        _recordingHotkey = true;
+
+        // 必须先摘下自己的热键。热键是全局的：不摘的话，用户在这里按下当前组合键，
+        // 系统会先把 WM_HOTKEY 发给我们，视图切走了，输入框什么都收不到。
+        _ctx.SuspendHotkey(true);
+
+        HotkeyBox.Text = "请按下组合键…";
+        HotkeyHint.Text = "按 Esc 取消录制。至少要带一个 Ctrl / Alt / Shift / Win。";
+    }
+
+    private void HotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (!_recordingHotkey) return;
+        EndHotkeyRecording();
+    }
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!_recordingHotkey) return;
+
+        // 全吞：空格会在输入框里产生字符、方向键会移光标，都不该发生
+        e.Handled = true;
+
+        // 按着 Alt 时 WPF 把真实的键放在 SystemKey 里，Key 只会是 Key.System
+        HandleHotkeyKey(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers);
+    }
+
+    /// <summary>
+    /// 录制框收到一个"完整的"按键之后的全部处理。抽出来是为了让探针能喂一对
+    /// <c>(键, 修饰键)</c> 走同一段逻辑 —— 本机 <c>SendInput</c> 进不了输入队列
+    /// （对照实验：一个纯 Python 接收端也收不到），真按键没法自动造出来。
+    /// </summary>
+    private void HandleHotkeyKey(Key key, ModifierKeys modifiers)
+    {
+        if (!_recordingHotkey) return;
+
+        if (key == Key.Escape)
+        {
+            Keyboard.ClearFocus();      // 触发 Lost → 恢复原热键
+            Hint("已取消，热键未改动");
+            return;
+        }
+
+        // 只按了修饰键：还没到主键，把当前按下的部分显示出来让用户知道程序在听
+        if (key is Key.LeftCtrl or Key.RightCtrl
+                 or Key.LeftAlt or Key.RightAlt
+                 or Key.LeftShift or Key.RightShift
+                 or Key.LWin or Key.RWin
+                 or Key.System or Key.None)
+        {
+            HotkeyBox.Text = HotkeyGesture.FormatModifiers(ToModifiers(modifiers)) + "…";
+            return;
+        }
+
+        if (!HotkeyGesture.TryCompose(ToModifiers(modifiers), (uint)KeyInterop.VirtualKeyFromKey(key),
+                                      out string gesture, out string error))
+        {
+            // 不合法的组合（比如只有字母没修饰键）留在录制状态，让用户接着按 ——
+            // 退出录制只会让人以为"点了没反应"
+            Hint(error);
+            HotkeyBox.Text = "请按下组合键…";
+            return;
+        }
+
+        ApplyHotkey(gesture);
+        Keyboard.ClearFocus();
+    }
+
+    private void HotkeyDefault_Click(object sender, RoutedEventArgs e) => ApplyHotkey(HotkeyGesture.Default);
+
+    private void EndHotkeyRecording()
+    {
+        _recordingHotkey = false;
+        _ctx.SuspendHotkey(false);      // 已注册过就什么都不做，不会重复注册
+        ShowHotkey();
+    }
+
+    /// <summary>
+    /// 改热键的唯一入口：录制框与探针都走这里，避免"探针验的和用户点的是两条路"。
+    /// </summary>
+    private void ApplyHotkey(string gesture)
+    {
+        string? error = _ctx.SetHotkey(gesture);
+        if (error is not null)
+        {
+            Hint($"没换成：{error}");
+            ShowHotkey();               // 实现方已回滚到上一个热键，这里只要重画
+            return;
+        }
+
+        _config.Hotkey = _ctx.GetHotkey() ?? gesture;
+        ShowHotkey();
+        Hint($"全局热键已改为 {_config.Hotkey}");
+    }
+
+    /// <summary>
+    /// 重画热键框。显示的是**真正注册上的**那个，不是配置里的 ——
+    /// 冲突时两者不同，而用户需要知道"现在按哪个键才有用"。
+    /// </summary>
+    private void ShowHotkey()
+    {
+        string? applied = _ctx.GetHotkey();
+
+        if (applied is null)
+        {
+            HotkeyBox.Text = "未生效";
+            HotkeyHint.Text = $"配置里是 {_config.Hotkey}，但没能注册上（多半被别的程序占了）。点一下这里重新录一个。";
+            return;
+        }
+
+        HotkeyBox.Text = applied;
+        HotkeyHint.Text = "点击输入框后直接按下组合键即可录制，Esc 取消。按一次循环切换：大窗口 → 悬浮窗 → 任务栏条。";
+    }
+
+    private static uint ToModifiers(ModifierKeys keys)
+    {
+        uint mods = 0;
+        if ((keys & ModifierKeys.Control) != 0) mods |= HotkeyGesture.ModControl;
+        if ((keys & ModifierKeys.Alt) != 0) mods |= HotkeyGesture.ModAlt;
+        if ((keys & ModifierKeys.Shift) != 0) mods |= HotkeyGesture.ModShift;
+        if ((keys & ModifierKeys.Windows) != 0) mods |= HotkeyGesture.ModWin;
+        return mods;
+    }
+
+    /// <summary>探针用：把 <c>ctrl+alt+F9</c> 这样的写法翻成一对 WPF 的键与修饰键。</summary>
+    private static bool TryParseProbeKey(string text, out Key key, out ModifierKeys mods)
+    {
+        key = Key.None;
+        mods = ModifierKeys.None;
+
+        if (!HotkeyGesture.TryParse(text, out HotkeyCombo combo, out _)) return false;
+
+        key = KeyInterop.KeyFromVirtualKey((int)combo.VirtualKey);
+        if (key == Key.None) return false;
+
+        if ((combo.Modifiers & HotkeyGesture.ModControl) != 0) mods |= ModifierKeys.Control;
+        if ((combo.Modifiers & HotkeyGesture.ModAlt) != 0) mods |= ModifierKeys.Alt;
+        if ((combo.Modifiers & HotkeyGesture.ModShift) != 0) mods |= ModifierKeys.Shift;
+        if ((combo.Modifiers & HotkeyGesture.ModWin) != 0) mods |= ModifierKeys.Windows;
+        return true;
     }
 
     // ---- 启动 ----

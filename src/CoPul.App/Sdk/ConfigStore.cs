@@ -104,6 +104,19 @@ public sealed class AppConfig
     /// </summary>
     public string PingTarget { get; set; } = "223.5.5.5";
 
+    // ---- 全局热键（G-03）----
+
+    /// <summary>
+    /// 循环切换三视图的全局热键，写法如 <c>Ctrl+Alt+C</c>。
+    ///
+    /// <para>
+    /// 存字符串而不是"修饰键位 + 虚拟键码"两个整数：人能读懂、能手改，
+    /// 而且解析失败时能原样打印出来告诉用户"你写的这个我不认识"。
+    /// 认不出来的写法由 <c>HotkeyGesture.TryParse</c> 兜住，不影响启动。
+    /// </para>
+    /// </summary>
+    public string Hotkey { get; set; } = HotkeyGesture.Default;
+
     // ---- 全屏自动切换（第 8 章 / F-11）----
 
     /// <summary>

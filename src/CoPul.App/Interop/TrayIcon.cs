@@ -34,7 +34,11 @@ public sealed class TrayIcon : IDisposable
     private const uint NIF_ICON = 0x00000002;
     private const uint NIF_TIP = 0x00000004;
     private const uint NIF_STATE = 0x00000008;
+    private const uint NIF_INFO = 0x00000010;
     private const uint NIF_SHOWTIP = 0x00000080;
+
+    private const uint NIIF_INFO = 0x00000001;
+    private const uint NIIF_ERROR = 0x00000003;
     private const uint NIM_ADD = 0x00000000;
     private const uint NIM_MODIFY = 0x00000001;
     private const uint NIM_DELETE = 0x00000002;
@@ -116,6 +120,29 @@ public sealed class TrayIcon : IDisposable
         data.uFlags = NIF_TIP | NIF_SHOWTIP;
         data.szTip = Truncate(tooltip, 127);
         Shell_NotifyIcon(NIM_MODIFY, ref data);
+    }
+
+    /// <summary>
+    /// 弹一个气泡通知（<c>NIF_INFO</c>）。
+    ///
+    /// <para>
+    /// 用在"启动时才发现热键被别的程序占了"这类**没有窗口可说**的场合：
+    /// 那时用户多半没打开设置页，写进日志等于没说。气泡不抢焦点、不阻塞，
+    /// 关掉即走，符合"不打断用户"的定位。
+    /// </para>
+    /// </summary>
+    public void ShowBalloon(string title, string message, bool isError = false)
+    {
+        if (!_added) return;
+
+        var data = NewData();
+        data.uFlags = NIF_INFO;
+        data.szInfoTitle = Truncate(title, 63);
+        data.szInfo = Truncate(message, 255);
+        data.dwInfoFlags = isError ? NIIF_ERROR : NIIF_INFO;
+
+        bool ok = Shell_NotifyIcon(NIM_MODIFY, ref data);
+        Trace.Log("tray", $"balloon ok={ok} title=\"{title}\"");
     }
 
     /// <summary>

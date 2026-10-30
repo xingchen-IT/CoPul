@@ -192,6 +192,11 @@ public partial class App : Application
         FullScreenAutoSwitch? auto = null;
         FullScreenAutoSwitch.View view = FullScreenAutoSwitch.View.Main;
 
+        // 在这里先声明、稍后再建：热键的按下回调要读 view / 走 ShowView，
+        // 而设置页（更早定义）又要拿着它改键。C# 不允许 lambda 引用后面才声明的局部变量，
+        // 所以声明放在最前面，实例化仍然等状态机就绪。
+        Hotkey? hotkey = null;
+
         FloatWindow? floating = null;
 
         FloatWindow EnsureFloat()
@@ -311,6 +316,24 @@ public partial class App : Application
                     if (auto is null) return;
                     auto.Enabled = on;
                     auto.SyncTimer();
+                },
+                GetHotkey = () => hotkey?.Applied,
+                SetHotkey = gesture =>
+                {
+                    if (hotkey is null) return "热键模块未启用（测量模式）";
+
+                    if (!hotkey.Apply(gesture)) return hotkey.LastError ?? "注册失败";
+
+                    // 存规范化之后的写法：用户敲 Ctrl+alt+c 也应该落盘成 Ctrl+Alt+C，
+                    // 否则下次启动按字符串解析时又是一遍大小写转换
+                    ConfigStore.Current.Hotkey = hotkey.Applied ?? gesture;
+                    ConfigStore.SaveCurrent();
+                    return null;
+                },
+                SuspendHotkey = on =>
+                {
+                    if (on) hotkey?.Suspend();
+                    else hotkey?.Resume();
                 },
                 Version = "v" + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.1.0"),
                 ConfigPath = ConfigStore.Path,
@@ -692,6 +715,84 @@ public partial class App : Application
                 ShowView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-exit", userInitiated: false);
 
             auto.Start();
+        }
+
+        // ---- 全局热键（G-03）----
+        // 位置必须在状态机之后：回调要读 view、经 ShowView 写 auto，
+        // 早于 auto 声明的地方引用它会变成"未赋值变量"（CS0165）。
+        //
+        // 探针模式不装：--view-probe 自己逐步切视图，热键再插一脚会切乱结果。
+        //
+        // 测量模式（--shot / --stats / --hidden）**照装**：设置页截图要显示真实的热键状态，
+        // 跳过注册的话那一栏永远显示"未生效"，截出来的图骗自己。
+        if (!probeMode)
+        {
+            hotkey = new Hotkey();
+
+            // 循环：大窗口 → 悬浮窗 → 任务栏条 → 大窗口。
+            // 走 ShowView 而不是自己 Show/Hide —— 全屏状态机的 CurrentView 必须同步，
+            // 否则下一次判定会按旧视图做决定（"退出全屏没回落"就是这么来的）。
+            hotkey.Pressed = () =>
+            {
+                FullScreenAutoSwitch.View next = view switch
+                {
+                    FullScreenAutoSwitch.View.Main => FullScreenAutoSwitch.View.Float,
+                    FullScreenAutoSwitch.View.Float => FullScreenAutoSwitch.View.Taskbar,
+                    _ => FullScreenAutoSwitch.View.Main,
+                };
+
+                ShowView(next, "hotkey");
+
+                if (_tray is not null) UpdateTrayTooltip(_tray);
+            };
+
+            if (!hotkey.Apply(ConfigStore.Current.Hotkey))
+            {
+                // 冲突必须说出来。这时用户多半没开着设置页，写日志等于没说。
+                // 气泡不抢焦点、关掉就走；程序照常运行，只是这个键不能用。
+                _tray?.ShowBalloon("CoPul 芯脉",
+                    $"全局热键不可用：{hotkey.LastError}。可在「设置 → 交互」里换一个组合键。",
+                    isError: true);
+            }
+        }
+
+        // 自测：--hotkey-probe <写法> 启动 1.5 秒后换一次热键，把结果打进 trace。
+        // 专门用来验三条难验的路：写法错误（Ctrl+Q+Z）、被占用（先开一个占着不放的进程）、正常换键。
+        if (ArgValue(e.Args, "--hotkey-probe") is { } hotkeyProbe && hotkey is not null)
+        {
+            var hp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            hp.Tick += (_, _) =>
+            {
+                hp.Stop();
+                bool ok = hotkey.Apply(hotkeyProbe);
+                Interop.Trace.Log("hotkey",
+                    $"probe apply=\"{hotkeyProbe}\" ok={ok} applied={hotkey.Applied ?? "(none)"} " +
+                    $"err={hotkey.LastError ?? "-"}");
+            };
+            hp.Start();
+        }
+
+        // 自测：--hotkey-fire <n> 伪造 n 次按下（走 WM_HOTKEY，Hook 与 Pressed 是生产路径）。
+        // 与 --hotkey-probe 分工：那条验"能不能注册上"，这条验"按下去之后切到哪"。
+        if (int.TryParse(ArgValue(e.Args, "--hotkey-fire"), out int fireCount)
+            && fireCount > 0 && hotkey is not null)
+        {
+            int left = fireCount;
+            var fireTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            fireTimer.Tick += (_, _) =>
+            {
+                if (left <= 0)
+                {
+                    fireTimer.Stop();
+                    Interop.Trace.Log("hotkey", $"probe fire 结束 view={view}");
+                    return;
+                }
+
+                Interop.Trace.Log("hotkey", $"probe fire 第 {fireCount - left + 1} 次，按前 view={view}");
+                left--;
+                hotkey.SimulatePress();
+            };
+            fireTimer.Start();
         }
 
         // 自测：--view-probe <txt 路径> [--view-probe-start main|float|tray]
