@@ -47,7 +47,7 @@
 
                 <Separator />
 
-                <!-- 7.4 / Q-03：八字段独立开关。穿透开着时这条路径用不了，
+                <!-- 7.4 / Q-03：九字段独立开关。穿透开着时这条路径用不了，
                      同一份开关也在托盘右键菜单里（托盘是穿透模式下的唯一出口）。 -->
                 <MenuItem x:Name="FieldMenu" Header="显示字段">
                     <MenuItem x:Name="FieldFpsMenu" Header="FPS" Tag="fps"
@@ -57,6 +57,8 @@
                     <MenuItem x:Name="FieldGpuMenu" Header="GPU" Tag="gpu"
                               IsCheckable="True" Click="Field_Click" />
                     <MenuItem x:Name="FieldRamMenu" Header="内存" Tag="ram"
+                              IsCheckable="True" Click="Field_Click" />
+                    <MenuItem x:Name="FieldVramMenu" Header="显存" Tag="vram"
                               IsCheckable="True" Click="Field_Click" />
                     <MenuItem x:Name="FieldDiskMenu" Header="硬盘温度" Tag="disk"
                               IsCheckable="True" Click="Field_Click" />
@@ -112,6 +114,15 @@
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatRam.Top}"
                            Foreground="{Binding FloatRam.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatRam.Bottom}"
+                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+            </StackPanel>
+
+            <!-- 显存：紧跟在内存后面，方便一眼对比"内存 / 显存"两条占用。
+                 两行都带小写 v（6.3 / Q-04），条上字号再小也不会跟内存混。 -->
+            <StackPanel x:Name="VramCell" Width="{Binding FloatVram.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatVram.Top}"
+                           Foreground="{Binding FloatVram.TopBrushAlt}" />
+                <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatVram.Bottom}"
                            Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
             </StackPanel>
 

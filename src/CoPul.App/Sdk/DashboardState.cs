@@ -302,8 +302,9 @@ public sealed class DashboardState : INotifyPropertyChanged
         FloatVram = new FloatField("VRAM", 78);
         FloatNet = new FloatField("NET", 44);
 
-        // 任务栏模式（第 7 章）专用的四格。悬浮窗六格是 Q-03 定死的，
-        // 任务栏的字段集合是另一套（7.4 的 8 项），所以这四格只给任务栏用。
+        // 任务栏模式（第 7 章）专用的三格。悬浮窗六格是 Q-03 定死的，
+        // 任务栏的字段集合是另一套（7.4 的 9 项），所以这三格只给任务栏用。
+        // （FloatVram 两边都用：悬浮窗六格里有它，任务栏 M4.7 起也放在内存后面。）
         FloatDisk = new FloatField("DISK", 36);
         FloatIo = new FloatField("IO", 48);
         FloatLat = new FloatField("LAT", 34);

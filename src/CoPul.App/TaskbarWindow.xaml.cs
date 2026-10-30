@@ -254,7 +254,7 @@ public partial class TaskbarWindow : Window
         _lastSig = sig;
 
         // 7.7 / Q-13 任务栏位置：只做"底部"和"顶部"这两种横向任务栏。
-        // 竖向（左/右）任务栏宽度只有 72 px 左右，八格横排放不下 —— 与其硬塞出一条
+        // 竖向（左/右）任务栏宽度只有 72 px 左右，九格横排放不下 —— 与其硬塞出一条
         // 被压扁的怪窗口，不如直接不画（用户在设置里把任务栏挪回上下就自动恢复）。
         // 检测走 ABM_GETTASKBARPOS 的 uEdge，不用矩形比较：自动隐藏时整条滑出屏幕，
         // 矩形反推会得出"既不在上也不在下"。
@@ -353,11 +353,11 @@ public partial class TaskbarWindow : Window
         Trace("unsuppress: 恢复显示");
     }
 
-    /// <summary>八个字段，按 7.4 的顺序。</summary>
+    /// <summary>九个字段，按 7.4 的顺序。</summary>
     private FloatField[] AllFields => new[]
     {
         _state.FloatFps, _state.FloatCpu, _state.FloatGpu, _state.FloatRam,
-        _state.FloatDisk, _state.FloatIo, _state.FloatLat, _state.FloatPwr,
+        _state.FloatVram, _state.FloatDisk, _state.FloatIo, _state.FloatLat, _state.FloatPwr,
     };
 
     /// <summary>
@@ -382,6 +382,7 @@ public partial class TaskbarWindow : Window
         _cells.Add(("cpu", _state.FloatCpu, CpuCell));
         _cells.Add(("gpu", _state.FloatGpu, GpuCell));
         _cells.Add(("ram", _state.FloatRam, RamCell));
+        _cells.Add(("vram", _state.FloatVram, VramCell));
         _cells.Add(("disk", _state.FloatDisk, DiskCell));
         _cells.Add(("io", _state.FloatIo, IoCell));
         _cells.Add(("lat", _state.FloatLat, LatCell));
@@ -392,6 +393,7 @@ public partial class TaskbarWindow : Window
         _fieldMenuItems.Add(("cpu", FieldCpuMenu));
         _fieldMenuItems.Add(("gpu", FieldGpuMenu));
         _fieldMenuItems.Add(("ram", FieldRamMenu));
+        _fieldMenuItems.Add(("vram", FieldVramMenu));
         _fieldMenuItems.Add(("disk", FieldDiskMenu));
         _fieldMenuItems.Add(("io", FieldIoMenu));
         _fieldMenuItems.Add(("lat", FieldLatMenu));

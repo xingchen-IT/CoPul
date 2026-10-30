@@ -154,7 +154,7 @@ public partial class SettingsWindow : Window
     // =================================================================
 
     /// <summary>
-    /// 八个字段的勾选框按 <see cref="TrayFields.Keys"/> 的顺序生成。
+    /// 九个字段的勾选框按 <see cref="TrayFields.Keys"/> 的顺序生成。
     /// 不写死在 XAML 里：字段表以后加一项（比如显存占用）时，这里一行都不用改。
     /// </summary>
     private void InitFieldGrid()

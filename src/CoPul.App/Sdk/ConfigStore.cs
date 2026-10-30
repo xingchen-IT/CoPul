@@ -79,7 +79,7 @@ public sealed class AppConfig
     public bool TaskbarClickThrough { get; set; } = true;
 
     /// <summary>
-    /// 任务栏条里被**用户关掉**的字段（7.4 / Q-03：八字段可独立开关、默认全开，
+    /// 任务栏条里被**用户关掉**的字段（7.4 / Q-03：九字段可独立开关、默认全开，
     /// 关闭后宽度自适应收缩、不保留空位）。
     ///
     /// <para>

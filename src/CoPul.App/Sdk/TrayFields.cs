@@ -1,7 +1,7 @@
 namespace CoPul.App.Sdk;
 
 /// <summary>
-/// 任务栏条的八个字段（7.4 / Q-03）。
+/// 任务栏条的九个字段（7.4 / Q-03，M4.7 补入显存）。
 ///
 /// <para>
 /// 抽成独立表是因为有三个地方要按同一份顺序与同一套 key 说话：
@@ -19,23 +19,24 @@ public static class TrayFields
     /// <summary>字段 key，与 <see cref="AppConfig.TaskbarHiddenFields"/> 里的值对应。</summary>
     public static readonly string[] Keys =
     {
-        "fps", "cpu", "gpu", "ram", "disk", "io", "lat", "pwr",
+        "fps", "cpu", "gpu", "ram", "vram", "disk", "io", "lat", "pwr",
     };
 
     /// <summary>菜单里显示的名字。</summary>
     public static readonly string[] Labels =
     {
-        "FPS", "CPU", "GPU", "内存", "硬盘温度", "上传 / 下载", "网络延迟", "整机功耗",
+        "FPS", "CPU", "GPU", "内存", "显存", "硬盘温度", "上传 / 下载", "网络延迟", "整机功耗",
     };
 
     /// <summary>
     /// 7.7「任务栏已满」时自动让位的顺序：先砍功耗、再砍延迟、再砍网络速率。
+    /// 显存排在内存**之后**才砍 —— 它是用户点名要看的，挤掉内存之前不该先没。
     /// FPS 不在表里 —— 它是 7.4 里唯一"原始需求明确要求可开关"的字段，
     /// 也是用户放任务栏上最想看到的那个，留到最后。
     /// </summary>
     public static readonly string[] AutoDropOrder =
     {
-        "pwr", "lat", "io", "disk", "ram", "gpu", "cpu",
+        "pwr", "lat", "io", "disk", "ram", "vram", "gpu", "cpu",
     };
 
     /// <summary>该字段当前是否显示（即用户没有关掉它）。</summary>
