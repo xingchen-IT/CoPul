@@ -35,6 +35,10 @@ public partial class App : Application
         // 是一个"点了没反应"的残影，和 M3 那个 DWM 残影是同一种观感问题
         _tray?.Dispose();
         _tray = null;
+
+        // G-05：释放互斥体，否则下次启动会误判"已经有一个在跑"
+        SingleInstance.Release();
+
         base.OnExit(e);
     }
 
@@ -43,6 +47,20 @@ public partial class App : Application
         base.OnStartup(e);
         InstallCrashLog();
         _uiThreadId = GetCurrentThreadId();
+
+        // G-04 的提权子进程入口：只做计划任务的注册/删除，做完立刻退。
+        // 必须放在单实例检查之前 —— 主程序很可能正开着（用户就是从它的托盘菜单点的），
+        // 子进程要是去抢互斥体会被当成"第二个实例"直接退掉，永远注册不上。
+        if (ArgValue(e.Args, AutoStart.InternalSwitch) is { } autoInternal)
+        {
+            bool internalOk = autoInternal.Equals("disable", StringComparison.OrdinalIgnoreCase)
+                ? AutoStart.DisableCore()
+                : AutoStart.EnableCore();
+
+            Interop.Trace.Log("autostart", $"internal {autoInternal} ok={internalOk}");
+            Shutdown(internalOk ? 0 : 1);
+            return;
+        }
 
         // 自测：--force-edge left|right|top|bottom，只覆盖"任务栏停在哪条边"的判定结果。
         // 验证 7.7 的竖向任务栏降级必须把任务栏真的挪到左边，那是改用户的系统设置 ——
@@ -89,6 +107,26 @@ public partial class App : Application
             }
         }
 
+        // 自测：--autostart-probe [status|cmd|enable|disable]，验 G-04。
+        // 走的是托盘菜单"开机自启"同一个入口（AutoStart 的几个方法），不是影子逻辑。
+        // 结果写 trace —— 这是 GUI 程序，没有控制台可打印。
+        if (ArgValue(e.Args, "--autostart-probe") is { } autoProbe)
+        {
+            string line = autoProbe.ToLowerInvariant() switch
+            {
+                "cmd" => "cmd: " + AutoStart.CommandLine(),
+                "comtest" => "comtest: " + AutoStart.ComTest(),
+                "dump" => "dump: " + AutoStart.DumpTask(),
+                "enable" => $"enable: ok={AutoStart.Enable()}",
+                "disable" => $"disable: ok={AutoStart.Disable()}",
+                _ => $"status: enabled={AutoStart.IsEnabled()} cmd={AutoStart.CommandLine()}",
+            };
+
+            Interop.Trace.Log("autostart", "probe " + line);
+            Shutdown();
+            return;
+        }
+
         // 自测：--taskbar-probe <txt 路径>。只读探测任务栏，不建窗口，写完即退。
         // M3 的地基全是"真实环境长什么样"：任务栏多高、图标区从哪开始、内部结构叫什么。
         // 这几项在 Win10 / Win11 22H2 / 24H2 上都不一样，只能实测，查文档会写出想当然的代码。
@@ -109,6 +147,32 @@ public partial class App : Application
                          e.Args.Contains("--tray-overlay"),
                          e.Args.Contains("--tray-print"));
             return;
+        }
+
+        // G-05 单实例：第二个实例只负责"把第一个叫到前面"，然后自己退出。
+        //
+        // 为什么不放在 OnStartup 最开头：上面那些 --taskbar-probe / --tray-probe 是
+        // 写完文件就退的纯探测，不建窗口也不进采集；自测时经常要在用户实例还开着的情况下
+        // 跑截图，互斥体一拦就全部失败。所以只对"真正的启动"生效 —— --shot /
+        // --stats / --hidden 这些测量模式一律跳过。
+        bool measurement = e.Args.Contains("--shot") || e.Args.Contains("--shot-screen")
+                           || e.Args.Contains("--stats") || e.Args.Contains("--hidden");
+
+        if (!measurement)
+        {
+            if (!SingleInstance.TryAcquire())
+            {
+                // 已有实例：发广播让它现身，自己立刻退。注意此时**不能**建主窗口，
+                // 否则会先闪一下再消失（表现像"点了两次图标，弹了两个窗口")
+                Interop.Trace.Log("single", "已有实例在运行 → 请求它现身并退出");
+                SingleInstance.SignalExisting();
+                Shutdown();
+                return;
+            }
+
+            // 开始监听"第二次启动"的广播。收到后要做什么在下面接线
+            // （必须等 ShowView 与几个视图变量都就绪才能订阅，否则编译器会报未赋值）。
+            SingleInstance.Listen();
         }
 
         var window = new MainWindow();
@@ -218,6 +282,24 @@ public partial class App : Application
         // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
         window.TrayRequested = () => ShowView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
 
+        // G-05：收到"又启动了一次"就显示大窗口。用户连点两次图标的意图就是"我要看到它"，
+        // 而它可能正以任务栏条 / 悬浮窗的形态在屏幕上（甚至被全屏检测藏起来了）。
+        // 必须走 ShowView 而不是直接 Show，否则状态机与事实不符（全屏回落会打架）。
+        if (!measurement)
+        {
+            SingleInstance.ActivateRequested += () =>
+            {
+                Interop.Trace.Log("single", "→ 收到激活请求，准备显示大窗口");
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    Interop.Trace.Log("single", "→ UI 线程执行 ShowView(Main)");
+                    ShowView(FullScreenAutoSwitch.View.Main, "second-instance");
+                }));
+            };
+
+            Interop.Trace.Log("single", "activate-handler 已订阅");
+        }
+
         // 托盘图标（G-01 / G-02）。7.6 的 Q-12 采纳「任务栏条默认穿透，全部操作走托盘」，
         // 所以托盘不是可选装饰：穿透之后条上收不到任何鼠标事件，托盘是唯一出口。
         // 截图 / 压测 / --hidden 这类测量模式不挂，否则探针会在托盘里留下图标，
@@ -273,7 +355,7 @@ public partial class App : Application
                                        isChecked: !ConfigStore.Current.TaskbarClickThrough),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("设置…", enabled: false),
-                    TrayMenuEntry.Item("开机自启", enabled: false),
+                    TrayMenuEntry.Item("开机自启", "toggle:autostart", isChecked: AutoStart.IsEnabled()),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("退出", "exit"),
                 };
@@ -349,6 +431,14 @@ public partial class App : Application
                         ConfigStore.Current.TaskbarClickThrough = through;
                         ConfigStore.SaveCurrent();
                     }
+                    break;
+
+                case "toggle:autostart":
+                    // G-04：走计划任务（登录触发 + 最高权限）。未提权时这里会弹一次 UAC ——
+                    // 是刻意的：Run 键启动不了需要提权的程序，那样自启只会静默失效。
+                    bool wantAuto = !AutoStart.IsEnabled();
+                    bool autoOk = wantAuto ? AutoStart.Enable() : AutoStart.Disable();
+                    Interop.Trace.Log("tray", $"开机自启 → {(wantAuto ? "开" : "关")} ok={autoOk}");
                     break;
 
                 case "exit": Shutdown(); break;
