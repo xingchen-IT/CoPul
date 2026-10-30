@@ -72,6 +72,17 @@ public sealed class CollectorHost : IDisposable
     public string PingTarget => _os.PingTarget;
 
     /// <summary>
+    /// 改延迟探测目标（G-08 设置页）。取值落在 <see cref="OsProvider.PingTarget"/> 上，
+    /// 探针线程下一轮就按新目标发 —— 不需要重启采集，也不需要重开程序。
+    ///
+    /// <para>
+    /// 这里不落盘：CollectorHost 不认识配置层（它被设计成只管采集），
+    /// 持久化由设置页写 <see cref="AppConfig.PingTarget"/> 完成。
+    /// </para>
+    /// </summary>
+    public void SetPingTarget(string target) => _os.PingTarget = target;
+
+    /// <summary>
     /// 占用最高的若干进程（M1.4）。与 N05 网卡名同一条旁路：复合结构不进快照。
     /// 5 秒刷新一次，读到旧数组最多晚 5 秒。
     /// </summary>

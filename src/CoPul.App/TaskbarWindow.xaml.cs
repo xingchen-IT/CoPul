@@ -1046,6 +1046,12 @@ public partial class TaskbarWindow : Window
     private void InkLight_Click(object sender, RoutedEventArgs e) => SetInk(InkMode.Light);
     private void InkDark_Click(object sender, RoutedEventArgs e) => SetInk(InkMode.Dark);
 
+    /// <summary>
+    /// 改任务栏条的文字取色（G-08 设置页）。<see cref="SetInk"/> 原本只给右键菜单用，
+    /// 设置页要和它走同一条路径 —— 否则"只改一个，另一处还停在旧值"。
+    /// </summary>
+    public void SetInkMode(InkMode mode) => SetInk(mode);
+
     private void SetInk(InkMode mode)
     {
         _ink = mode;

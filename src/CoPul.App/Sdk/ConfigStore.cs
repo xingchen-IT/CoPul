@@ -89,6 +89,21 @@ public sealed class AppConfig
     /// </summary>
     public string[] TaskbarHiddenFields { get; set; } = Array.Empty<string>();
 
+    /// <summary>
+    /// N03 延迟探测目标（G-08 设置页可改）。
+    ///
+    /// <para>
+    /// 默认 223.5.5.5 是 Q-09 定的（阿里 DNS）。用户可以改成网关或自定义地址 ——
+    /// 内网环境 ping 公网 DNS 往往超时，延迟一格恒为 <c>—</c>，改成本机网关才有意义。
+    /// </para>
+    ///
+    /// <para>
+    /// 空值由采集侧的 <c>OsProvider</c> 回退默认，不在这里校验 ——
+    /// 配置被手改坏也不该让延迟整格变成 <c>—</c>。
+    /// </para>
+    /// </summary>
+    public string PingTarget { get; set; } = "223.5.5.5";
+
     // ---- 全屏自动切换（第 8 章 / F-11）----
 
     /// <summary>

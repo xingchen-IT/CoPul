@@ -834,6 +834,22 @@ public partial class FloatWindow : Window
     // 玻璃：主题 × 浓度
     // =================================================================
 
+    /// <summary>
+    /// 毛玻璃开关（G-08 设置页的入口）。与右键菜单的「毛玻璃」同一条路径 ——
+    /// 复用 <see cref="ApplyGlass"/>，不另写一份，否则两处对"关掉玻璃长什么样"迟早会不一致。
+    /// </summary>
+    public bool GlassEnabled
+    {
+        get => _glass;
+        set
+        {
+            if (_glass == value) return;
+            ApplyGlass(value);
+            PersistAppearance();
+            SyncMenuChecks();
+        }
+    }
+
     private void ApplyGlass(bool on)
     {
         _glass = on;

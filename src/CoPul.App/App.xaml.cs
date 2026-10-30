@@ -282,6 +282,53 @@ public partial class App : Application
         // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
         window.TrayRequested = () => ShowView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
 
+        // G-08 设置页。窗口不放进三视图的切换序列 —— 它不是"监控视图"，
+        // 而是叠加在任一视图上的工具窗口，所以 App 单独持有它，ShowView 不管它。
+        SettingsWindow? settings = null;
+
+        void OpenSettings()
+        {
+            // 已经开着就提到前面，不建第二个：两个设置页各持一份控件状态，
+            // 改完这个再改那个，最后写盘的是后关的那个。
+            if (settings is { IsLoaded: true })
+            {
+                settings.Activate();
+                return;
+            }
+
+            settings = new SettingsWindow(new SettingsContext
+            {
+                Config = ConfigStore.Current,
+                CurrentView = () => view,
+                ShowView = target => ShowView(target, "settings"),
+                GetFloat = () => floating,
+                GetTaskbar = () => taskbar,
+                GetProviders = () => window.Host.Providers,
+                GetPingTarget = () => window.Host.PingTarget,
+                SetPingTarget = window.Host.SetPingTarget,
+                SetFullScreenAutoSwitch = on =>
+                {
+                    if (auto is null) return;
+                    auto.Enabled = on;
+                    auto.SyncTimer();
+                },
+                Version = "v" + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.1.0"),
+                ConfigPath = ConfigStore.Path,
+            });
+
+            settings.Closed += (_, _) => settings = null;
+            settings.Show();
+
+            // 必须 Activate：不激活就是一个后台窗口，DWM 对后台窗口的合成会降级/节流，
+            // 实测表现为"窗口只画了一部分，左边还是桌面上别的画面"。用户点设置，
+            // 本来也是要它到前面来。
+            settings.Activate();
+
+            Interop.Trace.Log("settings", "打开设置页");
+        }
+
+        window.SettingsRequested = OpenSettings;
+
         // G-05：收到"又启动了一次"就显示大窗口。用户连点两次图标的意图就是"我要看到它"，
         // 而它可能正以任务栏条 / 悬浮窗的形态在屏幕上（甚至被全屏检测藏起来了）。
         // 必须走 ShowView 而不是直接 Show，否则状态机与事实不符（全屏回落会打架）。
@@ -354,7 +401,7 @@ public partial class App : Application
                     TrayMenuEntry.Item("任务栏条可点击", "toggle:clickthrough",
                                        isChecked: !ConfigStore.Current.TaskbarClickThrough),
                     TrayMenuEntry.Separator(),
-                    TrayMenuEntry.Item("设置…", enabled: false),
+                    TrayMenuEntry.Item("设置…", "settings"),
                     TrayMenuEntry.Item("开机自启", "toggle:autostart", isChecked: AutoStart.IsEnabled()),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("退出", "exit"),
@@ -441,6 +488,8 @@ public partial class App : Application
                     Interop.Trace.Log("tray", $"开机自启 → {(wantAuto ? "开" : "关")} ok={autoOk}");
                     break;
 
+                case "settings": OpenSettings(); break;
+
                 case "exit": Shutdown(); break;
             }
         }
@@ -460,6 +509,28 @@ public partial class App : Application
                 RunTrayCommand(probeCmd);
             };
             probeTimer.Start();
+        }
+
+        // 自测：--settings [--settings-page diag] [--settings-probe 命令串] 启动后打开设置页，
+        // 供 --shot 拍整页（用 RTB，不用 --shot-screen：桌面上有持续置顶的游戏浮层，
+        // 抓屏会把设置页切成两半，实测两次都是别人的画面）。
+        string? settingsProbe = ArgValue(e.Args, "--settings-probe");
+        if (e.Args.Contains("--settings") || settingsProbe is not null)
+        {
+            string settingsPage = ArgValue(e.Args, "--settings-page") ?? "general";
+
+            var settingsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            settingsTimer.Tick += (_, _) =>
+            {
+                settingsTimer.Stop();
+                OpenSettings();
+
+                if (string.Equals(settingsPage, "diag", StringComparison.OrdinalIgnoreCase))
+                    settings?.ShowDiagTab();
+
+                if (!string.IsNullOrEmpty(settingsProbe)) settings?.RunProbe(settingsProbe);
+            };
+            settingsTimer.Start();
         }
 
         void UpdateTrayTooltip(TrayIcon icon)
@@ -695,11 +766,9 @@ public partial class App : Application
         string? shotScreen = ArgValue(e.Args, "--shot-screen");
         if (shot is null && shotScreen is null) return;
 
-        // 截哪个窗口：悬浮窗可见时截悬浮窗，否则截大窗口
-        Window target = taskbar is { IsVisible: true } ? taskbar
-                      : floating is { IsVisible: true } ? floating
-                      : window;
-
+        // 截哪个窗口**必须在定时器里判**，不能在这里判：设置页 / 任务栏条都是
+        // "启动之后才出现的"，启动那一刻它们还不存在，判出来永远是主窗口
+        // （第一版就踩了：--settings --shot-screen 拍到的是一张主窗口）。
         int waitMs = int.TryParse(ArgValue(e.Args, "--wait"), out int w) && w > 0 ? w : 4000;
 
         // 外扩像素：验收毛玻璃必须看到"窗口内 vs 窗口外"的差别，只截窗口本身永远看不出来
@@ -709,6 +778,19 @@ public partial class App : Application
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+
+            // 截哪个窗口必须在这一刻判：设置页 / 任务栏条都是"启动之后才出现的"，
+            // 在定时器外面判出来永远是主窗口（第一版 --settings --shot-screen 就拍成了主窗口）。
+            Window target = settings is { IsVisible: true } ? settings
+                          : taskbar is { IsVisible: true } ? taskbar
+                          : floating is { IsVisible: true } ? floating
+                          : window;
+
+            // 截谁必须留痕：设置页和主窗口都居中、尺寸接近，选错了肉眼看不出来
+            Interop.Trace.Log("shot", $"target={target.GetType().Name} visible={target.IsVisible} " +
+                                      $"left={target.Left:F0} top={target.Top:F0} " +
+                                      $"size={target.ActualWidth:F0}x{target.ActualHeight:F0} " +
+                                      $"settings={(settings is null ? "null" : settings.IsVisible.ToString())}");
 
             // 任务栏分支要延后关窗（先置顶、等一帧再拍），用这个标志跳过下面的 Shutdown
             bool deferred = false;
@@ -764,15 +846,41 @@ public partial class App : Application
                 }
                 else if (shotScreen is not null)
                 {
-                    ScreenCapture.SaveWindow(target, shotScreen, pad);
-                    if (target is FloatWindow fw)
-                        File.WriteAllText(shotScreen + ".info.txt",
-                            $"glass: {fw.GlassMode}{Environment.NewLine}" +
-                            $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
-                            $"scale: {fw.ScaleDiag}" +
-                            (fw.PlacementDiag.Length == 0
-                                ? string.Empty
-                                : Environment.NewLine + "place: " + fw.PlacementDiag));
+                    // 抓屏抓的是"屏幕上合成后的样子"，桌面压着谁就拍到谁。
+                    // 开发机上常开着游戏和浏览器，实测设置页被切成只剩右下角一块 ——
+                    // 那不是程序画错了，是别人的窗口盖在上面。先把自己抬到 topmost，
+                    // 等 DWM 重新合成一帧再拍；进程随后就退出，不需要还原。
+                    target.Topmost = true;
+
+                    var cap = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+                    cap.Tick += (_, _) =>
+                    {
+                        cap.Stop();
+                        try
+                        {
+                            ScreenCapture.SaveWindow(target, shotScreen, pad);
+
+                            if (target is FloatWindow fw)
+                                File.WriteAllText(shotScreen + ".info.txt",
+                                    $"glass: {fw.GlassMode}{Environment.NewLine}" +
+                                    $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
+                                    $"scale: {fw.ScaleDiag}" +
+                                    (fw.PlacementDiag.Length == 0
+                                        ? string.Empty
+                                        : Environment.NewLine + "place: " + fw.PlacementDiag));
+                        }
+                        catch (Exception ex)
+                        {
+                            File.WriteAllText(shotScreen + ".error.txt", ex.ToString());
+                        }
+                        finally
+                        {
+                            Shutdown();
+                        }
+                    };
+                    cap.Start();
+                    deferred = true;
+                    return;      // 延后关窗，交给 cap 定时器
                 }
                 else
                 {

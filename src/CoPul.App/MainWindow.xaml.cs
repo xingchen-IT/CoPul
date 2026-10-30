@@ -66,6 +66,12 @@ public partial class MainWindow : Window
     /// </summary>
     public Action? TrayRequested { get; set; }
 
+    /// <summary>
+    /// 「打开设置」（G-08）。同样由 App 接线 —— 设置页要读采集宿主、要能切三个视图，
+    /// 这两件事都只有 App 手里有，主窗口只管把"用户点了齿轮"这件事喊出去。
+    /// </summary>
+    public Action? SettingsRequested { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -345,7 +351,15 @@ public partial class MainWindow : Window
     private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
     private void Settings_Click(object sender, RoutedEventArgs e)
-        => _state.ShowHint("设置页（挡位 / 托盘 / 毛玻璃开关）在 M2 实现；v1 固定 0.5s 挡位。");
+    {
+        if (SettingsRequested is null)
+        {
+            _state.ShowHint("设置页未接线（以 --settings 或正常启动时可用）");
+            return;
+        }
+
+        SettingsRequested();
+    }
 
     /// <summary>
     /// 切到悬浮窗（M2）。这里只发请求，真正谁 Hide 谁 Show 由 App 决定——

@@ -53,7 +53,7 @@
                     <Button Style="{StaticResource TitleBarButton}" Content="▤"
                             ToolTip="切到任务栏条" Click="Tray_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="⚙"
-                            ToolTip="设置（M2 实现）" Click="Settings_Click" />
+                            ToolTip="设置" Click="Settings_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="—"
                             ToolTip="最小化" Click="Minimize_Click" />
                     <Button Style="{StaticResource TitleBarCloseButton}" Content="✕"

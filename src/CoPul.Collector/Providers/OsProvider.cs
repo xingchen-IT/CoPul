@@ -99,8 +99,26 @@ public sealed class OsProvider : IMetricProvider
     /// <summary>被排除的实例及原因（虚拟网卡 / 无收发计数器）。</summary>
     public List<(string Instance, string Reason)> ExcludedNics { get; } = new();
 
-    /// <summary>延迟探测目标。默认国内 DNS（Q-09），8.8.8.8 实测 186 ms 不适合做基准。</summary>
-    public string PingTarget { get; set; } = "223.5.5.5";
+    private string _pingTarget = DefaultPingTarget;
+
+    /// <summary>Q-09 定的默认探测目标。回退值集中在这里，改一处即可。</summary>
+    public const string DefaultPingTarget = "223.5.5.5";
+
+    /// <summary>
+    /// 延迟探测目标（G-08 设置页可改）。默认国内 DNS（Q-09），8.8.8.8 实测 186 ms 不适合做基准。
+    ///
+    /// <para>
+    /// setter 里兜住空值：设置页把输入框清空、或配置文件被手改成 <c>""</c> 时，
+    /// <c>Ping.Send("")</c> 会一路抛异常，延迟一格变成永久的 <c>—</c>，
+    /// 而用户以为自己只是"清了个框"。写入方是 UI 线程、读取方是 1Hz 探针线程，
+    /// 字符串引用赋值在 .NET 上原子，不会读到半截。
+    /// </para>
+    /// </summary>
+    public string PingTarget
+    {
+        get => _pingTarget;
+        set => _pingTarget = string.IsNullOrWhiteSpace(value) ? DefaultPingTarget : value.Trim();
+    }
 
     /// <summary>
     /// N05 当前活动网卡名（流量最大的物理网卡）。字符串进不了 <see cref="MetricSnapshot"/>
