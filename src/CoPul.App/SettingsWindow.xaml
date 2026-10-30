@@ -7,6 +7,11 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display">
 
+    <!--
+        这里写 CornerRadius="0" 不是忘了改：WindowChrome.CornerRadius 只在 Win8/8.1 生效，
+        Win10/11 上窗口的圆角由 DWMWA_WINDOW_CORNER_PREFERENCE 决定（见 SettingsWindow.xaml.cs
+        的 OnSourceInitialized）。写个非 0 值只会让人误以为"改这里就能圆角"。
+    -->
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0"
                       CornerRadius="0" UseAeroCaptionButtons="False" />

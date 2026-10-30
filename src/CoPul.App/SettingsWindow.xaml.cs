@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using CoPul.App.Interop;
 using CoPul.App.Sdk;
@@ -243,6 +244,72 @@ public partial class SettingsWindow : Window
     internal void ShowDiagTab()
     {
         if (NavDiag is not null) NavDiag.IsChecked = true;
+    }
+
+    // =================================================================
+    // 窗口外观
+    // =================================================================
+
+    /// <summary>圆角半径（DIP）。与 XAML 里外层 Border 的 CornerRadius 必须一致，否则描边会露角。</summary>
+    private const double CornerRadiusDip = 8;
+
+    /// <summary>true = 已交给 Win11 的 DWM 处理圆角，不用再自己维护窗口 Region。</summary>
+    private bool _dwmRoundCorners;
+
+    private IntPtr _hwnd;
+
+    /// <summary>
+    /// 让窗口四角真的变圆（与主窗口同一套做法）。
+    ///
+    /// <para>
+    /// <b>为什么 XAML 里那个 <c>CornerRadius="8"</c> 不够</b>：<c>Window.Background</c> 是
+    /// 不透明的 <c>BrushBg</c>，它铺满**整个客户区矩形**，四角那两块底色会把 Border
+    /// 画出来的圆角盖掉 —— 屏幕上看到的仍然是一个方窗口。
+    /// </para>
+    ///
+    /// <para>
+    /// 两条路：Win11 走 <c>DWMWA_WINDOW_CORNER_PREFERENCE</c>，系统按当前 DPI 裁切并
+    /// 抗锯齿，最大化时还会自动恢复直角；Win10 没有这个属性，退到
+    /// <see cref="Win32Window.ApplyRoundRegion"/>（1 位掩码、无抗锯齿，但可用），
+    /// 由尺寸变化与状态切换维持。
+    /// </para>
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        _hwnd = new WindowInteropHelper(this).Handle;
+
+        _dwmRoundCorners = Win32Window.TryEnableDwmRoundCorners(_hwnd);
+        Interop.Trace.Log("settings", $"round: dwm={_dwmRoundCorners} hwnd=0x{_hwnd:X}");
+
+        if (!_dwmRoundCorners)
+        {
+            ApplyRoundRegion();
+            SizeChanged += (_, _) => ApplyRoundRegion();
+        }
+
+        StateChanged += (_, _) =>
+        {
+            // Region 路径下最大化必须是直角，否则任务栏边缘会缺一小块
+            if (!_dwmRoundCorners) ApplyRoundRegion();
+        };
+    }
+
+    /// <summary>
+    /// Win10 兜底路径：按当前 DPI 换算成物理像素再裁 Region。
+    /// 不换算会在 150% 缩放下裁出一个明显偏小的圆角（Region 只认物理像素）。
+    /// </summary>
+    private void ApplyRoundRegion()
+    {
+        if (_hwnd == IntPtr.Zero) return;
+
+        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        Win32Window.ApplyRoundRegion(_hwnd,
+            (int)Math.Round(ActualWidth * scale),
+            (int)Math.Round(ActualHeight * scale),
+            (int)Math.Round(CornerRadiusDip * scale),
+            round: WindowState != WindowState.Maximized);
     }
 
     /// <summary>
