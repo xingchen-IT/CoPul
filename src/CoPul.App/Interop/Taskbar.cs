@@ -490,6 +490,17 @@ internal static class Taskbar
     public static int? FreeWidthOverride { get; set; }
 
     /// <summary>
+    /// 伪造光标位置（屏幕物理像素），只为自测 7.6 的悬停提示。
+    ///
+    /// <para>
+    /// 本机 <c>SetCursorPos</c> 不可靠 —— 设 (68,1576) 读回 (1251,895)，
+    /// 光标会被真实鼠标挪走（M4.1 已踩过，点菜单就是因此改成探针的）。
+    /// 这里只替换"光标在哪"这一个输入，命中判定、显示/隐藏、摆位全走生产代码。
+    /// </para>
+    /// </summary>
+    public static Win32Window.POINT? HoverOverride { get; set; }
+
+    /// <summary>
     /// 任务栏停在哪条边上（上 / 下 / 左 / 右）。
     ///
     /// <para>

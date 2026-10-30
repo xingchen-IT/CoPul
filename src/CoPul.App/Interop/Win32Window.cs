@@ -37,6 +37,20 @@ internal static class Win32Window
     [DllImport("user32.dll")]
     private static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
 
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT pt);
+
+    /// <summary>
+    /// 取光标位置（屏幕物理像素）。
+    ///
+    /// <para>
+    /// 7.6 的 hover tooltip 要用：任务栏条默认穿透（Q-12 方案 2），<c>WM_MOUSEMOVE</c>
+    /// 根本不会投给条，只能自己问系统光标在哪。**不要**用 WPF 的
+    /// <c>Mouse.GetPosition</c> —— 那要有一个能收到鼠标事件的窗口，穿透时正是没有。
+    /// </para>
+    /// </summary>
+    public static bool TryGetCursor(out POINT point) => GetCursorPos(out point);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
     {

@@ -62,6 +62,33 @@ public partial class App : Application
             Taskbar.FreeWidthOverride = forcedFree;
         }
 
+        // 自测：--hover-probe x,y[，--hover-probe-clear <ms>] 伪造光标位置，验 7.6 的悬停提示。
+        // 本机 SetCursorPos 不可靠（设 (68,1576) 读回 (1251,895)）：光标会被真实鼠标挪走，
+        // 而"鼠标是否停在条上"正是这条功能的唯一输入，只能伪造。
+        if (ArgValue(e.Args, "--hover-probe") is { } hoverAt)
+        {
+            string[] parts = hoverAt.Split(',');
+            if (parts.Length == 2
+                && int.TryParse(parts[0], out int hx) && int.TryParse(parts[1], out int hy))
+            {
+                Taskbar.HoverOverride = new Win32Window.POINT { X = hx, Y = hy };
+
+                // --hover-probe-clear <ms>：过一会儿清掉伪造值 = 模拟"鼠标移开"，
+                // 用来验提示框会自己收起来（trace 里能看到 show → hide）
+                if (int.TryParse(ArgValue(e.Args, "--hover-probe-clear"), out int clearAfter))
+                {
+                    var clearTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(clearAfter) };
+                    clearTimer.Tick += (_, _) =>
+                    {
+                        clearTimer.Stop();
+                        Taskbar.HoverOverride = null;
+                        Interop.Trace.Log("tray", $"hover-probe: 清空伪造光标（{clearAfter} ms）");
+                    };
+                    clearTimer.Start();
+                }
+            }
+        }
+
         // 自测：--taskbar-probe <txt 路径>。只读探测任务栏，不建窗口，写完即退。
         // M3 的地基全是"真实环境长什么样"：任务栏多高、图标区从哪开始、内部结构叫什么。
         // 这几项在 Win10 / Win11 22H2 / 24H2 上都不一样，只能实测，查文档会写出想当然的代码。

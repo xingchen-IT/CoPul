@@ -1,11 +1,13 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using CoPul.App.Controls;
 using CoPul.App.Interop;
 using CoPul.App.Sdk;
 
@@ -195,6 +197,7 @@ public partial class TaskbarWindow : Window
 
             InstallTaskbarWatcher();
             StartWatchdog();
+            StartHoverWatch();
         };
 
         // 放在 ContentRendered：Auto 模式要采样任务栏亮度，必须先有 _bar
@@ -702,6 +705,170 @@ public partial class TaskbarWindow : Window
         _watchdog.Start();
     }
 
+    // ---------------- 7.6 hover tooltip ----------------
+
+    /// <summary>悬停提示的轮询定时器（2 Hz）。</summary>
+    private DispatcherTimer? _hoverWatch;
+
+    private FieldTooltip? _tooltip;
+
+    /// <summary>
+    /// 启动悬停轮询。
+    ///
+    /// <para>
+    /// <b>为什么是轮询而不是 <c>MouseEnter</c></b>：条默认点击穿透（Q-12 方案 2），
+    /// <c>WM_NCHITTEST</c> 返回 <c>HTTRANSPARENT</c> 之后鼠标消息根本不投给它，
+    /// 所有 WPF 鼠标事件都不会来。7.6 又明确要求悬停显示 tooltip ——
+    /// 两者只能靠"自己问系统光标在哪"来调和。
+    /// </para>
+    ///
+    /// <para>
+    /// 开销：条不可见时第一行就 return，只剩一次 <c>IsVisible</c> 判断；
+    /// 可见时每次一个 <c>GetCursorPos</c> + 一次 <c>GetWindowRect</c>（微秒级）。
+    /// 相比 1 Hz 巡检并不可观，也不可能进入 A-26 的量级。
+    /// </para>
+    /// </summary>
+    private void StartHoverWatch()
+    {
+        if (_hoverWatch is not null) return;
+
+        _hoverWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _hoverWatch.Tick += (_, _) => PollHover();
+        _hoverWatch.Start();
+    }
+
+    private void PollHover()
+    {
+        // 切到别的视图时 App 会把条 Hide 掉，但定时器还在跑 —— 这时必须把提示收起来，
+        // 否则屏幕上会留一张"没人认领"的浮层（它是独立顶层窗口，不随条隐藏）。
+        if (_handedOff || !_attached || _suppressed || !IsVisible || _hwnd == IntPtr.Zero)
+        {
+            HideTooltip();
+            return;
+        }
+
+        Win32Window.POINT cursor;
+        if (Taskbar.HoverOverride is { } forced) cursor = forced;
+        else if (!Win32Window.TryGetCursor(out cursor)) { HideTooltip(); return; }
+
+        if (!Monitors.TryGetRect(_hwnd, out Win32Window.RECT bar))
+        {
+            HideTooltip();
+            return;
+        }
+
+        bool inside = cursor.X >= bar.Left && cursor.X < bar.Right &&
+                      cursor.Y >= bar.Top && cursor.Y < bar.Bottom;
+
+        if (!inside)
+        {
+            HideTooltip();
+            return;
+        }
+
+        ShowTooltip(cursor, bar);
+    }
+
+    private void ShowTooltip(Win32Window.POINT cursor, Win32Window.RECT bar)
+    {
+        _tooltip ??= new FieldTooltip();
+
+        _tooltip.SetTone(_autoIsLight);
+        _tooltip.SetText(BuildTooltipText());
+
+        if (!_tooltip.IsVisible)
+        {
+            _tooltip.Show();
+            Trace($"tooltip: show cursor=({cursor.X},{cursor.Y})");
+        }
+
+        // Show 之后才有布局尺寸（SizeToContent 在 Show 前量不出来）
+        _tooltip.UpdateLayout();
+
+        IntPtr hwnd = new WindowInteropHelper(_tooltip).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        double scale = Monitors.ScaleForWindow(hwnd);
+        if (scale <= 0) scale = 1;
+
+        int w = (int)Math.Ceiling(_tooltip.ActualWidth * scale);
+        int h = (int)Math.Ceiling(_tooltip.ActualHeight * scale);
+        if (w <= 0 || h <= 0) return;
+
+        if (!Monitors.TryPrimaryMonitorBounds(out Win32Window.RECT screen)) return;
+
+        // 水平跟着光标居中，但不许把自己顶出屏幕
+        int x = cursor.X - w / 2;
+        x = Math.Clamp(x, screen.Left + 8, Math.Max(screen.Left + 8, screen.Right - w - 8));
+
+        // 默认贴在条上方（底部任务栏）；任务栏在顶部时改放下方
+        int y = bar.Top - h - 10;
+        if (y < screen.Top + 8) y = bar.Bottom + 10;
+
+        Monitors.SetBounds(hwnd, x, y, w, h, topmost: true);
+    }
+
+    private void HideTooltip()
+    {
+        if (_tooltip is not { IsVisible: true }) return;
+
+        _tooltip.Hide();
+        Trace("tooltip: hide");
+    }
+
+    /// <summary>
+    /// 提示文本。数据直接取条上那份 <see cref="FloatField"/> 的字符串 ——
+    /// 不重新格式化，否则会出现"条上写着 65%、提示里说 66%"这种对不上的情况。
+    /// </summary>
+    private string BuildTooltipText()
+    {
+        var sb = new StringBuilder();
+
+        for (int i = 0; i < _cells.Count; i++)
+        {
+            var cell = _cells[i];
+            if (!TrayFields.IsVisible(_config, cell.Key)) continue;
+
+            if (sb.Length > 0) sb.AppendLine();
+
+            string top = cell.Field.Top ?? string.Empty;
+            string bottom = cell.Field.Bottom ?? string.Empty;
+
+            // Bottom 有两种含义：次值（GPU 的温度、内存的已用/总量、上下行速率），
+            // 或者只是把字段名再写一遍（FPS / PWR / LAT）。后者跳过，
+            // 否则会打出 "FPS：—   FPS"。
+            string value = string.IsNullOrWhiteSpace(bottom) || bottom == cell.Field.Key
+                ? top
+                : top + "   " + bottom;
+
+            sb.Append(TrayFields.Labels[i]).Append("：").Append(value);
+
+            // 7.6 特别点名"硬盘温度对应哪块盘"：条上只有两行数字，
+            // 盘型号/序号只能在这里补
+            if (cell.Key == "disk") AppendDiskLines(sb);
+        }
+
+        return sb.ToString();
+    }
+
+    private void AppendDiskLines(StringBuilder sb)
+    {
+        foreach (var disk in _state.Disks)
+        {
+            string model = disk.Model ?? string.Empty;
+            if (model.Length > 34) model = model[..33] + "…";
+
+            sb.AppendLine();
+            sb.Append("　　盘").Append(disk.Index + 1);
+            if (model.Length > 0) sb.Append(' ').Append(model);
+
+            // 没管理员权限时 NVMe 温度读不到（R8），这时只是多一个没意义的 "—"，
+            // 不显示比显示更能让人明白"这项没数据"
+            string temp = disk.Temp ?? string.Empty;
+            if (temp.Length > 0 && temp != Fmt.Dash) sb.Append("  ").Append(temp);
+        }
+    }
+
     private void Poll()
     {
         if (_handedOff || _recovering) return;
@@ -838,6 +1005,12 @@ public partial class TaskbarWindow : Window
 
         _watchdog?.Stop();
         _watchdog = null;
+
+        // 提示框是独立顶层窗口，不随条关闭自动消失 —— 不显式关掉会留在屏幕上
+        _hoverWatch?.Stop();
+        _hoverWatch = null;
+        _tooltip?.Close();
+        _tooltip = null;
 
         // 监听窗口是独立的顶层窗口，不随本窗口关闭自动销毁，必须显式释放，
         // 否则重建实例时会多留一个空窗口在后台
