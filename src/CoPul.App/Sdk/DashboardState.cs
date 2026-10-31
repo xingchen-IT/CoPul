@@ -733,14 +733,24 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// </summary>
     public bool Paused { get; set; }
 
-    /// <summary>每帧刷新（0.5s 一次），只做字符串格式化与赋值。折叠的区块整段跳过。</summary>
+    /// <summary>
+    /// 每帧刷新（0.5s 一次），只做字符串格式化与赋值。
+    ///
+    /// <para>
+    /// 折叠**只跳过"仅大窗口才看"的那部分文案**，不能整段跳过 —— M4.26 后三个视图可以同时显示，
+    /// 而悬浮窗 / 任务栏条的字段（RAM、NET、DISK…）正是挂在同一批 ApplyXxx 里的。
+    /// 按区块整段跳过时的现场：用户在大窗口折叠了内存/网络/硬盘，另外两个视图的对应格子就永远停在
+    /// 初始的 `—`（不是"旧值"，是压根没写过）→ 表现为「三个模式的数据不能同时显示」。
+    /// 所以折叠判断下沉进各自的 ApplyXxx，覆盖层那几行放在它前面无条件执行。
+    /// </para>
+    /// </summary>
     public void ApplySnapshot(MetricSnapshot snap)
     {
-        if (!CpuBlock.Collapsed) ApplyCpu(snap);
-        if (!GpuBlock.Collapsed) ApplyGpu(snap);
-        if (!MemBlock.Collapsed) ApplyMemory(snap);
-        if (!NetBlock.Collapsed) ApplyNetwork(snap);
-        if (!DiskBlock.Collapsed) ApplyDisk(snap);
+        ApplyCpu(snap);
+        ApplyGpu(snap);
+        ApplyMemory(snap);
+        ApplyNetwork(snap);
+        ApplyDisk(snap);
 
         // 每拍重算一次"自定义色要不要让位给阈值色"。
         //
@@ -848,10 +858,18 @@ public sealed class DashboardState : INotifyPropertyChanged
     private void ApplyCpu(MetricSnapshot snap)
     {
         // ---------------- CPU ----------------
+        // ---- 覆盖层（悬浮窗 / 任务栏条）也要读的指标：**每拍必做** ----
+        // FloatCpu 直接用 CpuLoad / CpuTemp 的文案与画刷，TaskbarPower 用 CpuPower，
+        // 所以这三格不能因为大窗口折叠就停更。
         SetCell(CpuLoad, snap, MetricId.CpuTotalLoad, Fmt.Pct, Severity.Load, withBar: true);
         SetCell(CpuTemp, snap, MetricId.CpuPackageTemp, Fmt.Temp, Severity.Temp);
-        SetCell(CpuClock, snap, MetricId.CpuClockGhz, Fmt.Ghz);
         SetCell(CpuPower, snap, MetricId.CpuPackagePowerW, Fmt.Watts);
+        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass, CpuLoad.ValueBrush);
+
+        // ---- 只有大窗口才看的：折叠时整段跳过（折叠省下的 CPU 主要在这里）----
+        if (CpuBlock.Collapsed) return;
+
+        SetCell(CpuClock, snap, MetricId.CpuClockGhz, Fmt.Ghz);
 
         if (SuppressCoreLine)
         {
@@ -864,17 +882,15 @@ public sealed class DashboardState : INotifyPropertyChanged
             CoresText = "各核心占用率不可用";
 
         LoadAvgText = FormatLoadAvg(snap);
-
-        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass, CpuLoad.ValueBrush);
     }
 
     private void ApplyGpu(MetricSnapshot snap)
     {
         // ---------------- GPU ----------------
+        // ---- 覆盖层也要读的：每拍必做（FloatGpu / FloatVram / FloatPwr 全靠这三段）----
         SetCell(GpuLoad, snap, MetricId.GpuLoad, Fmt.Pct, Severity.Load, withBar: true);
         SetCell(GpuTemp, snap, MetricId.GpuTemp, Fmt.Temp, Severity.Temp);
         SetCell(GpuPower, snap, MetricId.GpuPowerW, Fmt.Watts);
-        SetCell(GpuClock, snap, MetricId.GpuClockCoreMhz, Fmt.Mhz);
 
         double? memUsed = Value(snap, MetricId.GpuMemUsedMb);
         double? memTotal = Value(snap, MetricId.GpuMemTotalMb);
@@ -884,10 +900,6 @@ public sealed class DashboardState : INotifyPropertyChanged
                          Severity.Load(memPct ?? 0), bar: memPct);
         else
             GpuMem.Unavailable();
-
-        string enc = TryText(snap, MetricId.GpuEncoderLoad, v => v.ToString("F0"));
-        string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
-        GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
 
         FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrushOnGlass, GpuLoad.ValueBrush);
 
@@ -907,6 +919,15 @@ public sealed class DashboardState : INotifyPropertyChanged
         // 只累加 CPU 封装 + GPU 板卡两项：主板/硬盘/风扇的功耗 Windows 拿不到，
         // 加 `~` 就是为了说明这是下限估算而不是实测。
         FloatPwr.Set(TaskbarPower(), "PWR", CpuPower.ValueBrushOnGlass, CpuPower.ValueBrush);
+
+        // ---- 只有大窗口才看的：折叠时跳过 ----
+        if (GpuBlock.Collapsed) return;
+
+        SetCell(GpuClock, snap, MetricId.GpuClockCoreMhz, Fmt.Mhz);
+
+        string enc = TryText(snap, MetricId.GpuEncoderLoad, v => v.ToString("F0"));
+        string dec = TryText(snap, MetricId.GpuDecoderLoad, v => v.ToString("F0"));
+        GpuExtraText = enc == Fmt.Dash && dec == Fmt.Dash ? "" : $"编解码  {enc}% / {dec}%";
     }
 
     private string TaskbarPower()
@@ -924,16 +945,31 @@ public sealed class DashboardState : INotifyPropertyChanged
     private void ApplyMemory(MetricSnapshot snap)
     {
         // ---------------- 内存 ----------------
+        // ---- 覆盖层也要读的：每拍必做（FloatRam 的占用率与上下限都从这里来）----
         double? used = Value(snap, MetricId.RamUsedMb);
         double? total = Value(snap, MetricId.RamTotalMb);
         double? load = Value(snap, MetricId.RamLoad);
 
+        if (load.HasValue) MemLoad.Apply(Fmt.Pct(load.Value), Severity.Load(load.Value), bar: load.Value);
+        else MemLoad.Unavailable();
+
+        // 悬浮窗的 RAM 下行要 "10.1/31.6G"：34px 高的条上放不下 "10.1 / 31.6 GB"，
+        // 空格和单位都得省（6.3 的列宽 74 就是按这个格式定的）。
+        // 这句仍然保留给任务栏（那边是横着的一条，一行读完最省地方）；
+        // 悬浮窗改用下面拆开的两行（M4.11），竖排时条宽才能从 61 收到 40 出头。
+        string ramSize = used.HasValue && total.HasValue
+            ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
+            : Fmt.Dash;
+        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass, MemLoad.ValueBrush,
+                     line2: used.HasValue ? $"{used.Value / 1024:F1}G" : Fmt.Dash,
+                     line3: total.HasValue ? $"/{total.Value / 1024:F1}G" : null);
+
+        // ---- 只有大窗口才看的：折叠时跳过 ----
+        if (MemBlock.Collapsed) return;
+
         MemHeadline = used.HasValue && total.HasValue
             ? $"{used.Value / 1024:F1} / {total.Value / 1024:F1} GB"
             : "读取中…";
-
-        if (load.HasValue) MemLoad.Apply(Fmt.Pct(load.Value), Severity.Load(load.Value), bar: load.Value);
-        else MemLoad.Unavailable();
 
         double? commitUsed = Value(snap, MetricId.RamCommitUsedMb);
         double? commitLimit = Value(snap, MetricId.RamCommitLimitMb);
@@ -946,17 +982,6 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         double? pageFile = Value(snap, MetricId.RamPageFileMb);
         MemDetail = pageFile.HasValue ? $"页面文件 ~{pageFile.Value / 1024:F1} GB（推算值）" : "";
-
-        // 悬浮窗的 RAM 下行要 "10.1/31.6G"：34px 高的条上放不下 "10.1 / 31.6 GB"，
-        // 空格和单位都得省（6.3 的列宽 74 就是按这个格式定的）。
-        // 这句仍然保留给任务栏（那边是横着的一条，一行读完最省地方）；
-        // 悬浮窗改用下面拆开的两行（M4.11），竖排时条宽才能从 61 收到 40 出头。
-        string ramSize = used.HasValue && total.HasValue
-            ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
-            : Fmt.Dash;
-        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass, MemLoad.ValueBrush,
-                     line2: used.HasValue ? $"{used.Value / 1024:F1}G" : Fmt.Dash,
-                     line3: total.HasValue ? $"/{total.Value / 1024:F1}G" : null);
     }
 
     /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>
@@ -966,12 +991,27 @@ public sealed class DashboardState : INotifyPropertyChanged
     private void ApplyNetwork(MetricSnapshot snap)
     {
         // ---------------- 网络 ----------------
+        // ---- 覆盖层也要读的：每拍必做（FloatNet / FloatIo / FloatLat 三格全靠这一段）----
         // 速率单位自适应（4.5：KB/s 或 MB/s，1 位小数）。没有数据时单位保持上次的值，
         // 值显示 `—` —— 不能因为读不到就先把单位改成 MB/s，那会让下次出数时闪一下。
         SetRateCell(NetDown, snap, MetricId.NetDownBytesPerSec);
         SetRateCell(NetUp, snap, MetricId.NetUpBytesPerSec);
 
         SetCell(NetLatency, snap, MetricId.NetLatencyMs, Fmt.Pct);
+
+        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
+
+        // 任务栏：上下行分两行（7.4），箭头代替标签 —— 宽度只有 48 DIP，
+        // 写 "UP"/"DOWN" 会挤掉数字本身。
+        FloatIo.Set(TaskbarRate(snap, MetricId.NetUpBytesPerSec, "↑"),
+                    TaskbarRate(snap, MetricId.NetDownBytesPerSec, "↓"),
+                    NetUp.ValueBrushOnGlass, NetUp.ValueBrush);
+
+        FloatLat.Set(WithUnit(NetLatency.Value, "ms"), "LAT",
+                     NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
+
+        // ---- 只有大窗口才看的：折叠时跳过 ----
+        if (NetBlock.Collapsed) return;
 
         // N04 丢包率：滚动 10 次探测的成功率。0% 是正常值，不是"无数据"，
         // 所以有样本就正常显示；样本不足一个窗口时也显示，只是波动大。
@@ -987,17 +1027,6 @@ public sealed class DashboardState : INotifyPropertyChanged
         {
             NetLoss.Unavailable();
         }
-
-        FloatNet.Set(WithUnit(NetLatency.Value, "ms"), "NET", NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
-
-        // 任务栏：上下行分两行（7.4），箭头代替标签 —— 宽度只有 48 DIP，
-        // 写 "UP"/"DOWN" 会挤掉数字本身。
-        FloatIo.Set(TaskbarRate(snap, MetricId.NetUpBytesPerSec, "↑"),
-                    TaskbarRate(snap, MetricId.NetDownBytesPerSec, "↓"),
-                    NetUp.ValueBrushOnGlass, NetUp.ValueBrush);
-
-        FloatLat.Set(WithUnit(NetLatency.Value, "ms"), "LAT",
-                     NetLatency.ValueBrushOnGlass, NetLatency.ValueBrush);
     }
 
     /// <summary>
@@ -1028,7 +1057,17 @@ public sealed class DashboardState : INotifyPropertyChanged
     private void ApplyDisk(MetricSnapshot snap)
     {
         // ---------------- 硬盘 ----------------
+        // ---- 覆盖层也要读的：每拍必做（任务栏那格的盘温走这里，与大窗口折叠无关）----
         bool hasTemp = snap.TryGetSeries(MetricId.DiskTemperature, out var temps) && temps.IsUsable;
+
+        // 任务栏：7.4 要求多盘**上下排列**（上行盘 1、下行盘 2）。
+        // 两行字号本来就不同（值 11 / 标签 9），下行天然是小字，不需要再额外缩。
+        FloatDisk.Set(DiskTempText(hasTemp, temps, 0), DiskTempText(hasTemp, temps, 1),
+                      CpuTemp.ValueBrushOnGlass, CpuTemp.ValueBrush);
+
+        // ---- 只有大窗口才看的：折叠时跳过（多盘循环 + 合计文案，是折叠真正省下的部分）----
+        if (DiskBlock.Collapsed) return;
+
         bool hasRead = snap.TryGetSeries(MetricId.DiskReadPerDisk, out var reads) && reads.IsUsable;
         bool hasWrite = snap.TryGetSeries(MetricId.DiskWritePerDisk, out var writes) && writes.IsUsable;
 
@@ -1051,11 +1090,6 @@ public sealed class DashboardState : INotifyPropertyChanged
         DiskSummary = read == Fmt.Dash && write == Fmt.Dash
             ? (hasTemp ? "" : "硬盘温度需管理员权限")
             : $"合计  读 {read} MB/s   写 {write} MB/s";
-
-        // 任务栏：7.4 要求多盘**上下排列**（上行盘 1、下行盘 2）。
-        // 两行字号本来就不同（值 11 / 标签 9），下行天然是小字，不需要再额外缩。
-        FloatDisk.Set(DiskTempText(hasTemp, temps, 0), DiskTempText(hasTemp, temps, 1),
-                      CpuTemp.ValueBrushOnGlass, CpuTemp.ValueBrush);
     }
 
     /// <summary>取第 n 块盘的温度文本（`45°`），越界或无效时给 `—`。</summary>

@@ -123,7 +123,7 @@ public partial class App : Application
             };
 
             Interop.Trace.Log("autostart", "probe " + line);
-            Shutdown();
+            Quit();
             return;
         }
 
@@ -133,7 +133,7 @@ public partial class App : Application
         if (ArgValue(e.Args, "--taskbar-probe") is { } probePath)
         {
             File.WriteAllText(probePath, DescribeTaskbar());
-            Shutdown();
+            Quit();
             return;
         }
 
@@ -166,7 +166,7 @@ public partial class App : Application
                 // 否则会先闪一下再消失（表现像"点了两次图标，弹了两个窗口")
                 Interop.Trace.Log("single", "已有实例在运行 → 请求它现身并退出");
                 SingleInstance.SignalExisting();
-                Shutdown();
+                Quit();
                 return;
             }
 
@@ -221,9 +221,16 @@ public partial class App : Application
         // M4.26：三视图可叠加之后，"关大窗口"不再等于退出程序 ——
         // 只要还有悬浮窗/任务栏条在显示，就只把大窗口收起来（退出统一走托盘「退出」）。
         // 一个都没显示时保持老行为：关窗即退出（OnMainWindowClose）。
-        // 注：Application.Shutdown() 期间 WPF 会忽略 Cancel，所以托盘退出/探针收尾不受影响。
+        //
+        // M4.27：给"主动退出"留一条明路。Closing 里那条"只收起"会 Hide 大窗口并打一行日志，
+        // 对真正要结束进程的路径（托盘「退出」/ 探针收尾）只是噪音；更要紧的是一旦收尾方式
+        // 从 Application.Shutdown 换成 Close()，Cancel 就会把进程真的留在后台 —— 那种 bug
+        // 只在点了「退出」之后才显形，很难归因。所以主动退出先置 exiting，让 Closing 直接放行。
+        bool exiting = false;
+
         window.Closing += (_, ce) =>
         {
+            if (exiting) return;                                  // 主动退出：真关
             if (!shownFloat && !shownTray) return;
 
             ce.Cancel = true;
@@ -231,6 +238,16 @@ public partial class App : Application
             shownMain = false;
             Interop.Trace.Log("view", $"大窗口被关闭 → 只收起（其它视图还在）组合={ComboText()}");
         };
+
+        /// <summary>
+        /// 结束进程。<b>所有</b>主动退出的路径都走这条（托盘「退出」与探针收尾），
+        /// 不要直接调 <see cref="Application.Shutdown()"/> —— 否则会被上面的 Closing 拦下。
+        /// </summary>
+        void Quit()
+        {
+            exiting = true;
+            Quit();
+        }
 
         // 在这里先声明、稍后再建：热键的按下回调要读 view / 走 ShowView，
         // 而设置页（更早定义）又要拿着它改键。C# 不允许 lambda 引用后面才声明的局部变量，
@@ -454,6 +471,10 @@ public partial class App : Application
                     // 清掉计时反而会让"刚把门限从 2s 调到 0.5s"这一下不立刻切过去。
                     auto?.SetHold(holdMs);
                 },
+
+                // 字段开关会连带影响"要不要继续采 FPS"（M4.27）：折叠大窗口的 FPS 区块
+                // 会停 PresentMon，但覆盖层还在显示 FPS 时不能停。
+                RefreshFpsSampling = () => window.RefreshFpsSampling(),
                 GetHotkey = () => hotkey?.Applied,
                 SetHotkey = gesture =>
                 {
@@ -618,6 +639,11 @@ public partial class App : Application
 
                 ConfigStore.SaveCurrent();
                 taskbar?.ReloadFields();
+
+                // 字段列表变了 → FPS 还要不要采跟着变（M4.27）。托盘的字段勾选同样走这里，
+                // 不接这条的话"折叠 FPS 区块 + 托盘重新点亮 FPS 字段"会让那一格一直是 `—`。
+                window.RefreshFpsSampling();
+
                 Interop.Trace.Log("tray", $"field: {key} → " +
                     $"{(TrayFields.IsVisible(ConfigStore.Current, key) ? "显示" : "隐藏")}");
                 return;
@@ -664,7 +690,7 @@ public partial class App : Application
 
                 case "settings": OpenSettings(); break;
 
-                case "exit": Shutdown(); break;
+                case "exit": Quit(); break;
             }
         }
 
@@ -772,7 +798,7 @@ public partial class App : Application
             Probes.FullScreenProbe.Run(fsProbePathEarly, e.Args.Contains("--fs-fake"),
                 int.TryParse(ArgValue(e.Args, "--fs-polls"), out int fp) && fp > 0 ? fp : 6,
                 timer => timer.Start(),
-                Shutdown);
+                Quit);
             return;
         }
 
@@ -1130,7 +1156,7 @@ public partial class App : Application
                 target => ShowView(target, "view-probe", userInitiated: false),
                 target => HideView(target, "view-probe", userInitiated: false),
                 () => DescribeViewState(window, floating, taskbar),
-                viewProbePath, vStart, t => t.Start(), Shutdown);
+                viewProbePath, vStart, t => t.Start(), Quit);
             return;
         }
 
@@ -1155,7 +1181,7 @@ public partial class App : Application
                 target => HideView(target, "fs-switch-probe", userInitiated: false),
                 fsSwitchPath,
                 e.Args.Contains("--fs-multi"),   // M4.26：三视图叠加链路
-                t => t.Start(), Shutdown);
+                t => t.Start(), Quit);
             return;
         }
 
@@ -1174,7 +1200,7 @@ public partial class App : Application
                 () => DescribeViewState(window, floating, taskbar),
                 fsLive, focusAt, endAt,
                 () => { if (floating is { IsVisible: true }) floating.Activate(); },
-                t => t.Start(), Shutdown);
+                t => t.Start(), Quit);
             return;
         }
 
@@ -1208,7 +1234,7 @@ public partial class App : Application
                 File.AppendAllText(closePath,
                     $"after : alive=True main={window.IsVisible} float={floating?.IsVisible} " +
                     $"tray={taskbar?.IsVisible}{Environment.NewLine}");
-                Shutdown();
+                Quit();
             };
             aliveTimer.Start();
         }
@@ -1395,7 +1421,7 @@ public partial class App : Application
                         finally
                         {
                             if (raise) Taskbar.RaiseForCapture(bar, false);
-                            Shutdown();
+                            Quit();
                         }
                     };
                     cap.Start();
@@ -1442,7 +1468,7 @@ public partial class App : Application
                         }
                         finally
                         {
-                            Shutdown();
+                            Quit();
                         }
                     };
                     cap.Start();
@@ -1498,7 +1524,7 @@ public partial class App : Application
             }
             finally
             {
-                if (!deferred) Shutdown();
+                if (!deferred) Quit();
             }
         };
         timer.Start();

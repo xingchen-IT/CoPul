@@ -90,8 +90,11 @@ public partial class MainWindow : Window
 
         // 进程采集是全部采集里最贵的一组（一轮约 20ms），启动时这块若已折叠就别采
         _host.ProcessSamplingEnabled = !_state.ProcBlock.Collapsed;
-        // PresentMon 是独立进程，自己就要吃 0.3–0.5% 单核，折叠了就别让它烧着
-        _host.FpsSamplingEnabled = !_state.FpsBlock.Collapsed;
+        // PresentMon 是独立进程，自己就要吃 0.3–0.5% 单核，折叠了就别让它烧着。
+        // **但 FPS 不只属于大窗口那一个区块**（M4.27）：悬浮窗与任务栏条也有 FPS 字段，
+        // 只要那边还在显示就不能停采集 —— 否则折叠大窗口的 FPS 会把覆盖层的 FPS 一起冻成 `—`，
+        // 表现正是「三个模式的数据不能同时显示」。
+        _host.FpsSamplingEnabled = FpsStillNeeded();
 
         // FPS 的可用状态是异步的（PresentMon 起得来、会话却可能 1 秒后才被拒），
         // 所以除了启动时那一次，还得听运行中的状态变化
@@ -274,10 +277,25 @@ public partial class MainWindow : Window
 
         // 折叠进程区块时顺手把最贵的两组采集关掉（见 CollectorHost.ProcessSamplingEnabled）
         if (block == _state.ProcBlock) _host.ProcessSamplingEnabled = !block.Collapsed;
-        if (block == _state.FpsBlock) _host.FpsSamplingEnabled = !block.Collapsed;
+        if (block == _state.FpsBlock) _host.FpsSamplingEnabled = FpsStillNeeded();
 
         SaveLayout();   // 折叠状态按 5.4 持久化
     }
+
+    /// <summary>
+    /// 还要不要跑 PresentMon。大窗口 FPS 区块展开时当然要；即使折叠了，
+    /// 只要悬浮窗或任务栏条还留着 FPS 字段（两个视图各有自己的隐藏表），也得继续采。
+    /// </summary>
+    private bool FpsStillNeeded()
+        => !_state.FpsBlock.Collapsed
+           || FloatFields.IsVisible(_config, "fps")
+           || TrayFields.IsVisible(_config, "fps");
+
+    /// <summary>
+    /// 字段可见性变了就重算一次采样需求（M4.27）。设置页与托盘的字段开关都调这条 ——
+    /// 少了它，"先折叠 FPS、再点亮悬浮窗的 FPS 字段"会让那一格永远停在 `—`。
+    /// </summary>
+    public void RefreshFpsSampling() => _host.FpsSamplingEnabled = FpsStillNeeded();
 
     protected override void OnSourceInitialized(EventArgs e)
     {

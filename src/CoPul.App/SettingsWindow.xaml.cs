@@ -62,6 +62,17 @@ internal sealed class SettingsContext
     public Action<int> SetFullScreenHold { get; init; } = _ => { };
 
     /// <summary>
+    /// 字段开关变了之后重算"还要不要采 FPS"（M4.27）。
+    ///
+    /// <para>
+    /// 折叠大窗口的 FPS 区块会停掉 PresentMon；但悬浮窗 / 任务栏条上的 FPS 字段是另一回事 ——
+    /// 两处都关掉才真的不用采，任何一处还亮着就得继续。字段开关在设置页与托盘两处，
+    /// 所以这条必须由两边都能调用。
+    /// </para>
+    /// </summary>
+    public Action RefreshFpsSampling { get; init; } = () => { };
+
+    /// <summary>
     /// 当前**真正生效**的热键写法；<c>null</c> = 没注册上（被占用或写法不认识）。
     /// 刻意不读配置：配置里存的是"用户想要的"，冲突时两者并不相同。
     /// </summary>
@@ -310,6 +321,9 @@ public partial class SettingsWindow : Window
         // 它创建时会从配置里读到这份 hidden。
         if (tray) _ctx.GetTaskbar()?.ReloadFields();
         else _ctx.GetFloat()?.ReloadFields();
+
+        // FPS 字段刚被点亮 / 关掉：PresentMon 要不要继续烧，看两边还有没有人在显示它（M4.27）
+        _ctx.RefreshFpsSampling();
 
         UpdateFieldToggleEnabled();
         Hint($"{visible}/{FieldKeys().Length} 显示（{(tray ? "任务栏条" : "悬浮窗")}）");
