@@ -274,6 +274,55 @@
             </Setter>
         </Style>
         <!--
+            字段开关（M4.25）。形状与 FieldChip 一致，但语义是"显示 / 隐藏"而不是"选中哪一格"，
+            所以用 ToggleButton（多选）而不是 RadioButton（互斥）。
+
+            熄灭态画成**灰字 + 删除线 + 透明底**：只调深浅的话，深色主题下"关掉的字段"
+            和"没选中的色板"长得一样（M4.19 已经踩过一次这种"两种状态一个样"的坑）。
+            删除线是这里唯一不依赖颜色的状态标记。
+        -->
+        <Style x:Key="FieldToggle" TargetType="ToggleButton">
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Padding" Value="10,4,10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="ToolTipService.ShowDuration" Value="8000" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Box" CornerRadius="5" Padding="{TemplateBinding Padding}"
+                                Background="{StaticResource BrushPanel}"
+                                BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                            <!--
+                                不用 ContentPresenter：熄灭态要给文字加删除线，而删除线挂在
+                                TextBlock 自己身上（TextBlock.TextDecorations 不是可继承属性）。
+                                Content 只放字符串，{TemplateBinding Content} 的类型转换是安全的。
+                            -->
+                            <TextBlock x:Name="Txt" Text="{TemplateBinding Content}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource BrushTextTertiary}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="False">
+                                <Setter TargetName="Box" Property="Background" Value="Transparent" />
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+                                <Setter TargetName="Txt" Property="TextDecorations" Value="Strikethrough" />
+                            </Trigger>
+                            <!-- 只剩一个字段时置灰：让"不能再关"看得见，而不是点了没反应 -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!--
             色板方块（M4.19）。用 RadioButton + Tag 存 #RRGGBB，与「缩放 / 取色」同一套：
             选中态交给 WPF 互斥，代码只在 Checked 里读 Tag。
             选中标记画成外圈描边而不是方块内的勾 —— 深色色块里放一个勾几乎看不见。
@@ -386,13 +435,33 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 任务栏字段 -->
+                        <!--
+                            显示字段（M4.25 合并）。原来「任务栏条字段」与「悬浮窗字段」各占一张卡、
+                            各摆一片勾选框，同一件事（哪些字段要显示）被拆在两处，
+                            改完一个还得往下翻很久才能改另一个。
+
+                            「文字颜色」已经用"先选视图 → 再看一条字段条"解决了同一形状的问题，
+                            这里统一成同一套：选视图 → 一条字段条 → 点亮/熄灭。
+                            **不能把两个视图的字段合成一条**：key 表顺序不同（任务栏第 6 位是
+                            「网络延迟」lat，悬浮窗是 net），共用一条会按错的 key 落盘。
+                        -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
-                                <TextBlock Text="任务栏条字段" Style="{StaticResource SectionTitle}" />
-                                <UniformGrid x:Name="FieldGrid" Columns="4" Margin="0,12,0,0" />
-                                <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="关闭的字段不占位，条会跟着收缩。任务栏空白不够时，按「功耗 → 延迟 → 网络速率」的顺序临时让位（FPS 留到最后），让位不写入配置，空白恢复后自动长回来。只剩一个字段时该项不可关闭。" />
+                                <TextBlock Text="显示字段" Style="{StaticResource SectionTitle}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <RadioButton x:Name="FieldViewFloat" Style="{StaticResource Segment}"
+                                                 GroupName="fieldview" Content="悬浮窗" Tag="float"
+                                                 Checked="FieldView_Changed" />
+                                    <RadioButton x:Name="FieldViewTray" Style="{StaticResource Segment}"
+                                                 GroupName="fieldview" Content="任务栏条" Tag="tray"
+                                                 Checked="FieldView_Changed" />
+                                </StackPanel>
+
+                                <WrapPanel x:Name="FieldBar" Margin="0,10,0,0" />
+
+                                <!-- 文案随视图切：任务栏有"让位"这套额外规则，悬浮窗没有 -->
+                                <TextBlock x:Name="FieldHint" Style="{StaticResource SectionHint}" />
                             </StackPanel>
                         </Border>
 
@@ -557,16 +626,6 @@
 
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="每个字段都能单独选色，没选过的字段保持「自动」（悬浮窗跟随玻璃主题、任务栏跟随「文字取色」）。主值用所选色、次值用同色降浓度；超阈值的格子默认仍变黄 / 红，取消勾选才是整条一个颜色。两个视图各存一套。" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 悬浮窗字段（M4.14） -->
-                        <Border Style="{StaticResource BlockCard}">
-                            <StackPanel>
-                                <TextBlock Text="悬浮窗字段" Style="{StaticResource SectionTitle}" />
-                                <UniformGrid x:Name="FloatFieldGrid" Columns="3" Margin="0,12,0,0" />
-                                <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="关闭的字段不占位：横向条会变窄，竖向条会变矮。只剩一个字段时该项不可关闭。与任务栏条各自独立保存。" />
                             </StackPanel>
                         </Border>
 
