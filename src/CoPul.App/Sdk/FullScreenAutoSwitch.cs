@@ -70,7 +70,14 @@ internal sealed class FullScreenAutoSwitch
     public void NoteUserChoseFloat() => FloatOrigin = Origin.Manual;
 
     /// <summary>用户切到任务栏或大窗口时调：来源标记归位（8.6 最后一行）。</summary>
-    public void NoteUserLeftFloat() => FloatOrigin = Origin.Manual;
+    public void NoteUserLeftFloat()
+    {
+        FloatOrigin = Origin.Manual;
+        _fullHwnd = IntPtr.Zero;    // 用户自己离开了悬浮态，全屏会话一并作废
+    }
+
+    /// <summary>当前记着的"全屏窗口"句柄（探针 / 诊断用）。</summary>
+    public IntPtr FullHwnd => _fullHwnd;
 
     /// <summary>总开关（F-11 / 配置项）。关掉后计时器照跑但动作一律不发，便于现场复现问题。</summary>
     public bool Enabled { get; set; } = true;
@@ -92,6 +99,31 @@ internal sealed class FullScreenAutoSwitch
     private long _fullSince;      // 首次观察到"全屏"的时刻（0 = 当前不是全屏）
     private long _nonFullSince;   // 首次观察到"非全屏"的时刻（0 = 当前是全屏）
     private bool _isFull;         // 防抖后的稳态结论
+
+    /// <summary>
+    /// 触发这次全屏的那个窗口句柄（M4.22）。
+    ///
+    /// <para>
+    /// 为什么要记它：判定主体是前台窗口，而用户点一下悬浮窗就会把前台变成 CoPul 自己
+    /// —— 那一刻"前台是谁"不再携带任何关于游戏的信息。记住句柄，才能在"前台是自己"
+    /// 时改问一句"那个窗口还在不在全屏"。见 <see cref="Interop.FullScreenDetector.Probe(IntPtr)"/>。
+    /// </para>
+    /// </summary>
+    private IntPtr _fullHwnd;
+
+    /// <summary>
+    /// 替补主体只在 <c>Float(auto)</c> 下给。别的视图里"前台是自己"完全正常
+    /// （用户正在用 CoPul 自己的窗口），拿一个旧句柄去判会把这种情形误判成全屏。
+    /// </summary>
+    private IntPtr CandidateSubject =>
+        UseFullHwndCandidate && CurrentView == View.Float && FloatOrigin == Origin.Auto
+            ? _fullHwnd
+            : IntPtr.Zero;
+
+    /// <summary>
+    /// 是否启用替补主体。默认开；关掉就是 M4.22 之前的旧行为，A/B 对照用（<c>--no-fs-candidate</c>）。
+    /// </summary>
+    public bool UseFullHwndCandidate { get; set; } = true;
 
     /// <summary>最近一次迁移（诊断串），探针把它打进 sidecar。</summary>
     public string LastTransition { get; private set; } = "(none)";
@@ -180,7 +212,12 @@ internal sealed class FullScreenAutoSwitch
     }
 
     /// <summary>跑一轮判定。定时器每 500ms 调一次；探针也可以手动连调若干次。</summary>
-    public void Poll() => Poll(Interop.FullScreenDetector.Probe());
+    public void Poll()
+    {
+        // 替补主体只在"自动悬浮态"下给出去：那正是"用户点了悬浮窗 → 前台变自己"的场景，
+        // 而别的视图下给了只会把"用户正在用 CoPul"误判成全屏。
+        Poll(Interop.FullScreenDetector.Probe(CandidateSubject));
+    }
 
     /// <summary>
     /// 时间源。默认 <c>Environment.TickCount64</c>（单调、不受改系统时间影响）。
@@ -257,7 +294,8 @@ internal sealed class FullScreenAutoSwitch
 
         // CurrentView == Taskbar：按 8.3 进入 Float(auto)
         FloatOrigin = Origin.Auto;
-        LastTransition = $"Taskbar→Float(auto) monitor={info.MonitorDevice}";
+        _fullHwnd = info.Hwnd;      // 记下"谁把全屏顶起来的"，供前台变自己时改判（M4.22）
+        LastTransition = $"Taskbar→Float(auto) hwnd=0x{info.Hwnd.ToInt64():X} monitor={info.MonitorDevice}";
         Log($"enter-full: {LastTransition} reason={info.Reason}");
         EnterAutoFloat?.Invoke(info.MonitorDevice);
         CurrentView = View.Float;
@@ -293,6 +331,7 @@ internal sealed class FullScreenAutoSwitch
         Log($"exit-full: {LastTransition} reason={info.Reason}");
         ExitToTaskbar?.Invoke();
         FloatOrigin = Origin.Manual;
+        _fullHwnd = IntPtr.Zero;    // 全屏会话结束，替补主体作废
         CurrentView = View.Taskbar;
         SyncTimer();
     }

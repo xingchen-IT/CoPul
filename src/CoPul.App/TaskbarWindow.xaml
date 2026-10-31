@@ -1,3 +1,8 @@
+<!--
+    ShowActivated=False（M4.22）：任务栏条是覆盖层，Show() 不该把前台从用户正在用的
+    应用手里抢走 —— 启动时抢一次还不算明显，"退出全屏回落任务栏"那一下抢前台
+    会把刚退出来的游戏/播放器顶掉。要前台时调用方显式 Activate()。
+-->
 <Window x:Class="CoPul.App.TaskbarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -5,6 +10,7 @@
         Height="48" Width="404"
         WindowStyle="None" ResizeMode="NoResize"
         ShowInTaskbar="False" AllowsTransparency="False"
+        ShowActivated="False"
         Background="Transparent" WindowStartupLocation="Manual"
         FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"

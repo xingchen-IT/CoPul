@@ -5,6 +5,7 @@
 #   python fake-fullscreen.py            # 全屏，等 25 秒自动关
 #   python fake-fullscreen.py --hold 60  # 全屏 60 秒
 #   python fake-fullscreen.py --windowed # 不铺满（对照组，不该被判成全屏）
+#   python fake-fullscreen.py --shrink 8 # 第 8 秒缩成 800x600（模拟"退出全屏但窗口还在"）
 #
 # 关键点：必须真的铺满整屏、真的无 WS_CAPTION，否则测不出检测逻辑。
 
@@ -44,10 +45,13 @@ class WNDCLASS(ctypes.Structure):
 def main():
     hold = 25
     windowed = False
+    shrink_at = -1
     args = sys.argv[1:]
     for i, a in enumerate(args):
         if a == '--hold' and i + 1 < len(args):
             hold = int(args[i + 1])
+        if a == '--shrink' and i + 1 < len(args):
+            shrink_at = int(args[i + 1])
         if a == '--windowed':
             windowed = True
 
@@ -83,6 +87,19 @@ def main():
     user32.DefWindowProcW.restype = ctypes.c_void_p
     user32.DefWindowProcW.argtypes = [ctypes.c_void_p, wt.UINT, wt.WPARAM, wt.LPARAM]
 
+    user32.ShowWindow.restype = wt.BOOL
+    user32.ShowWindow.argtypes = [wt.HWND, ctypes.c_int]
+    # 必须显式声明 argtypes：不声明时 ctypes 把 hwnd 当 32 位 int 传，
+    # 缩窗那一次调用会静默失败（返回 0 但脚本没查），表现为"明明缩了，检测器还判全屏"。
+    user32.SetWindowPos.restype = wt.BOOL
+    user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_int, wt.UINT]
+    user32.SetForegroundWindow.restype = wt.BOOL
+    user32.SetForegroundWindow.argtypes = [wt.HWND]
+    user32.GetForegroundWindow.restype = wt.HWND
+    user32.DestroyWindow.restype = wt.BOOL
+    user32.DestroyWindow.argtypes = [wt.HWND]
+
     wc = WNDCLASS()
     wc.lpszClassName = 'CoPulFakeFullscreen'
     wc.hInstance = kernel32.GetModuleHandleW(None)
@@ -117,7 +134,7 @@ def main():
         return 1
 
     user32.ShowWindow(hwnd, SW_SHOW)
-    user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, 0)
+    user32.SetWindowPos(hwnd, wt.HWND(HWND_TOPMOST), x, y, w, h, 0)
 
     # ---- 抢前台的三种手段，按可靠性排序 ----
     #
@@ -146,18 +163,35 @@ def main():
 
     user32.UpdateWindow(hwnd)
 
+    # 前台到底抢到没有必须说出来：抢不到的话检测器看到的是"别人"，
+    # 会正确判非全屏，而你会以为是全屏检测坏了（M4.22 第一轮就白跑了一轮）。
+    got_fg = user32.GetForegroundWindow()
     rect = wt.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     print('fake fullscreen window: hwnd=0x%X rect=(%d,%d)-(%d,%d) screen=%dx%d mode=%s'
           % (hwnd, rect.left, rect.top, rect.right, rect.bottom, sw, sh,
              'windowed' if windowed else 'FULLSCREEN'))
+    print('foreground: 0x%X  (own=%s, 抢到=%s)'
+          % (got_fg, got_fg == hwnd, 'YES' if got_fg == hwnd else 'NO'))
     print('holding for %d seconds...' % hold)
     sys.stdout.flush()
 
     # 抽消息，让窗口响应系统（否则可能被判为无响应/不渲染）
     msg = wt.MSG()
     start = time.time()
+    shrunk = False
     while time.time() - start < hold:
+        # "退出全屏但窗口还在"：缩成 800x600。这一路比"窗口直接销毁"更常见
+        # （Alt+Enter 切窗口化、游戏自己退出全屏），替补主体必须跟着判成非全屏。
+        if shrink_at >= 0 and not shrunk and time.time() - start >= shrink_at:
+            shrunk = True
+            sx, sy = (sw - 800) // 2, (sh - 600) // 2
+            ok = user32.SetWindowPos(hwnd, wt.HWND(HWND_TOPMOST), sx, sy, 800, 600, 0)
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            print('shrunk at %.1fs: ret=%d rect=(%d,%d)-(%d,%d)'
+                  % (time.time() - start, ok, rect.left, rect.top, rect.right, rect.bottom))
+            sys.stdout.flush()
+
         while user32.PeekMessageW(ctypes.byref(msg), hwnd, 0, 0, 1):
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))

@@ -235,7 +235,13 @@ public partial class App : Application
         /// <summary>
         /// 切换视图。userInitiated=false 表示这是全屏自动切换自己发起的（8.2 要区分来源）。
         /// </summary>
-        void ShowView(FullScreenAutoSwitch.View target, string reason, bool userInitiated = true)
+        /// <param name="activate">
+        /// 显不显示后立刻抢前台。全屏自动切换传 false（M4.22）：那时前台是游戏，
+        /// 一个覆盖层把自己顶成前台，等于把键盘鼠标从游戏里抢走（有些游戏还会因此暂停/掉帧）。
+        /// 窗口本身是 topmost，不激活也照样在最上面。
+        /// </param>
+        void ShowView(FullScreenAutoSwitch.View target, string reason, bool userInitiated = true,
+                      bool activate = true)
         {
             FullScreenAutoSwitch.View previous = view;
             view = target;
@@ -249,13 +255,16 @@ public partial class App : Application
             {
                 case FullScreenAutoSwitch.View.Main:
                     window.Show();
-                    window.Activate();
+                    if (activate) window.Activate();
                     break;
                 case FullScreenAutoSwitch.View.Float:
                     FloatWindow f = EnsureFloat();
                     if (e.Args.Contains("--no-relayout-on-show")) f.RelayoutOnShow = false;
+
+                    // 悬浮窗在 XAML 里就是 ShowActivated="False"：Show() 本身不抢前台，
+                    // 要前台时显式 Activate()。这样"全屏自动切"能做到完全不打扰游戏。
                     f.Show();
-                    f.Activate();
+                    if (activate) f.Activate();
                     break;
                 case FullScreenAutoSwitch.View.Taskbar:
                     EnsureTaskbar().Show();
@@ -802,6 +811,10 @@ public partial class App : Application
             }
 
             f.Show();
+
+            // XAML 里 ShowActivated=False（M4.22），Show() 不抢前台；
+            // 这条是用户自己选了"以悬浮窗启动"，按手动态补一次 Activate。
+            if (!e.Args.Contains("--no-float-activate")) f.Activate();
             view = FullScreenAutoSwitch.View.Float;
         }
         else if (e.Args.Contains("--tray"))
@@ -856,16 +869,21 @@ public partial class App : Application
             auto = new FullScreenAutoSwitch { CurrentView = view };
             auto.ApplyConfig(ConfigStore.Current.FullScreenAutoSwitch && !e.Args.Contains("--no-fullscreen-switch"));
 
+            // --no-fs-candidate：关掉"前台是自己时改判上次的全屏窗口"（M4.22 的 A/B 对照）。
+            // 关掉就是修之前的旧行为 —— 点一下悬浮窗就会被判成非全屏并回落任务栏。
+            if (e.Args.Contains("--no-fs-candidate")) auto.UseFullHwndCandidate = false;
+
             // 两个自动动作都必须走 ShowView，不能自己 Show/Hide：
             // 绕过编排的话，另一条视图就不会被 Hide（A-06 违反，两窗口叠着），
             // 而且状态机的 CurrentView 会与实际不符，下一次判定就跟着错。
             auto.EnterAutoFloat = monitor =>
             {
-                // 顺序关键：先把悬浮窗预摆到目标屏，再 Show。
-                // 反过来的话首帧会出现在屏幕左上角，600ms 后才跳到左下角
-                // —— 全屏游戏上那一闪非常显眼（实测就是 (38,38) → (24,1453)）。
-                EnsureFloat().PlaceOnMonitor(monitor);
-                ShowView(FullScreenAutoSwitch.View.Float, "fullscreen-enter", userInitiated: false);
+                // M4.22：不再 PlaceOnMonitor —— 用户要的是"直接切到真正的悬浮窗"，
+                // 也就是与手动打开悬浮窗完全同一个窗口、同一个位置（8.6 那条"摆到全屏
+                // 所在显示器左下角"会把它挪走，与手动态不一致，按用户选择关掉）。
+                // 副屏规则的钩子保留在 FloatWindow.PlaceOnMonitor，将来要开只改这一行。
+                ShowView(FullScreenAutoSwitch.View.Float, "fullscreen-enter",
+                         userInitiated: false, activate: false);
             };
             auto.ExitToTaskbar = () =>
                 ShowView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-exit", userInitiated: false);
@@ -990,6 +1008,25 @@ public partial class App : Application
                 auto,
                 () => DescribeViewState(window, floating, taskbar),
                 fsSwitchPath, t => t.Start(), Shutdown);
+            return;
+        }
+
+        // 自测：--fs-live-probe <txt 路径> [--fs-live-focus <ms>] [--fs-live-end <ms>]
+        //
+        // M4.22 的真机验收：不伪造任何输入，靠**真实**的前台窗口与真实探测跑一段，
+        // 中途可选 Activate 悬浮窗模拟"用户点它一下"（旧行为会在那之后 500ms 回落任务栏）。
+        // 配合外部脚本造的无边框铺满屏窗口当"游戏"使用（tools/fake_fullscreen.py）。
+        if (ArgValue(e.Args, "--fs-live-probe") is { } fsLive && auto is not null)
+        {
+            int focusAt = int.TryParse(ArgValue(e.Args, "--fs-live-focus"), out int fm) && fm >= 0 ? fm : -1;
+            int endAt = int.TryParse(ArgValue(e.Args, "--fs-live-end"), out int em) && em > 0 ? em : 20000;
+
+            Probes.FullScreenLiveProbe.Run(
+                auto,
+                () => DescribeViewState(window, floating, taskbar),
+                fsLive, focusAt, endAt,
+                () => { if (floating is { IsVisible: true }) floating.Activate(); },
+                t => t.Start(), Shutdown);
             return;
         }
 

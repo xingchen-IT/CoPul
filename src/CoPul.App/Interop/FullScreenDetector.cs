@@ -130,6 +130,21 @@ internal static class FullScreenDetector
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr hwnd);
+
+    /// <summary>当前前台窗口（诊断 / 探针用，判定本身不用它）。</summary>
+    public static IntPtr Foreground => GetForegroundWindow();
+
     /// <summary>命中否决类名时返回 true，并给出原因。</summary>
     private static bool IsVetoClass(string className, out string reason)
     {
@@ -156,39 +171,89 @@ internal static class FullScreenDetector
     private static uint _selfPid;
 
     /// <summary>
-    /// 单次探测，约 5 次 Win32 调用（<c>SHQueryUserNotificationState</c> 最重）。
+    /// 单次探测（判定主体 = 前台窗口），约 5 次 Win32 调用（<c>SHQueryUserNotificationState</c> 最重）。
     /// 由上层 500ms 轮询驱动（8.4：判定频率 500ms，成本可忽略）。
     /// </summary>
-    public static FullScreenInfo Probe()
+    public static FullScreenInfo Probe() => Probe(IntPtr.Zero);
+
+    /// <summary>
+    /// 单次探测，可带一个**替补判定主体**。
+    ///
+    /// <para>
+    /// <b>为什么需要替补（M4.22 的真 bug）。</b>判定的主体一直是 <c>GetForegroundWindow()</c>，
+    /// 隐含前提是"前台就是用户正在用的那个应用"。但全屏自动切到悬浮窗之后，用户点一下
+    /// 悬浮窗，前台立刻变成 CoPul 自己的窗口 —— 于是走 <c>veto:self</c> 判成"不是全屏"，
+    /// 500ms 后状态机就把视图回落任务栏；用户再点回游戏，800ms 后又切回悬浮窗。
+    /// 表现就是"点一下回条、再点一下回悬浮窗"的来回抖。
+    /// </para>
+    ///
+    /// <para>
+    /// 根因不是 <c>veto:self</c> 这条规则错了（自己的窗口确实不能当全屏证据），
+    /// 而是**主体选错了**：这时候该回答的问题是"刚才那个全屏窗口还在不在全屏"，
+    /// 而不是"前台是不是全屏"。所以由调用方把上次判成全屏的窗口句柄传进来，
+    /// 只有"前台是自己"这一条路径上会改判它。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>替补只在那一刻生效，而且必须是活窗口</b>：句柄销毁（游戏关了）、最小化、
+    /// 或隐藏时一律退回前台判定，否则会"游戏都退了还赖在悬浮窗"。
+    /// </para>
+    /// </summary>
+    /// <param name="candidate">替补主体；<see cref="IntPtr.Zero"/> = 不用替补（与普通探测完全一致）。</param>
+    public static FullScreenInfo Probe(IntPtr candidate)
     {
         IntPtr fg = GetForegroundWindow();
-
         int quns = QueryNotificationState();
 
         if (fg == IntPtr.Zero)
             return FullScreenInfo.None($"no-foreground quns={quns}");
 
+        if (IsSelf(fg) && IsUsableSubject(candidate, fg))
+            return Evaluate(candidate, quns, "self-focus→prev ");
+
+        return Evaluate(fg, quns, string.Empty);
+    }
+
+    /// <summary>句柄是不是本进程的窗口（自己的窗口不能当全屏证据）。</summary>
+    private static bool IsSelf(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid == SelfPid;
+    }
+
+    /// <summary>替补主体能不能用：活着、可见、没最小化，且不是前台自己。</summary>
+    private static bool IsUsableSubject(IntPtr candidate, IntPtr foreground)
+    {
+        if (candidate == IntPtr.Zero || candidate == foreground) return false;
+        if (!IsWindow(candidate) || IsIconic(candidate)) return false;
+        return IsWindowVisible(candidate);
+    }
+
+    /// <summary>对指定窗口做完整判定（主判据 + 辅判据 + 否决项）。</summary>
+    private static FullScreenInfo Evaluate(IntPtr hwnd, int quns, string reasonPrefix)
+    {
         var cls = new StringBuilder(256);
-        GetClassNameW(fg, cls, cls.Capacity);
+        GetClassNameW(hwnd, cls, cls.Capacity);
         var title = new StringBuilder(256);
-        GetWindowText(fg, title, title.Capacity);
+        GetWindowText(hwnd, title, title.Capacity);
 
         uint pid = 0;
-        GetWindowThreadProcessId(fg, out pid);
+        GetWindowThreadProcessId(hwnd, out pid);
 
         bool rectMatches = false;
         bool captionless = false;
         string device = string.Empty;
 
-        if (GetWindowRect(fg, out Win32Window.RECT rect) &&
-            Monitors.TryMonitorBoundsForWindow(fg, out Win32Window.RECT monitor, out string monDevice))
+        if (GetWindowRect(hwnd, out Win32Window.RECT rect) &&
+            Monitors.TryMonitorBoundsForWindow(hwnd, out Win32Window.RECT monitor, out string monDevice))
         {
             device = monDevice;
             rectMatches = NearlyEqual(rect.Left, monitor.Left) && NearlyEqual(rect.Top, monitor.Top)
                           && NearlyEqual(rect.Right, monitor.Right) && NearlyEqual(rect.Bottom, monitor.Bottom);
         }
 
-        captionless = ((GetWindowLongPtr(fg, GWL_STYLE) is var style
+        captionless = ((GetWindowLongPtr(hwnd, GWL_STYLE) is var style
                         ? (long)style
                         : 0) & WS_CAPTION) == 0;
 
@@ -196,15 +261,14 @@ internal static class FullScreenDetector
 
         // ---- 否决项最先判：桌面 / 任务栏 / 开始菜单无论 QUNS 说什么都不算全屏 ----
         if (IsVetoClass(className, out string vetoReason))
-            return new FullScreenInfo(false, vetoReason, quns, fg, className, title.ToString(),
-                                      pid, rectMatches, captionless, device);
+            return NotFull(reasonPrefix + vetoReason, quns, hwnd, className, title.ToString(),
+                           pid, rectMatches, captionless, device);
 
         // 前台是我们自己的窗口（条 / 悬浮窗 / 大窗口）→ 不是全屏，避免"自己把自己判成全屏"
         if (pid == SelfPid)
-            return new FullScreenInfo(false, "veto:self", quns, fg, className, title.ToString(),
-                                      pid, rectMatches, captionless, device);
+            return NotFull(reasonPrefix + "veto:self", quns, hwnd, className, title.ToString(),
+                           pid, rectMatches, captionless, device);
 
-        bool qunsFull = quns is QUNS_BUSY or QUNS_RUNNING_D3D_FULL_SCREEN;
         bool auxFull = rectMatches && captionless;
 
         // 静默时段 / 应用模式 / 演示模式：单靠 QUNS 会误判，必须再要一条"矩形铺满且无标题栏"的旁证。
@@ -222,9 +286,16 @@ internal static class FullScreenDetector
             (auxFull ? " ⇒ aux-full" : string.Empty) +
             (accordOnly && isFull ? " (quns-weak+aux)" : string.Empty);
         if (reason.Length == 0 || !isFull) reason = "not-full: " + reason.Trim(' ', '+', '-');
-        return new FullScreenInfo(isFull, reason.Trim(), quns, fg, className, title.ToString(),
-                                  pid, rectMatches, captionless, device);
+
+        return new FullScreenInfo(isFull, (reasonPrefix + reason).Trim(), quns, hwnd, className,
+                                  title.ToString(), pid, rectMatches, captionless, device);
     }
+
+    /// <summary>构造一条"不是全屏"的证据（否决项 / 自己人）。</summary>
+    private static FullScreenInfo NotFull(string reason, int quns, IntPtr hwnd, string className,
+                                          string title, uint pid, bool rectMatches, bool captionless,
+                                          string device) =>
+        new(false, reason, quns, hwnd, className, title, pid, rectMatches, captionless, device);
 
     /// <summary>读 QUNS。失败返回 -1（不抛异常，判定逻辑按"无主判据"继续走辅判据）。</summary>
     public static int QueryNotificationState()
