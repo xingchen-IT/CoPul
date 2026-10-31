@@ -191,15 +191,46 @@ public partial class App : Application
         bool hidden = e.Args.Contains("--hidden");
 
         // =====================================================================
-        // 三视图互斥编排（A-06 / 8.1）：任意时刻只有一个视图可见。
+        // 三视图编排（8.1；M4.26 起**可同时显示**，原 A-06「任意时刻只有一个可见」作废）。
         //
-        // 为什么把 Show/Hide 收到这一个函数里（M4 重构）：全屏自动切换要自己切视图，
-        // 而用户点标题栏 ▭ / ▤、双击条、右键菜单也在切视图。两边各写一套 Hide/Show，
-        // 状态机的 CurrentView 立刻与事实不符 —— 表现就是"退出全屏后没回落"或
-        // "回落了两次"。现在所有视图切换都过 ShowView，状态机在同一个地方同步。
+        // 为什么把 Show/Hide 收到这几个函数里（M4 重构）：全屏自动切换要自己动视图，
+        // 而用户点标题栏 ▭ / ▤、双击条、托盘菜单也在动视图。两边各写一套 Hide/Show，
+        // 状态机看到的事实立刻不对 —— 表现就是"退出全屏后没回落"或"回落了两次"。
+        // 现在所有显示/隐藏都过 ShowView / HideView，shownMain/Float/Tray 是唯一真相。
         // =====================================================================
         FullScreenAutoSwitch? auto = null;
         FullScreenAutoSwitch.View view = FullScreenAutoSwitch.View.Main;
+
+        // ---- 三视图可见状态（M4.26）----
+        // 8.1 原定"任意时刻只有一个在显示"，按用户要求改成**可同时显示**：
+        // 大窗口看明细、悬浮窗压桌面、任务栏条贴任务栏，三者互不干涉。
+        // 这三个 bool 是唯一真相（不再靠 view 推断），启动分支各自置位。
+        bool shownMain = false;
+        bool shownFloat = false;
+        bool shownTray = false;
+
+        bool IsShown(FullScreenAutoSwitch.View v) => v switch
+        {
+            FullScreenAutoSwitch.View.Main => shownMain,
+            FullScreenAutoSwitch.View.Float => shownFloat,
+            _ => shownTray,
+        };
+
+        string ComboText() => $"main={shownMain} float={shownFloat} tray={shownTray}";
+
+        // M4.26：三视图可叠加之后，"关大窗口"不再等于退出程序 ——
+        // 只要还有悬浮窗/任务栏条在显示，就只把大窗口收起来（退出统一走托盘「退出」）。
+        // 一个都没显示时保持老行为：关窗即退出（OnMainWindowClose）。
+        // 注：Application.Shutdown() 期间 WPF 会忽略 Cancel，所以托盘退出/探针收尾不受影响。
+        window.Closing += (_, ce) =>
+        {
+            if (!shownFloat && !shownTray) return;
+
+            ce.Cancel = true;
+            if (window.IsVisible) window.Hide();
+            shownMain = false;
+            Interop.Trace.Log("view", $"大窗口被关闭 → 只收起（其它视图还在）组合={ComboText()}");
+        };
 
         // 在这里先声明、稍后再建：热键的按下回调要读 view / 走 ShowView，
         // 而设置页（更早定义）又要拿着它改键。C# 不允许 lambda 引用后面才声明的局部变量，
@@ -230,19 +261,23 @@ public partial class App : Application
             // explorer 重启时原窗口可能已被系统销毁，只能重建（7.7）
             taskbar.RecreateRequested += (_, _) =>
             {
-                bool wasShowing = view == FullScreenAutoSwitch.View.Taskbar;
+                // 按"条本来是不是开着"恢复，不能用 view 推断：三视图叠加后 view 只表示最近操作过谁。
+                bool wasShowing = shownTray;
                 try { taskbar?.Close(); } catch { /* 窗口已废，Close 可能抛 */ }
                 taskbar = null;
+                shownTray = false;
 
-                // 重建后要恢复"当前视图"：全屏自动切换场景下条是被动重建的，
-                // 这时若直接 Show 会无视状态机（条可能正该藏在悬浮窗后面）。
+                // 重建后要恢复原状：全屏自动切换场景下条是被动重建的，
+                // 这时若无条件 Show 会无视"全屏期间条应该收着"。
                 if (wasShowing) EnsureTaskbar().Show();
+                shownTray = wasShowing;
             };
             return taskbar;
         }
 
         /// <summary>
-        /// 切换视图。userInitiated=false 表示这是全屏自动切换自己发起的（8.2 要区分来源）。
+        /// 显示某个视图。**不动其它视图**（M4.26：三视图可同时显示，原 A-06「不得同时可见」作废）。
+        /// userInitiated=false 表示这是全屏自动切换自己发起的（8.2 要区分来源）。
         /// </summary>
         /// <param name="activate">
         /// 显不显示后立刻抢前台。全屏自动切换传 false（M4.22）：那时前台是游戏，
@@ -255,15 +290,17 @@ public partial class App : Application
             FullScreenAutoSwitch.View previous = view;
             view = target;
 
-            // 先藏掉别的视图（A-06：不得同时可见）
-            if (target != FullScreenAutoSwitch.View.Main && window.IsVisible) window.Hide();
-            if (target != FullScreenAutoSwitch.View.Float) floating?.Hide();
-            if (target != FullScreenAutoSwitch.View.Taskbar) taskbar?.Hide();
-
             switch (target)
             {
                 case FullScreenAutoSwitch.View.Main:
+                    // 大窗口的 XAML 是 ShowActivated 默认值（true），Show() 自己就会抢前台。
+                    // 要"显示但不抢"时（全屏游戏里恢复视图）必须临时把它关掉 ——
+                    // WPF 在 Show 那一刻读这个属性，之后再改回去不影响已经显示出来的窗口。
+                    bool wasShowActivated = window.ShowActivated;
+                    if (!activate) window.ShowActivated = false;
                     window.Show();
+                    window.ShowActivated = wasShowActivated;
+                    shownMain = true;
                     if (activate) window.Activate();
                     break;
                 case FullScreenAutoSwitch.View.Float:
@@ -273,29 +310,101 @@ public partial class App : Application
                     // 悬浮窗在 XAML 里就是 ShowActivated="False"：Show() 本身不抢前台，
                     // 要前台时显式 Activate()。这样"全屏自动切"能做到完全不打扰游戏。
                     f.Show();
+                    shownFloat = true;
                     if (activate) f.Activate();
                     break;
                 case FullScreenAutoSwitch.View.Taskbar:
                     EnsureTaskbar().Show();
+                    shownTray = true;
                     break;
             }
 
-            // 状态机同步 + 来源标记（8.2）：用户主动切到悬浮窗 = manual，切走 = 归位
+            // 状态机同步：CurrentView 现在只表示"最近操作的是谁"，可见性由 IsShown 回调回答。
             if (auto is not null)
             {
                 auto.CurrentView = view;
-                if (userInitiated)
-                {
-                    if (target == FullScreenAutoSwitch.View.Float) auto.NoteUserChoseFloat();
-                    else auto.NoteUserLeftFloat();
-                }
 
-                // 视图变了，探测的需求也跟着变（大窗口 / manual 悬浮窗都完全不需要探测）。
-                // 少了这一句，从任务栏切到大窗口后定时器还在 2 Hz 空转（0.11% 单核）。
+                // 用户主动把悬浮窗显示出来 = manual（退出全屏不回落）。
+                // 注意"切到别的视图"**不再**等于离开悬浮态 —— 三视图可以同时开着。
+                if (userInitiated && target == FullScreenAutoSwitch.View.Float) auto.NoteUserChoseFloat();
+
+                // 可见组合变了，探测的需求也跟着变（只有条 / auto 浮窗才需要探测）。
                 auto.SyncTimer();
             }
 
-            Interop.Trace.Log("view", $"{previous}→{view} by={reason} user={userInitiated}");
+            Interop.Trace.Log("view", $"show {target} ← {previous} by={reason} user={userInitiated} 组合={ComboText()}");
+        }
+
+        /// <summary>隐藏某个视图。用户亲手藏悬浮窗时顺带把来源归位（8.2）。</summary>
+        void HideView(FullScreenAutoSwitch.View target, string reason, bool userInitiated = true)
+        {
+            switch (target)
+            {
+                case FullScreenAutoSwitch.View.Main:
+                    if (window.IsVisible) window.Hide();
+                    shownMain = false;
+                    break;
+                case FullScreenAutoSwitch.View.Float:
+                    floating?.Hide();
+                    shownFloat = false;
+                    break;
+                case FullScreenAutoSwitch.View.Taskbar:
+                    taskbar?.Hide();
+                    shownTray = false;
+                    break;
+            }
+
+            if (auto is not null)
+            {
+                // 用户自己关掉悬浮窗 = 离开悬浮态：来源归位、全屏候选主体作废。
+                // 全屏自动切换收回(auto)浮窗时传 userInitiated=false，不碰来源（状态机自己会归位）。
+                if (userInitiated && target == FullScreenAutoSwitch.View.Float) auto.NoteUserLeftFloat();
+                auto.SyncTimer();
+            }
+
+            Interop.Trace.Log("view", $"hide {target} by={reason} user={userInitiated} 组合={ComboText()}");
+        }
+
+        void ToggleView(FullScreenAutoSwitch.View target, string reason)
+        {
+            if (IsShown(target)) HideView(target, reason);
+            else ShowView(target, reason);
+        }
+
+        // ---- 一键全隐藏 / 恢复（托盘左键与全局热键，M4.26）----
+        // 三视图可叠加后，"切换当前模式"没有意义了；这两个动作要的是
+        // 「一眼看屏 / 一眼收回」，所以记下藏之前的组合，恢复时原样摆回来。
+        bool comboMain = true, comboFloat = false, comboTray = false;
+
+        void HideAllViews(string reason)
+        {
+            comboMain = shownMain;
+            comboFloat = shownFloat;
+            comboTray = shownTray;
+
+            // 顺序：先收覆盖层再收大窗口。反过来会有一瞬间只剩覆盖层压着空桌面。
+            if (shownFloat) HideView(FullScreenAutoSwitch.View.Float, reason);
+            if (shownTray) HideView(FullScreenAutoSwitch.View.Taskbar, reason);
+            if (shownMain) HideView(FullScreenAutoSwitch.View.Main, reason);
+        }
+
+        void RestoreViews(string reason)
+        {
+            if (!comboMain && !comboFloat && !comboTray) comboMain = true;   // 从没显示过 → 至少给大窗口
+
+            // 全屏游戏里恢复时**不要**把大窗口顶到前台：热键/托盘多半是"我想看一眼数据"，
+            // 把键鼠从游戏里抽走是要命的行为（M4.22 同一条教训，只是这次主角从覆盖层换成了大窗口）。
+            bool activateMain = auto is null || !auto.IsFullScreenSteady;
+
+            if (comboMain) ShowView(FullScreenAutoSwitch.View.Main, reason, activate: activateMain);
+            if (comboFloat) ShowView(FullScreenAutoSwitch.View.Float, reason);
+            if (comboTray) ShowView(FullScreenAutoSwitch.View.Taskbar, reason);
+        }
+
+        void ToggleAllViews(string reason)
+        {
+            if (shownMain || shownFloat || shownTray) HideAllViews(reason);
+            else RestoreViews(reason);
         }
 
         // 大窗口标题栏的「切到悬浮窗」按钮走这条回调：MainWindow 不认识 FloatWindow，
@@ -415,21 +524,12 @@ public partial class App : Application
             // 表现只是"托盘里没有图标"，和"图标被 Win11 收进溢出区"肉眼无法区分
             Interop.Trace.Log("tray", $"added={icon.IsAdded} ico={iconPath} exists={File.Exists(iconPath)}");
 
-            // 左键 = 显示/隐藏当前模式的窗口（G-01）。「当前模式」读的是状态机里的 view，
-            // 不另存一份，否则全屏自动切换改了视图之后这里会跟事实脱节。
+            // 左键 = 全部隐藏 / 恢复上一次的组合（G-01，M4.26 改）。
+            // 三视图可以叠加之后"切换当前模式"没有意义了；这里要的是"一眼清屏、一眼收回"，
+            // 所以记住隐藏之前的组合，恢复时原样摆回来（全部隐藏时提示里写「已隐藏」）。
             icon.LeftClick = () =>
             {
-                Window? current = view switch
-                {
-                    FullScreenAutoSwitch.View.Main => window,
-                    FullScreenAutoSwitch.View.Float => floating,
-                    FullScreenAutoSwitch.View.Taskbar => taskbar,
-                    _ => null,
-                };
-
-                if (current is { IsVisible: true }) current.Hide();
-                else ShowView(view, "tray-toggle");
-
+                ToggleAllViews("tray-toggle");
                 UpdateTrayTooltip(icon);
             };
 
@@ -439,9 +539,12 @@ public partial class App : Application
             {
                 var entries = new List<TrayMenuEntry>
                 {
-                    TrayMenuEntry.Item("显示大窗口", "view:main", isChecked: view == FullScreenAutoSwitch.View.Main),
-                    TrayMenuEntry.Item("显示悬浮窗", "view:float", isChecked: view == FullScreenAutoSwitch.View.Float),
-                    TrayMenuEntry.Item("显示任务栏条", "view:taskbar", isChecked: view == FullScreenAutoSwitch.View.Taskbar),
+                    // M4.26：三项从"三选一"变成**独立开关**（打勾 = 正在显示，再点一次收起）。
+                    // 命令串仍是 view:xxx —— 语义变成 toggle，已有探针脚本不用改。
+                    TrayMenuEntry.Item("大窗口", "view:main", isChecked: shownMain),
+                    TrayMenuEntry.Item("悬浮窗", "view:float", isChecked: shownFloat),
+                    TrayMenuEntry.Item("任务栏条", "view:taskbar", isChecked: shownTray),
+                    TrayMenuEntry.Item("全部隐藏/恢复", "view:toggle-all"),
                     TrayMenuEntry.Separator(),
 
                     // 7.4 / Q-03 的字段开关。放在托盘而不是只在条上右键：
@@ -522,9 +625,11 @@ public partial class App : Application
 
             switch (cmd)
             {
-                case "view:main": ShowView(FullScreenAutoSwitch.View.Main, "tray-menu"); break;
-                case "view:float": ShowView(FullScreenAutoSwitch.View.Float, "tray-menu"); break;
-                case "view:taskbar": ShowView(FullScreenAutoSwitch.View.Taskbar, "tray-menu"); break;
+                // M4.26：三条改成开关（打勾=显示中，再点收起），另加一条整组切换。
+                case "view:main": ToggleView(FullScreenAutoSwitch.View.Main, "tray-menu"); break;
+                case "view:float": ToggleView(FullScreenAutoSwitch.View.Float, "tray-menu"); break;
+                case "view:taskbar": ToggleView(FullScreenAutoSwitch.View.Taskbar, "tray-menu"); break;
+                case "view:toggle-all": ToggleAllViews("tray-menu"); break;
 
                 case "toggle:clickthrough":
                     bool through = !ConfigStore.Current.TaskbarClickThrough;
@@ -604,12 +709,12 @@ public partial class App : Application
 
         void UpdateTrayTooltip(TrayIcon icon)
         {
-            string name = view switch
-            {
-                FullScreenAutoSwitch.View.Main => "大窗口",
-                FullScreenAutoSwitch.View.Float => "悬浮窗",
-                _ => "任务栏条",
-            };
+            // M4.26：三视图可同时显示，提示里把当前开着的都列出来（"已隐藏"表示全收起了）。
+            var parts = new List<string>(3);
+            if (shownMain) parts.Add("大窗口");
+            if (shownFloat) parts.Add("悬浮窗");
+            if (shownTray) parts.Add("任务栏条");
+            string name = parts.Count == 0 ? "已隐藏" : string.Join("+", parts);
 
             // 悬停提示顺带报一下采集状态：托盘是唯一常驻可见的元素，
             // 采集降级（例如没有管理员权限读不到温度）在这里最容易被发现
@@ -834,6 +939,7 @@ public partial class App : Application
             // 这条是用户自己选了"以悬浮窗启动"，按手动态补一次 Activate。
             if (!e.Args.Contains("--no-float-activate")) f.Activate();
             view = FullScreenAutoSwitch.View.Float;
+            shownFloat = true;
         }
         else if (e.Args.Contains("--tray"))
         {
@@ -841,6 +947,7 @@ public partial class App : Application
             TaskbarWindow t = EnsureTaskbar();
             t.Show();
             view = FullScreenAutoSwitch.View.Taskbar;
+            shownTray = true;
 
             // --tray-text fps:#00E5FF,ram:#4FB3A6：任务栏**逐字段**文字色（M4.20），
             // 写法与 --float-text 完全一样，只写个色就是九格一起设。
@@ -871,7 +978,14 @@ public partial class App : Application
                 rt.Start();
             }
         }
-        else if (!hidden) window.Show();
+        else if (!hidden)
+        {
+            window.Show();
+            shownMain = true;
+        }
+
+        // 启动分支决定了初始组合，托盘提示要在这一刻就对上（否则第一次悬停会显示"已隐藏"）。
+        if (_tray is not null) UpdateTrayTooltip(_tray);
 
         // ---- 全屏自动切换（第 8 章 / F-11）----
         // 放在窗口 Show 之后：状态机要知道当前视图，而视图是上面这段决定的。
@@ -884,7 +998,7 @@ public partial class App : Application
         bool probeMode = ArgValue(e.Args, "--view-probe") is not null;
         if (!probeMode)
         {
-            auto = new FullScreenAutoSwitch { CurrentView = view };
+            auto = new FullScreenAutoSwitch { CurrentView = view, IsShown = IsShown };
 
             // --fs-hold <ms>：命令行覆盖防抖档位（取证用，不落盘）。
             int holdMs = ConfigStore.Current.FullScreenHoldMs;
@@ -901,20 +1015,30 @@ public partial class App : Application
             // 关掉就是修之前的旧行为 —— 点一下悬浮窗就会被判成非全屏并回落任务栏。
             if (e.Args.Contains("--no-fs-candidate")) auto.UseFullHwndCandidate = false;
 
-            // 两个自动动作都必须走 ShowView，不能自己 Show/Hide：
-            // 绕过编排的话，另一条视图就不会被 Hide（A-06 违反，两窗口叠着），
-            // 而且状态机的 CurrentView 会与实际不符，下一次判定就跟着错。
-            auto.EnterAutoFloat = monitor =>
+            // 两个自动动作都必须走 ShowView / HideView，不能自己 Show/Hide：
+            // 绕过编排的话 shownXxx 与事实不符，下一次判定就跟着错（M4.26 后这是唯一的真相）。
+            auto.EnterAutoFloat = _ =>
             {
-                // M4.22：不再 PlaceOnMonitor —— 用户要的是"直接切到真正的悬浮窗"，
-                // 也就是与手动打开悬浮窗完全同一个窗口、同一个位置（8.6 那条"摆到全屏
-                // 所在显示器左下角"会把它挪走，与手动态不一致，按用户选择关掉）。
-                // 副屏规则的钩子保留在 FloatWindow.PlaceOnMonitor，将来要开只改这一行。
-                ShowView(FullScreenAutoSwitch.View.Float, "fullscreen-enter",
-                         userInitiated: false, activate: false);
+                // 全屏第一件事：把任务栏条收起来。它贴着任务栏又是 topmost，
+                // 不收就直接压在游戏画面上（M4.26 前是靠"切到悬浮窗"顺带藏掉的）。
+                if (shownTray) HideView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-enter",
+                                        userInitiated: false);
+
+                // 悬浮窗本来就在显示就不重复 Show（重排会闪一下），否则才弹出来。
+                // M4.22：不再 PlaceOnMonitor —— 与手动打开悬浮窗同一个窗口、同一个位置。
+                if (!shownFloat)
+                    ShowView(FullScreenAutoSwitch.View.Float, "fullscreen-enter",
+                             userInitiated: false, activate: false);
             };
             auto.ExitToTaskbar = () =>
+            {
+                // 只收"这次自动弹出来的"浮窗（origin=Auto）；用户自己开的保持不动（8.2）。
+                if (shownFloat && auto.FloatOrigin == FullScreenAutoSwitch.Origin.Auto)
+                    HideView(FullScreenAutoSwitch.View.Float, "fullscreen-exit", userInitiated: false);
+
+                // 条是进全屏时收起来的，退出要放回来（状态机只在真收过条时才调这里）。
                 ShowView(FullScreenAutoSwitch.View.Taskbar, "fullscreen-exit", userInitiated: false);
+            };
 
             auto.Start();
         }
@@ -931,20 +1055,12 @@ public partial class App : Application
         {
             hotkey = new Hotkey();
 
-            // 循环：大窗口 → 悬浮窗 → 任务栏条 → 大窗口。
-            // 走 ShowView 而不是自己 Show/Hide —— 全屏状态机的 CurrentView 必须同步，
-            // 否则下一次判定会按旧视图做决定（"退出全屏没回落"就是这么来的）。
+            // M4.26：三视图可叠加后，热键不再是"循环切三个模式"（那会跟叠加打架），
+            // 改成与托盘左键同一套：**全部隐藏 ↔ 恢复上次的组合**。
+            // 走 HideAllViews / RestoreViews 而不是自己 Hide —— 全屏状态机读的是 shownXxx。
             hotkey.Pressed = () =>
             {
-                FullScreenAutoSwitch.View next = view switch
-                {
-                    FullScreenAutoSwitch.View.Main => FullScreenAutoSwitch.View.Float,
-                    FullScreenAutoSwitch.View.Float => FullScreenAutoSwitch.View.Taskbar,
-                    _ => FullScreenAutoSwitch.View.Main,
-                };
-
-                ShowView(next, "hotkey");
-
+                ToggleAllViews("hotkey");
                 if (_tray is not null) UpdateTrayTooltip(_tray);
             };
 
@@ -999,8 +1115,8 @@ public partial class App : Application
 
         // 自测：--view-probe <txt 路径> [--view-probe-start main|float|tray]
         //
-        // 验的是**真的** Show/Hide 编排（A-06 / 8.1）：逐步切换三视图，
-        // 每步数"当前有几个窗口可见"，必须恰好 1 个。
+        // 验的是**真的** Show/Hide 编排（M4.26：三视图可同时显示）：
+        // 逐步叠加/收起，每步数"当前有几个窗口可见"，必须按 0→1→2→3→2→1→0→1 走。
         // 与 --fullscreen-probe --fs-fake 分工：那条验状态机（记账，不碰窗口），这条验编排。
         string? viewProbePath = ArgValue(e.Args, "--view-probe");
         if (viewProbePath is not null)
@@ -1010,10 +1126,9 @@ public partial class App : Application
                 && Enum.TryParse(vs, ignoreCase: true, out FullScreenAutoSwitch.View parsed))
                 vStart = parsed;
 
-            ShowView(vStart, "view-probe-start", userInitiated: false);
-
             Probes.ViewProbe.Run(
                 target => ShowView(target, "view-probe", userInitiated: false),
+                target => HideView(target, "view-probe", userInitiated: false),
                 () => DescribeViewState(window, floating, taskbar),
                 viewProbePath, vStart, t => t.Start(), Shutdown);
             return;
@@ -1035,7 +1150,12 @@ public partial class App : Application
             Probes.FullScreenSwitchProbe.Run(
                 auto,
                 () => DescribeViewState(window, floating, taskbar),
-                fsSwitchPath, t => t.Start(), Shutdown);
+                IsShown,
+                target => ShowView(target, "fs-switch-probe", userInitiated: false),
+                target => HideView(target, "fs-switch-probe", userInitiated: false),
+                fsSwitchPath,
+                e.Args.Contains("--fs-multi"),   // M4.26：三视图叠加链路
+                t => t.Start(), Shutdown);
             return;
         }
 
@@ -1056,6 +1176,41 @@ public partial class App : Application
                 () => { if (floating is { IsVisible: true }) floating.Activate(); },
                 t => t.Start(), Shutdown);
             return;
+        }
+
+        // 自测：--main-close-probe <txt 路径>（M4.26）
+        //
+        // 三视图可叠加之后，关大窗口不再等于退出程序 —— 但这条判断写错（Cancel 没生效、
+        // 条件写反）就是"点一下 X 整个程序没了"，属于最不该错的地方。这条探针把"点 X"
+        // 真的走一遍：开齐三视图 → Close() → 再等 2 秒，看进程还在不在
+        // （"after" 那行写不出来 = 程序已经退了）。
+        if (ArgValue(e.Args, "--main-close-probe") is { } closePath)
+        {
+            var closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            closeTimer.Tick += (_, _) =>
+            {
+                closeTimer.Stop();
+                ShowView(FullScreenAutoSwitch.View.Float, "close-probe", userInitiated: false);
+                ShowView(FullScreenAutoSwitch.View.Taskbar, "close-probe", userInitiated: false);
+                ShowView(FullScreenAutoSwitch.View.Main, "close-probe", userInitiated: false);
+
+                File.WriteAllText(closePath,
+                    $"before: main={window.IsVisible} float={floating?.IsVisible} " +
+                    $"tray={taskbar?.IsVisible}{Environment.NewLine}");
+                window.Close();     // 等价于用户点标题栏的 X
+            };
+            closeTimer.Start();
+
+            var aliveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3.5) };
+            aliveTimer.Tick += (_, _) =>
+            {
+                aliveTimer.Stop();
+                File.AppendAllText(closePath,
+                    $"after : alive=True main={window.IsVisible} float={floating?.IsVisible} " +
+                    $"tray={taskbar?.IsVisible}{Environment.NewLine}");
+                Shutdown();
+            };
+            aliveTimer.Start();
         }
 
         // 自测：--stats <txt 路径> [--seconds 60] [--warmup 10] [--freeze] [--hidden]
@@ -1132,6 +1287,17 @@ public partial class App : Application
                         if (e.Args.Contains("--no-relayout-on-show")) ff.RelayoutOnShow = false;
                         ff.PersistToConfig = false;   // 同理：别把探针改的字段写进用户配置
                         ff.ToggleFieldForProbe(what.Substring("field:".Length));
+                    }
+                    else if (string.Equals(what, "toggle-all", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // M4.26：验证"全部隐藏 ↔ 恢复上次组合"。时间线里排两次就能走一个来回。
+                        ToggleAllViews("switch-view-probe");
+                    }
+                    else if (what.StartsWith("hide:", StringComparison.OrdinalIgnoreCase)
+                             && Enum.TryParse(what.Substring("hide:".Length), ignoreCase: true,
+                                              out FullScreenAutoSwitch.View hv))
+                    {
+                        HideView(hv, "switch-view-probe");
                     }
                     else if (Enum.TryParse(what, ignoreCase: true, out FullScreenAutoSwitch.View v))
                     {
@@ -1610,7 +1776,7 @@ public partial class App : Application
 
     /// <summary>
     /// 三个视图的可见性与几何，一行文本。<c>--view-probe</c> 每步打一次，
-    /// 用来数"当前有几个窗口可见"（A-06 要求恰好 1 个）。
+    /// 用来数"当前有几个窗口可见"（M4.26 起三视图可叠加，期望值由探针按步给）。
     ///
     /// <para>
     /// 用 <see cref="Window.IsVisible"/> 而不是 <c>Visibility</c>：后者只反映 WPF 的属性，
