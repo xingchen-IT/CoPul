@@ -741,7 +741,12 @@ public sealed class DashboardState : INotifyPropertyChanged
         string vramSize = memUsed.HasValue && memTotal.HasValue
             ? $"v{Fmt.Gb(memUsed.Value)}/{Fmt.Gb(memTotal.Value)}G"
             : "v" + Fmt.Dash;
-        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass, GpuMem.ValueBrush);
+
+        // 悬浮窗把「已用 / 总共」拆成上下两行（M4.11），第二行带 v 让拆开后仍认得出是显存；
+        // 第三行的 "/" 就是"占总共多少"的读法。没数时第二行给 `—`、第三行留空（整行折叠）。
+        FloatVram.Set(vramPct, vramSize, GpuMem.ValueBrushOnGlass, GpuMem.ValueBrush,
+                      line2: memUsed.HasValue ? $"v{Fmt.Gb(memUsed.Value)}G" : Fmt.Dash,
+                      line3: memTotal.HasValue ? $"/{Fmt.Gb(memTotal.Value)}G" : null);
 
         // 任务栏：7.4 第 8 项「整机功耗 ~68W（估算值带 ~）」。
         // 只累加 CPU 封装 + GPU 板卡两项：主板/硬盘/风扇的功耗 Windows 拿不到，
@@ -789,10 +794,14 @@ public sealed class DashboardState : INotifyPropertyChanged
 
         // 悬浮窗的 RAM 下行要 "10.1/31.6G"：34px 高的条上放不下 "10.1 / 31.6 GB"，
         // 空格和单位都得省（6.3 的列宽 74 就是按这个格式定的）。
+        // 这句仍然保留给任务栏（那边是横着的一条，一行读完最省地方）；
+        // 悬浮窗改用下面拆开的两行（M4.11），竖排时条宽才能从 61 收到 40 出头。
         string ramSize = used.HasValue && total.HasValue
             ? $"{used.Value / 1024:F1}/{total.Value / 1024:F1}G"
             : Fmt.Dash;
-        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass, MemLoad.ValueBrush);
+        FloatRam.Set(WithUnit(MemLoad.Value, "%"), ramSize, MemLoad.ValueBrushOnGlass, MemLoad.ValueBrush,
+                     line2: used.HasValue ? $"{used.Value / 1024:F1}G" : Fmt.Dash,
+                     line3: total.HasValue ? $"/{total.Value / 1024:F1}G" : null);
     }
 
     /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>

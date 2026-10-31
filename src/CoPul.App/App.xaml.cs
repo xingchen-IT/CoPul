@@ -635,7 +635,8 @@ public partial class App : Application
             bool glassOverride = e.Args.Contains("--glass-dark")
                                  || ArgValue(e.Args, "--glass-level") is not null
                                  || ArgValue(e.Args, "--float-scale") is not null
-                                 || e.Args.Contains("--float-vertical");
+                                 || e.Args.Contains("--float-vertical")
+                                 || e.Args.Contains("--float-row");
             if (glassOverride) f.PersistToConfig = false;
 
             // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路
@@ -653,7 +654,9 @@ public partial class App : Application
             if (int.TryParse(ArgValue(e.Args, "--float-scale"), out int sc)) f.ScalePercent = sc;
 
             // --float-vertical：竖向排列（M4.10），验收用；不落盘（见上面的 glassOverride）
+            // --float-row：强制横向。配置里可能存着 vertical=true，验收横向时不能靠"删配置"
             if (e.Args.Contains("--float-vertical")) f.IsVertical = true;
+            else if (e.Args.Contains("--float-row")) f.IsVertical = false;
 
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;

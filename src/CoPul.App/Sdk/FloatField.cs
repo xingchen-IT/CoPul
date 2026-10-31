@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Media;
 
 namespace CoPul.App.Sdk;
@@ -19,6 +20,8 @@ public sealed class FloatField : INotifyPropertyChanged
 {
     private string _top = "—";
     private string _bottom = "";
+    private string? _line2;
+    private string? _line3;
     private Brush _lightBrush = Brushes.Gray;
     private Brush _darkBrush = Brushes.Gray;
     private bool _onLight = true;
@@ -65,6 +68,21 @@ public sealed class FloatField : INotifyPropertyChanged
 
     public string Top => _top;
     public string Bottom => _bottom;
+
+    /// <summary>
+    /// 悬浮窗第二行。默认退回 <see cref="Bottom"/>，拆分显示时（内存 / 显存）是"已用"。
+    /// </summary>
+    public string Line2 => _line2 ?? _bottom;
+
+    /// <summary>悬浮窗第三行（"总共"）。其它格恒为空。</summary>
+    public string Line3 => _line3 ?? string.Empty;
+
+    /// <summary>
+    /// 第三行是否占位。空串的 TextBlock 在 WPF 里量出来的高度并不稳定
+    /// （显式设了 LineHeight 时尤其），所以宁可显式折叠，也不指望"空文字自己消失"。
+    /// </summary>
+    public Visibility Line3Visibility
+        => string.IsNullOrEmpty(_line3) ? Visibility.Collapsed : Visibility.Visible;
 
     /// <summary>
     /// 主值颜色，跟着阈值走（与 <see cref="MetricCell.ValueBrush"/> 同源）：
@@ -114,12 +132,29 @@ public sealed class FloatField : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void Set(string top, string bottom, Brush lightBrush, Brush darkBrush)
+    /// <summary>
+    /// 刷新一格。
+    ///
+    /// <para>
+    /// <paramref name="line2"/> / <paramref name="line3"/> 是悬浮窗的"拆分显示"（M4.11）：
+    /// 内存 / 显存把 `18.5/31.6G` 拆成两行，竖排时条宽就不再被这句最长串撑着。
+    /// 传 null（不传）表示这一格不分拆，<see cref="Line2"/> 自动退回 <see cref="Bottom"/>。
+    /// </para>
+    ///
+    /// <para>
+    /// <b><see cref="Bottom"/> 始终是完整的那句</b>，任务栏照旧绑它 —— 任务栏是横着的一条，
+    /// 没有拆的必要，也不该跟着悬浮窗的版式改动。
+    /// </para>
+    /// </summary>
+    public void Set(string top, string bottom, Brush lightBrush, Brush darkBrush,
+                    string? line2 = null, string? line3 = null)
     {
         bool changed = false;
 
         if (_top != top) { _top = top; changed = true; }
         if (_bottom != bottom) { _bottom = bottom; changed = true; }
+        if (_line2 != line2) { _line2 = line2; changed = true; }
+        if (_line3 != line3) { _line3 = line3; changed = true; }
         if (!ReferenceEquals(_lightBrush, lightBrush)) { _lightBrush = lightBrush; changed = true; }
         if (!ReferenceEquals(_darkBrush, darkBrush)) { _darkBrush = darkBrush; changed = true; }
 

@@ -401,7 +401,15 @@ public partial class FloatWindow : Window
     // 缩放（Q-05）：100 / 125 / 150 三档
     // =================================================================
 
-    /// <summary>100% 档的基准尺寸（需求 6.2 / 6.3 的数值）。所有档位都是它乘乘数。</summary>
+    /// <summary>
+    /// 100% 档的基准尺寸（需求 6.2 / 6.3 的数值）。所有档位都是它乘乘数。
+    ///
+    /// <para>
+    /// 高度只服务横向（6.1 的细条）：M4.11 把内存 / 显存的"已用 / 总共"拆成两行，
+    /// 但<b>只在竖向拆</b>，横向仍是 `18.5/31.6G` 一行，所以这里保持 34 不动。
+    /// 竖向的高度由内容决定（SizeToContent），不读这个值。
+    /// </para>
+    /// </summary>
     private const double BaseHeight = 34;
     private const double BaseValueFont = 13;
     private const double BaseValueLine = 16;
@@ -409,16 +417,22 @@ public partial class FloatWindow : Window
     private const double BaseLabelLine = 13;
     private const double BaseGap = 8;
 
+    /// <summary>三行格子里「已用」与「总共」之间的空隙（100% 档）。只有竖向用得到。</summary>
+    private const double BaseSplitGap = 1;
+
     /// <summary>横向两端的内边距（6.3：左右各 10）。</summary>
     private const double BasePadX = 10;
 
     // ---- 竖向排列（M4.10）----
 
-    /// <summary>竖向时格与格之间的行距（100% 档）。横向是列间 8，竖向取 6：格内本来就是两行，8 会显得散。</summary>
-    private const double BaseRowGap = 6;
+    /// <summary>
+    /// 竖向时格与格之间的行距（100% 档）。M4.11 从 6 放到 8：内存 / 显存拆成三行之后
+    /// 每格的行数不再是同一个数，行距太小会让"哪两行属于同一格"变得难分。
+    /// </summary>
+    private const double BaseRowGap = 8;
 
     /// <summary>竖向的上下内边距（100% 档）。</summary>
-    private const double BasePadY = 10;
+    private const double BasePadY = 12;
 
     /// <summary>
     /// 竖向的左右内边距（100% 档）。横向是 10，竖向收到 6：
@@ -507,6 +521,7 @@ public partial class FloatWindow : Window
         // 横向时留着不参与布局，所以不用清。
         CellGap = new Thickness(0, 0, BaseGap * s, 0);
         RowCellMargin = new Thickness(0, 0, 0, BaseRowGap * s);
+        SplitGap = new Thickness(0, BaseSplitGap * s, 0, 0);
 
         // 圆角、内边距这几个必须走代码：CornerRadius / Thickness 类型绑起来要先写转换器，
         // 而它们只在切档时变一次，代码直接给更省事。
@@ -574,14 +589,19 @@ public partial class FloatWindow : Window
 
     /// <summary>
     /// 竖排时的高度估计（DIP）。只给 <see cref="PrePlaceBeforeShow"/> 用 —— Show 之前
-    /// 量不到窗口尺寸，先按"六格 × 两行文字 + 行距 + 上下内边距"估一个；这串数字是定值不是猜的，
-    /// 误差只剩边框那 2 像素，随后的物理像素校正会吸收掉。
+    /// 量不到窗口尺寸，先按"六格两行 + 内存 / 显存各多一行 + 行距 + 上下内边距"估一个；
+    /// 这串数字是定值不是猜的，误差只剩边框那 2 像素，随后的物理像素校正会吸收掉。
     /// </summary>
     private double EstimateVerticalLength()
     {
         double s = _scalePercent / 100.0;
-        double cell = BaseValueLine + BaseLabelLine;
-        return (6 * cell + 5 * BaseRowGap + BasePadY + Math.Max(0, BasePadY - BaseRowGap)) * s
+        double twoLine = BaseValueLine + BaseLabelLine;
+        double threeLine = BaseValueLine + BaseLabelLine + BaseSplitGap + BaseLabelLine;
+
+        // 六格里只有内存 / 显存拆成三行（M4.11），其余四格还是两行 —— 少了这个区分，
+        // 预摆位会矮两行，窗口首帧就会贴得偏高。
+        double cells = 4 * twoLine + 2 * threeLine;
+        return (cells + 5 * BaseRowGap + BasePadY + Math.Max(0, BasePadY - BaseRowGap)) * s
                + 2 * Shell.BorderThickness.Left;
     }
 
@@ -607,25 +627,21 @@ public partial class FloatWindow : Window
                 sb.Append(f.Key).Append('=').Append(f.Width.ToString("F1")).Append(' ');
             sb.Append($"font={ValueFontSize:F1}/{LabelFontSize:F1} h={ShellHeight:F1}");
 
-            // 竖向时量的是那一套面板 —— 横向面板此时是 Collapsed，量出来全是 0，
-            // 拿它判断"布局对不对"只会得到"没生效"的错觉。
-            if (_vertical)
-            {
-                sb.Append($" panel={ColumnPanel.ActualWidth:F0}x{ColumnPanel.ActualHeight:F0}");
-            }
-
             // 布局实测：Style Setter 里的绑定是否真的落到元素上，只能看元素的运行值。
-            // 光看 XAML 会误以为"写了就一定生效"——这里把第一列两个 TextBlock 的
-            // 实际高度 / 行高 / 字号打出来，一眼能分清"没绑定"和"绑了但算错"。
-            if (RowPanel.Children.Count > 0 && RowPanel.Children[0] is StackPanel col)
+            // 光看 XAML 会误以为"写了就一定生效"——这里把每个格子（StackPanel）的实际高度
+            // 连同首个子元素的 实际高度/行高/字号 一起打出来。三行格（内存 / 显存）
+            // 到底有没有把条撑出边界，只有这串数字能说清。
+            Panel panel = _vertical ? ColumnPanel : RowPanel;
+            sb.Append($" cells={panel.ActualWidth:F0}x{panel.ActualHeight:F0} [");
+            foreach (UIElement child in panel.Children)
             {
-                sb.Append(" tb=");
-                foreach (UIElement child in col.Children)
-                {
-                    if (child is TextBlock t)
-                        sb.Append($"{t.ActualHeight:F1}/{t.LineHeight:F1}/{t.FontSize:F1} ");
-                }
+                if (child is not StackPanel cell) continue;
+                sb.Append($"{cell.ActualHeight:F1}");
+                if (cell.Children.Count > 0 && cell.Children[0] is TextBlock first)
+                    sb.Append($"/{first.ActualHeight:F1}");
+                sb.Append(' ');
             }
+            sb.Append(']');
 
             return sb.ToString();
         }
@@ -661,6 +677,11 @@ public partial class FloatWindow : Window
     public static readonly DependencyProperty RowCellMarginProperty =
         DependencyProperty.Register(nameof(RowCellMargin), typeof(Thickness), typeof(FloatWindow),
             new PropertyMetadata(new Thickness(0, 0, 0, BaseRowGap)));
+
+    /// <summary>三行格子里第三行（"总共"）的上边距，把"已用"和"总共"分成一组两行。</summary>
+    public static readonly DependencyProperty SplitGapProperty =
+        DependencyProperty.Register(nameof(SplitGap), typeof(Thickness), typeof(FloatWindow),
+            new PropertyMetadata(new Thickness(0, BaseSplitGap, 0, 0)));
 
     public double ShellHeight
     {
@@ -702,6 +723,12 @@ public partial class FloatWindow : Window
     {
         get => (Thickness)GetValue(RowCellMarginProperty);
         set => SetValue(RowCellMarginProperty, value);
+    }
+
+    public Thickness SplitGap
+    {
+        get => (Thickness)GetValue(SplitGapProperty);
+        set => SetValue(SplitGapProperty, value);
     }
 
     /// <summary>

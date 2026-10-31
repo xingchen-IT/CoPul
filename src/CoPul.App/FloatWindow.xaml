@@ -128,16 +128,17 @@
 
             横向（6.1）：六格横排，每格"主值在上、次值在下"两行，列宽绑 FloatField.Width
                          （6.3 的 34/44/44/74/78/44），窗口 SizeToContent=Width。
+                         **横向不拆分**（M4.11）：内存 / 显存仍是 `18.5/31.6G` 一行 ——
+                         34 DIP 高的细条是 6.1 的形态本身，多一行就不是细条了。
 
-            竖向（M4.10）：同一组六项沿竖直方向排成一条细高的条子，格内结构完全不变
-                         （还是主值在上、次值在下），**文字一律水平正立**。
+            竖向（M4.10）：同一组六项沿竖直方向排成一条细高的条子，格内结构完全不变，
+                         **文字一律水平正立**。
                          不旋转的理由：转过 90° 的字要歪头读，且 WPF 只对轴对齐的文字用
                          ClearType，旋转后必然退成灰度 AA 发虚。
 
-                         注意这里必然比"旋转后那条"宽：旋转版每格只有 34 DIP 高，
-                         两个文字各占半条；正立之后"18.5/31.6G"这种串要完整横着放下，
-                         条宽就得让内容说话（实测 75 DIP）。窄和正立只能二选一，
-                         这里按用户要求选正立。
+                         M4.11 起"已用 / 总共"在竖向下拆成上下两行，条宽不再被
+                         `18.5/31.6G` 撑着 —— 这句是之前把条撑到 61 DIP 的唯一原因，
+                         拆完最长的一句变成 `31.6G`，条宽收到 47。
         -->
         <Grid>
             <StackPanel x:Name="RowPanel" Orientation="Horizontal" VerticalAlignment="Center">
@@ -187,12 +188,12 @@
             </StackPanel>
 
             <!--
-                竖向（M4.10）：整条变成细高的竖条，六项沿竖直方向排下去；
-                每一格仍是"主值在上、次值在下"的两行式 —— 与横向格内结构完全一致，
-                只是格与格之间从左右排变成上下排，文字一律水平正立（不旋转，ClearType 也在）。
+                竖向（M4.10 / M4.11）：整条变成细高的竖条，六项沿竖直方向排下去；
+                每格仍是"主值在上、次值在下"，文字一律水平正立（不旋转，ClearType 也在）。
+                内存 / 显存两格多一行：已用一行、总共一行（M4.11）。
 
                 用 Grid 而不是 StackPanel：一列 Auto 宽，六个格子都被拉到同一宽度，
-                左边界天然对齐，不会出现 "12%" 和 "18.9/31.6G" 各占一截、右侧参差的情况。
+                左边界天然对齐，不会出现 "12%" 和 "31.6G" 各占一截、右侧参差的情况。
             -->
             <Grid x:Name="ColumnPanel" Visibility="Collapsed" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
@@ -210,42 +211,66 @@
                 <StackPanel Grid.Row="0" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatFps.Top}"
                                Foreground="{Binding FloatFps.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Line3}"
+                               Visibility="{Binding FloatFps.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="1" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatCpu.Top}"
                                Foreground="{Binding FloatCpu.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Line3}"
+                               Visibility="{Binding FloatCpu.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatGpu.Top}"
                                Foreground="{Binding FloatGpu.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Line3}"
+                               Visibility="{Binding FloatGpu.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="3" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatRam.Top}"
                                Foreground="{Binding FloatRam.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Line3}"
+                               Visibility="{Binding FloatRam.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="4" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatVram.Top}"
                                Foreground="{Binding FloatVram.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Line3}"
+                               Visibility="{Binding FloatVram.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="5" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatNet.Top}"
                                Foreground="{Binding FloatNet.TopBrush}" />
-                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Bottom}"
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Line2}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Line3}"
+                               Visibility="{Binding FloatNet.Line3Visibility}"
+                               Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
                                Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
                 </StackPanel>
             </Grid>
