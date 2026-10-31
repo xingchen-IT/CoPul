@@ -42,9 +42,15 @@ public sealed class CollectorHost : IDisposable
     private const int PartitionRefreshMs = 10_000;
 
     /// <summary>
-    /// 界面帧间隔下限（ms）。采集按 0.5s 挡位跑，但**不要把每个 tier 的发布都变成一次重绘**：
+    /// 界面帧间隔下限（ms）。采集最快按 0.5s 挡位发布，但**不要把每个 tier 的发布都变成一次重绘**：
     /// 一次整窗布局实测约 2 ms（见 docs/M1.1），2.67 帧/秒就是 0.5% 单核。
     /// 对齐到挡位后帧数降到 2 帧/秒，数值仍然每 0.5s 变一次。
+    ///
+    /// <para>
+    /// M4.24：刷新档位可调（0.5s~5s）后这个下限<b>不用跟着改</b>——它只在"快照比它来得快"时
+    /// 起作用，而档位只会更慢。档位调慢后帧定时器仍然是每 250ms 醒一次做一次时间比较，
+    /// 没有脏标记就直接返回，开销与档位无关。
+    /// </para>
     /// </summary>
     private const int MinFrameIntervalMs = 500;
 
@@ -99,6 +105,33 @@ public sealed class CollectorHost : IDisposable
 
     /// <summary>FPS 会话是否真的接上了。用来区分「没提权/没接上」和「接上了但前台没在渲染」。</summary>
     public bool FpsCollecting => _fps.IsCollecting;
+
+    /// <summary>当前生效的数据刷新间隔（ms，用户挡位）。</summary>
+    public int SampleIntervalMs => _scheduler.UserIntervalMs;
+
+    /// <summary>
+    /// 改数据刷新间隔（M4.24）。<b>下一个采样 tick 生效</b>，不补采、不重启采集线程（P-05）。
+    ///
+    /// <para>
+    /// 实际间隔 = max(本档位, 各指标 floor)，所以调慢一定看得出来，调快可能被 floor 钳住
+    /// （诊断页的 tier 表能看到每一层真正跑的间隔）。
+    /// </para>
+    /// </summary>
+    public void SetSampleInterval(int ms) => _scheduler.UserIntervalMs = NormalizeInterval(ms);
+
+    /// <summary>
+    /// 取最接近的合法档位（与 <c>FullScreenAutoSwitch.NormalizeHold</c> 同一套取舍：
+    /// 不拒绝非法输入，只校正）。手改配置写了 1500 也会落到 1000 或 2000，
+    /// 不至于退回默认把用户的意图抹掉。
+    /// </summary>
+    public static int NormalizeInterval(int ms)
+    {
+        int[] choices = SampleSchedulerOptions.AllowedIntervalsMs;
+        int best = choices[0];
+        foreach (int c in choices)
+            if (Math.Abs(c - ms) < Math.Abs(best - ms)) best = c;
+        return best;
+    }
 
     /// <summary>FPS 不可用的具体原因。写在 FPS 区块副标题上——状态栏那一行在窗口底部，
     /// 而 FPS 区块在屏幕中部，让人为了看一句原因去滚到底部是不合理的。</summary>

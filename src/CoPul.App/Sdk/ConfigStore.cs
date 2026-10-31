@@ -210,6 +210,24 @@ public sealed class AppConfig
     /// </summary>
     public string Hotkey { get; set; } = HotkeyGesture.Default;
 
+    // ---- 数据刷新（4.0 用户挡位 / M4.24）----
+
+    /// <summary>
+    /// CPU/GPU/内存等数据的刷新间隔（ms）。默认 500，可选 1000/2000/3000/5000。
+    ///
+    /// <para>
+    /// 实际生效间隔 = max(本档位, 各指标自身的 floor)，所以**调慢一定生效，调快受 floor 限制**——
+    /// 写 50 也不会变成 20Hz，被 floor 钳住。这一层不拒绝非法值，
+    /// 由 <see cref="App.Sdk.CollectorHost.NormalizeInterval"/> 归一到最接近的合法档。
+    /// </para>
+    ///
+    /// <para>
+    /// 调慢的意义在 A-26 那一路：占用与刷新频率近似成正比，5s 档能把采集开销压到 0.5s 档的
+    /// 十分之一量级。代价是数值"跳"得慢，趋势图（定长 120 点）覆盖的时间也按比例变长。
+    /// </para>
+    /// </summary>
+    public int SampleIntervalMs { get; set; } = 500;
+
     // ---- 全屏自动切换（第 8 章 / F-11）----
 
     /// <summary>

@@ -7,17 +7,22 @@ namespace CoPul.Collector.Scheduling;
 public sealed class SampleSchedulerOptions
 {
     /// <summary>
-    /// 用户挡位（ms）。v1 只开放 <b>500ms</b>（Q-23：其余挡位后续酌情添加）。
+    /// 用户挡位（ms）。v1 只开放 500ms（Q-23），M4.24 起开放 0.5/1/2/3/5 秒五档。
     /// 调度器本身不校验，config 层读入后必须用 <see cref="AllowedIntervalsMs"/> 过滤，
     /// 防止旧配置文件里的 50 / 1000 直接生效。
     /// </summary>
     public int UserIntervalMs { get; set; } = 500;
 
     /// <summary>
-    /// 可选挡位白名单（v1 只上 0.5s）。历史挡位 50 / 100 / 1000 / 2000 仍可用在基准程序与
-    /// 后续版本中——<c>SampleScheduler</c> 不依赖该数组，它只是 config 层的校验依据。
+    /// 可选挡位白名单（ms）。实际生效间隔 = max(用户挡位, tier floor)，
+    /// 所以**调慢一定生效，调快受 floor 约束**（各指标的 floor 见 <c>TierInfo</c>）。
+    ///
+    /// <para>
+    /// 5s 是给"只想看个大概、把占用压到最低"的场景留的（A-26 性能预算那一路），
+    /// 再往上趋势图就没法看了。
+    /// </para>
     /// </summary>
-    public static readonly int[] AllowedIntervalsMs = { 500 };
+    public static readonly int[] AllowedIntervalsMs = { 500, 1000, 2000, 3000, 5000 };
 
     /// <summary>省电模式：实际挡位不低于 1s，且 T1 放宽到 1s（P-07 / P-09）。</summary>
     public bool PowerSaving { get; set; }
@@ -72,6 +77,15 @@ public sealed class SampleScheduler : IDisposable
     /// 因此取 500 —— 正好一个 tick，醒来即到点。R17 的前后对比见 docs/M0.6 报告 9.4 节。
     /// </summary>
     private const int MaxWaitMs = 500;
+
+    /// <summary>
+    /// 长档位下的唤醒上限（ms）。挡位调到 3s/5s 后如果还按 500ms 醒一次，
+    /// 一个采样周期要空转 6~10 次——虽然每次只是遍历几个 tier 做比较，
+    /// 但既然 R17 的目的就是"别为没事可做醒来"，上限就跟着挡位放宽。
+    /// 上限取 2s 而不是挡位本身：挡位变更与停止都由 <c>_stop.Set()</c> 立即打断，
+    /// 不需要靠短睡眠来保响应，2s 足够覆盖 tier floor 比用户挡位更细的情况。
+    /// </summary>
+    private const int MaxWaitCapMs = 2000;
 
     private readonly IReadOnlyList<IMetricProvider> _providers;
     private readonly List<TierState> _tiers = new();
@@ -146,7 +160,22 @@ public sealed class SampleScheduler : IDisposable
         }
     }
 
-    /// <summary>实际间隔 = max(用户挡位, tier floor)。省电模式下两者都不低于 1s。</summary>
+    /// <summary>
+    /// 实际间隔 = max(用户挡位, tier floor)，并<b>向上对齐到用户挡位的整数倍</b>。省电模式下两者都不低于 1s。
+    ///
+    /// <para>
+    /// 为什么还要对齐（M4.24）：不对齐时慢层会在快层的两个 tick 之间单独到期，
+    /// 触发一次"只有它自己"的发布 —— 整窗多一次重绘，用户看到的是
+    /// "档位调成 2s，数值却 1.67s 就跳一次"（实测 30s 内发布 18 次而非 15 次：
+    /// floor=5s 的层按 5s 走，与 2s 栅格不同步）。
+    /// 对齐后所有层都落在挡位的整数倍上，同一批到期、只发布一次。
+    /// </para>
+    ///
+    /// <para>
+    /// 500ms 档下各 floor（1000/5000/10000）本来就都是 500 的整数倍，
+    /// 所以对齐对默认档零影响 —— 这条是"档位开放后才暴露"的问题，不是回归。
+    /// </para>
+    /// </summary>
     public int EffectiveIntervalMs(Tier tier)
     {
         int user = _options.UserIntervalMs;
@@ -157,7 +186,13 @@ public sealed class SampleScheduler : IDisposable
             user = Math.Max(user, 1000);
             floor = Math.Max(floor, 1000);
         }
-        return Math.Max(user, floor);
+
+        int eff = Math.Max(user, floor);
+
+        // 抬到挡位的整数倍。代价是慢层比 floor 稍慢一点（2s 档下 5s 的层变 6s），
+        // 换来的是"档位 == 实际刷新节奏"，这正是用户调这个档位想拿到的东西。
+        if (user > 0 && eff % user != 0) eff = (eff / user + 1) * user;
+        return eff;
     }
 
     public void Start()
@@ -194,10 +229,17 @@ public sealed class SampleScheduler : IDisposable
         {
             if (_tierDirty)
             {
+                long dirtyNow = (long)sw.Elapsed.TotalMilliseconds;
                 foreach (var t in _tiers)
                 {
                     t.IntervalMs = EffectiveIntervalMs(t.Tier);
                     t.Stat.IntervalMs = t.IntervalMs;
+
+                    // 挡位一变相位就散了：慢层原本按 5s 走，改 2s 挡后它的 NextDueMs
+                    // 未必落在 2s 栅格上，于是永远卡在快层两个 tick 之间单独到期。
+                    // 这里统一重排到"下一个栅格点"，代价是慢层最多多等一个周期，
+                    // 只在改挡位时发生一次。
+                    t.NextDueMs = (dirtyNow / t.IntervalMs + 1) * t.IntervalMs;
                 }
                 _tierDirty = false;
             }
@@ -222,8 +264,10 @@ public sealed class SampleScheduler : IDisposable
 
                     // 追帧保护：落后超过一个周期就直接对齐到下一个周期边界，
                     // 否则系统休眠/卡顿后会连发几十个 tick 补采，把 CPU 打满。
+                    // 落点用整除算而不是 nowMs + interval：后者会让慢层偏离挡位栅格，
+                    // 从此一直在快层之间单独到期（见 EffectiveIntervalMs 的对齐说明）。
                     t.NextDueMs += t.IntervalMs;
-                    if (t.NextDueMs <= nowMs) t.NextDueMs = nowMs + t.IntervalMs;
+                    if (t.NextDueMs <= nowMs) t.NextDueMs = (nowMs / t.IntervalMs + 1) * t.IntervalMs;
 
                     (due ??= new List<MetricSnapshot>(4)).Add(sink);
                 }
@@ -248,7 +292,8 @@ public sealed class SampleScheduler : IDisposable
             // 实测 150–190ms / 60s 的 CPU 全耗在这上面 —— 这是与挡位无关的固定开销，
             // 正是 1s 与 2s 两档中位完全相同（0.417%）的原因。
             // 上限放到 MaxWaitMs 后唤醒次数降一个数量级；挡位变更与停止由 _stop.Set() 立即打断。
-            _stop.Wait((int)Math.Clamp(minWait, 1, MaxWaitMs));
+            int cap = Math.Clamp(_options.UserIntervalMs, MaxWaitMs, MaxWaitCapMs);
+            _stop.Wait((int)Math.Clamp(minWait, 1, cap));
             _stop.Reset();   // 清掉本次唤醒标志供下一轮使用（停止时 _running 已为 false，不会漏)
         }
     }

@@ -652,6 +652,36 @@
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="默认 223.5.5.5（阿里 DNS）。内网环境 ping 公网会一直超时，改成网关地址才有读数。" />
 
+                                <!--
+                                    数据刷新间隔（M4.24）：这才是"CPU/GPU 多久更新一次"的那个档位。
+                                    实际间隔 = max(档位, 各指标自身的 floor)，所以调慢一定生效、
+                                    调快会被 floor 钳住 —— 提示里必须说清，否则用户写 5s 生效、
+                                    写 0.1s 没反应会觉得是 bug。
+                                -->
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <TextBlock Text="刷新间隔" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <RadioButton x:Name="Sample500" Style="{StaticResource Segment}"
+                                                 GroupName="sampleRate" Content="0.5s" Tag="500"
+                                                 Checked="SampleRate_Checked"
+                                                 ToolTip="默认：数值最跟手，占用也最高" />
+                                    <RadioButton x:Name="Sample1000" Style="{StaticResource Segment}"
+                                                 GroupName="sampleRate" Content="1s" Tag="1000"
+                                                 Checked="SampleRate_Checked" />
+                                    <RadioButton x:Name="Sample2000" Style="{StaticResource Segment}"
+                                                 GroupName="sampleRate" Content="2s" Tag="2000"
+                                                 Checked="SampleRate_Checked" />
+                                    <RadioButton x:Name="Sample3000" Style="{StaticResource Segment}"
+                                                 GroupName="sampleRate" Content="3s" Tag="3000"
+                                                 Checked="SampleRate_Checked" />
+                                    <RadioButton x:Name="Sample5000" Style="{StaticResource Segment}"
+                                                 GroupName="sampleRate" Content="5s" Tag="5000"
+                                                 Checked="SampleRate_Checked"
+                                                 ToolTip="最省电，但数值每 5 秒才跳一次" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="CPU、GPU、内存等数据多久采一次：越慢越省电，占用近乎成正比下降。实际间隔不快于各指标自身的下限（调快会被钳住），趋势图覆盖的时间也会按比例变长。" />
+
                                 <Grid Margin="0,10,0,0">
                                     <TextBlock Text="全屏时自动隐藏" Style="{StaticResource RowLabel}" />
                                     <ToggleButton x:Name="FullScreenSwitch" Style="{StaticResource Switch}"

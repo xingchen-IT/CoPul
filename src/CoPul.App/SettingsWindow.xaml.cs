@@ -45,6 +45,15 @@ internal sealed class SettingsContext
     /// <summary>改探测目标。落到 OsProvider 上，探针线程下一轮生效。</summary>
     public Action<string> SetPingTarget { get; init; } = _ => { };
 
+    /// <summary>
+    /// 当前**真正生效**的数据刷新间隔（ms）。刻意不读配置：实际间隔还要过一遍各指标的 floor，
+    /// 这里给的是调度器手里那个数。
+    /// </summary>
+    public Func<int> GetSampleInterval { get; init; } = () => 500;
+
+    /// <summary>改数据刷新间隔（ms，M4.24）。下一个采样 tick 生效。</summary>
+    public Action<int> SetSampleInterval { get; init; } = _ => { };
+
     /// <summary>全屏自动切换的总开关动作（F-11）。设置页不给 true/false 的猜法，直接调它。</summary>
     public Action<bool> SetFullScreenAutoSwitch { get; init; } = _ => { };
 
@@ -323,6 +332,10 @@ public partial class SettingsWindow : Window
         // 否则一个 1500 会让四个按钮一个都不亮，用户看到的是"当前档位未知"。
         SelectHoldSegment(FullScreenAutoSwitch.NormalizeHold(_config.FullScreenHoldMs));
 
+        // 刷新间隔（M4.24）。同样先归一；选中态以"调度器真正生效的那个数"为准，
+        // 这样手改配置写了非法值时 UI 显示的是实际在跑的档位，而不是用户以为的。
+        SelectSampleSegment(CollectorHost.NormalizeInterval(_ctx.GetSampleInterval()));
+
         PingBox.Text = _ctx.GetPingTarget();
 
         _suppress = false;
@@ -529,6 +542,21 @@ public partial class SettingsWindow : Window
                         System.Console.WriteLine($"fshold cfg: hold={_config.FullScreenHoldMs}");
                         foreach (RadioButton chip in new[] { FsHold500, FsHold1000, FsHold2000, FsHold3000 })
                             System.Console.WriteLine($"fshold: [{chip.Tag}] '{chip.Content}' checked={chip.IsChecked}");
+                    }
+                    break;
+
+                case "interval":
+                    // 数据刷新间隔（M4.24）。与 fshold 同款：点成指定档 + 把五个按钮打到 stdout。
+                    // 走 SelectSampleSegment（只改选中态）而不是直接调 SetSampleInterval，
+                    // 是为了和用户点击走完全同一条路径（Checked → 落盘 → 通知采集器）。
+                    {
+                        if (int.TryParse(value, out int ims))
+                            SelectSampleSegment(CollectorHost.NormalizeInterval(ims));
+
+                        System.Console.WriteLine($"interval cfg: {_config.SampleIntervalMs} " +
+                                                 $"live={_ctx.GetSampleInterval()}");
+                        foreach (RadioButton chip in new[] { Sample500, Sample1000, Sample2000, Sample3000, Sample5000 })
+                            System.Console.WriteLine($"interval: [{chip.Tag}] '{chip.Content}' checked={chip.IsChecked}");
                     }
                     break;
 
@@ -1543,6 +1571,35 @@ public partial class SettingsWindow : Window
         _ctx.SetFullScreenHold(ms);
 
         Hint($"全屏切换确认改为 {ms / 1000.0:0.#}s：进游戏连续全屏这么久才切悬浮窗，退出全屏也要连续这么久才回任务栏条");
+    }
+
+    /// <summary>
+    /// 数据刷新间隔（M4.24）。下一个采样 tick 生效（P-05：不补采、不重启采集线程），
+    /// 改完立刻能看出数值跳动变慢。
+    /// </summary>
+    private void SampleRate_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+        if (!int.TryParse(tag, out int ms)) return;
+
+        _config.SampleIntervalMs = ms;
+        ConfigStore.SaveCurrent();
+        _ctx.SetSampleInterval(ms);
+
+        // 回读真实生效值：调快可能被各指标的 floor 钳住，这时提示要说"实际是 x 秒"，
+        // 否则用户点了 0.5s 却发现没变化会以为是 bug。
+        int real = _ctx.GetSampleInterval();
+        Hint(real == ms
+            ? $"数据刷新间隔改为 {ms / 1000.0:0.#}s：CPU、显卡等数值每这么久更新一次"
+            : $"数据刷新间隔设为 {ms / 1000.0:0.#}s，但部分指标自身下限更长，实际按 {real / 1000.0:0.#}s 跑");
+    }
+
+    private void SelectSampleSegment(int ms)
+    {
+        string want = ms.ToString();
+        foreach (RadioButton b in new[] { Sample500, Sample1000, Sample2000, Sample3000, Sample5000 })
+            b.IsChecked = (b.Tag as string) == want;
     }
 
     private void SelectHoldSegment(int ms)

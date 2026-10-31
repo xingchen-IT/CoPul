@@ -178,6 +178,15 @@ public partial class App : Application
         var window = new MainWindow();
         MainWindow = window;
 
+        // 数据刷新档位（M4.24）：在采集线程 Start 之前设好，
+        // 否则会先按默认 500ms 跑几拍再改 —— 用户看到的是"刚开机那两秒跳得快"。
+        // --sample-interval <ms> 命令行覆盖（取证用，不落盘）。
+        string? ivArg = ArgValue(e.Args, "--sample-interval");
+        window.Host.SetSampleInterval(
+            ivArg is not null && int.TryParse(ivArg, out int iv)
+                ? iv
+                : ConfigStore.Current.SampleIntervalMs);
+
         // --hidden：不显示窗口，用来分离「采集器成本」与「WPF 渲染成本」
         bool hidden = e.Args.Contains("--hidden");
 
@@ -321,6 +330,8 @@ public partial class App : Application
                 GetProviders = () => window.Host.Providers,
                 GetPingTarget = () => window.Host.PingTarget,
                 SetPingTarget = window.Host.SetPingTarget,
+                GetSampleInterval = () => window.Host.SampleIntervalMs,
+                SetSampleInterval = window.Host.SetSampleInterval,
                 SetFullScreenAutoSwitch = on =>
                 {
                     if (auto is null) return;
@@ -1061,9 +1072,25 @@ public partial class App : Application
                 freezeAt.Start();
             }
 
+            // --sample-flip <秒>:<档位ms>：测量窗口的中途改一次数据刷新档位（M4.24）。
+            // 静态取证只能证明"启动时按档位跑"，证明不了"运行中改档位即时生效"——
+            // 而后者才是设置项真正的承诺（P-05：下一个 tick 生效，不重启）。
+            int flipAt = -1, flipMs = 0;
+            string? flip = ArgValue(e.Args, "--sample-flip");
+            if (flip is not null)
+            {
+                string[] fp = flip.Split(':', StringSplitOptions.TrimEntries);
+                if (fp.Length == 2 && int.TryParse(fp[0], out int fs) && int.TryParse(fp[1], out int fm))
+                {
+                    flipAt = fs;
+                    flipMs = fm;
+                }
+            }
+
             RunSelfCpuProbe(window, stats,
                 int.TryParse(ArgValue(e.Args, "--seconds"), out int sec) && sec > 0 ? sec : 60,
-                int.TryParse(ArgValue(e.Args, "--warmup"), out int warm) && warm >= 0 ? warm : 10);
+                int.TryParse(ArgValue(e.Args, "--warmup"), out int warm) && warm >= 0 ? warm : 10,
+                flipAt, flipMs);
             return;
         }
 
@@ -1711,11 +1738,18 @@ public partial class App : Application
     /// 2. 必须跳过预热再取基线——启动那几十秒里有 JIT、PDH 初始化（约 0.6s）、
     ///    冷盘枚举（R20，约 0.19s），混进去会把稳态读数抬高好几倍（M0.6 踩过同一个坑）。
     /// </summary>
-    private void RunSelfCpuProbe(MainWindow window, string path, int seconds, int warmupSec)
+    private void RunSelfCpuProbe(MainWindow window, string path, int seconds, int warmupSec,
+                                 int flipAtSec = -1, int flipMs = 0)
     {
         var process = System.Diagnostics.Process.GetCurrentProcess();
         TimeSpan cpu0 = default;
         long wall0 = 0;
+        long snap0 = 0;
+
+        // 中途翻档（M4.24）：记录翻档那一刻的墙钟与快照数，结尾据此算前后两段的实测间隔。
+        // 只翻一次 —— 翻多次会让"哪一段对应哪个档位"变成要对齐时间戳的麻烦事。
+        long flipWallTs = 0;
+        long flipSnap = 0;
         int tick = 0;
         string? warmupNote = null;
         var thread0 = new Dictionary<int, TimeSpan>();
@@ -1730,6 +1764,7 @@ public partial class App : Application
                 process.Refresh();
                 cpu0 = process.TotalProcessorTime;
                 wall0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                snap0 = window.Host.SnapshotCount;
 
                 foreach (System.Diagnostics.ProcessThread t in process.Threads)
                 {
@@ -1738,6 +1773,16 @@ public partial class App : Application
 
                 // 预热期间的 CPU 一并记下来，用于说明"启动成本"到底多大
                 warmupNote = $"{cpu0.TotalMilliseconds:F0} ms（含 JIT / PDH 初始化 / 冷盘枚举）";
+            }
+
+            // 翻档：位置按"测量窗口内的第 N 秒"算（warmupSec 之后才开始计时）。
+            // 记下翻档时刻的墙钟与快照数，结尾用它们切出前后两段。
+            if (flipAtSec >= 0 && tick == warmupSec + flipAtSec)
+            {
+                window.Host.SetSampleInterval(flipMs);
+                flipWallTs = System.Diagnostics.Stopwatch.GetTimestamp();
+                flipSnap = window.Host.SnapshotCount;
+                System.Console.WriteLine($"sample-flip: 第 {flipAtSec}s 改为 {flipMs}ms");
             }
 
             if (tick < warmupSec + seconds) return;
@@ -1768,8 +1813,27 @@ public partial class App : Application
                 $"  平均 Layout {SafeAvg(window.LayoutTotalMs, window.ApplyCount):F3} ms",
                 // D04 的 10s 刷新：刷新次数 vs 变化次数。60s 窗口下应该刷新 5-6 次，
                 // 变化 0 次是正常的（磁盘使用率一秒内不可能跳过一个整数百分点）。
+                // 数据刷新（M4.24）：档位 + 实测间隔。档位改了但实测没跟着变，
+                // 只可能是被 tier floor 钳住 —— 这一行就是唯一的判据。
+                // 用窗口内的 delta，不能用累计 SnapshotCount（它把 warmup 期也算进去了）。
+                $"sample      : 档位 {window.Host.SampleIntervalMs}ms" +
+                $"  实测 {SafeAvg(wallMs, window.Host.SnapshotCount - snap0):F0}ms/次" +
+                $"  ({window.Host.SnapshotCount - snap0} 次 / {wallMs / 1000.0:F1}s)",
                 $"d04 refresh : {window.Host.PartitionRefreshCount} 次  其中变化 {window.Host.PartitionChangedCount} 次"
             };
+
+            // 翻档对照（M4.24）：前后两段各自的实测间隔。若"下一个 tick 生效"成立，
+            // 前段应≈启动档位、后段应≈翻后的档位；两段同一个数就说明没生效。
+            if (flipWallTs != 0)
+            {
+                double beforeMs = (flipWallTs - wall0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                double afterMs = (System.Diagnostics.Stopwatch.GetTimestamp() - flipWallTs)
+                                 * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                lines.Add($"sample flip : 翻档前 {SafeAvg(beforeMs, flipSnap - snap0):F0}ms/次" +
+                          $"（{flipSnap - snap0} 次 / {beforeMs / 1000.0:F1}s） → 翻档后 " +
+                          $"{SafeAvg(afterMs, window.Host.SnapshotCount - flipSnap):F0}ms/次" +
+                          $"（{window.Host.SnapshotCount - flipSnap} 次 / {afterMs / 1000.0:F1}s，目标 {flipMs}ms）");
+            }
 
             // 线程级分解：总 CPU 高但不知道贵在哪时，这是唯一能定位的手段
             var deltas = new List<(int Id, double Ms)>();
