@@ -123,6 +123,9 @@ public partial class FloatWindow : Window
         _level = Math.Clamp(config.FloatGlassLevel, 1, LevelCount) - 1;
         _glass = config.FloatGlassEnabled;
         _locked = config.FloatLocked;
+        _lockedBeforeThrough = config.FloatLocked;
+        _clickThrough = config.FloatClickThrough;
+        _alwaysOnTop = config.FloatAlwaysOnTop;
         _scalePercent = NormalizeScale(config.FloatScale);
         _vertical = config.FloatVertical;
         _edgeMode = NormalizeEdgeMode(config.FloatEdgeMode);
@@ -145,6 +148,15 @@ public partial class FloatWindow : Window
 
             // 顺序不能反：先改 style 拿系统阴影，再上毛玻璃。反过来的话 accent 会被
             // 随后那次 SetWindowLong 弄失效（背景退回清晰壁纸）。
+            // 消息钩子只挂一次，且**不挂在 EnableSystemShadow 里**：
+            // 那条路在 --no-shadow 时会整个跳过，而穿透靠的 WM_NCHITTEST 也走这个钩子 ——
+            // 挂在里面等于"关掉阴影就没有穿透"，两者毫无关系。
+            HwndSource.FromHwnd(Handle)?.AddHook(NcCalcSizeHook);
+
+            // XAML 里写死的是 Topmost="True"，而配置可能存着 false —— 不同步的话
+            // "设置里关了置顶"会在下次启动悄悄失效（窗口照样在 topmost 组里）。
+            Topmost = _alwaysOnTop;
+
             EnableSystemShadow();
             ApplyGlass(_glass);
             SyncMenuChecks();
@@ -167,8 +179,16 @@ public partial class FloatWindow : Window
 
         // 兜底巡检：上面五个时机之外的漏网的（系统 DPI 变了而窗口尺寸恰好没变之类）。
         // 一秒一次、只比两次矩形，窗口看不见时连这两次都省了。
+        //
+        // 置顶巡检（M4.21）顺同一趟走：它也是"每秒看一眼、没变化就什么也不做"，
+        // 单独再起一个定时器只是多一次唤醒。
         var frameWatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        frameWatch.Tick += (_, _) => { if (IsVisible) GuardFrame(); };
+        frameWatch.Tick += (_, _) =>
+        {
+            if (!IsVisible) return;
+            GuardFrame();
+            GuardTopmost();
+        };
         frameWatch.Start();
 
         // 定位必须等首帧渲染完：SizeToContent 的窗口在 Loaded 阶段宽度还没定型，
@@ -257,6 +277,7 @@ public partial class FloatWindow : Window
             if (MoveFocusProbe is { } mfSpec) RunMoveFocusProbe(mfSpec);
             if (FieldProbe is { } fieldKeys) RunFieldProbe(fieldKeys);
             if (MenuProbe) ProbeMenuAndHitTest();
+            if (HitTestProbe) ProbeHitTest();
         };
     }
 
@@ -421,6 +442,236 @@ public partial class FloatWindow : Window
     /// </para>
     /// </summary>
     public bool RelayoutOnShow { get; set; } = true;
+
+    // =================================================================
+    // 鼠标穿透 / 始终置顶（M4.21）
+    // =================================================================
+
+    /// <summary>位置锁定（6.5）。锁定后拖动无效，但鼠标消息照收（右键菜单仍可用）。</summary>
+    public bool Locked
+    {
+        get => _locked;
+        set
+        {
+            if (_locked == value) return;
+            _locked = value;
+            SyncMenuChecks();
+            PersistAppearance();
+        }
+    }
+
+    /// <summary>
+    /// 鼠标穿透（M4.21）：命中测试一律返回 <c>HTTRANSPARENT</c>，
+    /// 点悬浮窗等于点它下面的东西。
+    ///
+    /// <para>
+    /// 与「锁定位置」是两件事，但穿透<b>必然连带拖不动</b>：鼠标消息根本不投递，
+    /// <c>DragMove</c> 没有触发源。所以打开穿透时记下当前锁定状态并强制锁上、
+    /// 同时把「锁定位置」项禁掉 —— 否则用户会解锁，然后发现"解锁了却还是拖不动"。
+    /// 关掉穿透再把锁定还原成打开之前的样子。
+    /// </para>
+    /// </summary>
+    public bool ClickThrough
+    {
+        get => _clickThrough;
+        set
+        {
+            if (_clickThrough == value) return;
+            _clickThrough = value;
+
+            if (_clickThrough)
+            {
+                _lockedBeforeThrough = _locked;
+                _locked = true;
+            }
+            else
+            {
+                _locked = _lockedBeforeThrough;
+            }
+
+            SyncMenuChecks();
+            PersistAppearance();
+        }
+    }
+
+    /// <summary>
+    /// 始终置顶（M4.21）：每秒把悬浮窗提回 topmost 组最顶。
+    ///
+    /// <para>
+    /// XAML 里的 <c>Topmost="True"</c> 只保证"进 topmost 组"，不保证"排在组里最前"——
+    /// 另一个置顶窗口（游戏浮层、录屏工具条）一激活就压上来，而系统不会通知我们。
+    /// 所以只能巡检，见 <see cref="GuardTopmost"/>。
+    /// </para>
+    /// </summary>
+    public bool AlwaysOnTop
+    {
+        get => _alwaysOnTop;
+        set
+        {
+            if (_alwaysOnTop == value) return;
+            _alwaysOnTop = value;
+            Topmost = value;                 // 关掉时是真的退出 topmost 组，不是"不再巡检"
+            SyncMenuChecks();
+            PersistAppearance();
+        }
+    }
+
+    private bool _clickThrough;
+    private bool _alwaysOnTop = true;
+
+    /// <summary>打开穿透之前的锁定状态，关掉穿透时还原（见 <see cref="ClickThrough"/>）。</summary>
+    private bool _lockedBeforeThrough;
+
+    /// <summary>
+    /// 自测诊断串。穿透是"消息级别的"，配置写了不等于消息真的被拦掉了 ——
+    /// 所以计数用**真实命中次数**：鼠标每动一次都会来一条 <c>WM_NCHITTEST</c>。
+    /// </summary>
+    public string InteractDiag =>
+        $"interact: lock={_locked} through={_clickThrough} hitTestHits={_hitTestHits} " +
+        $"ontop={_alwaysOnTop}(exStyle={_exTopmost}) raiseHits={_topmostHits} above=0x{_lastAbove.ToInt64():X}" +
+        $" aboveOwn={_aboveOwn} fgOwn={_fgOwn} aboveNow=[{Monitors.Describe(_lastAbove)}]" +
+        (_topmostHits == 0
+            ? string.Empty
+            : $" raiseOk={_raiseOk} postRaise=0x{_lastAboveAfter.ToInt64():X} [{_aboveAfterDesc}]") +
+        (_zDiag.Length == 0 ? string.Empty : Environment.NewLine + "zorder: " + _zDiag) +
+        (_hitTestResult == int.MinValue
+            ? string.Empty
+            : $" probeHT={DescribeHit(_hitTestResult)}");
+
+    /// <summary>被穿透的命中测试次数（<c>WM_NCHITTEST</c> 拦下多少条）。</summary>
+    private int _hitTestHits;
+
+    /// <summary>巡检把窗口提回顶层的次数。</summary>
+    private int _topmostHits;
+
+    /// <summary>最近一次巡检时压在上面的那个窗口（诊断用）。</summary>
+    private IntPtr _lastAbove;
+
+    /// <summary>窗口是否真的带 <c>WS_EX_TOPMOST</c>（诊断用）。</summary>
+    private bool _exTopmost;
+
+    /// <summary>上面那个窗口 / 前台窗口是不是自家窗口（诊断用，M4.21）。</summary>
+    private bool _aboveOwn, _fgOwn;
+
+    /// <summary>提顶**之后**压在上面的窗口。用于证明提顶真的生效（M4.21）。</summary>
+    private IntPtr _lastAboveAfter;
+
+    /// <summary>
+    /// 自测：把"我"上面那一段 Z 序打印出来（M4.21）。
+    ///
+    /// <para>
+    /// 判据是三层过滤（可见 / 有面积 / 矩形相交），任一层写错表现都一样 ——
+    /// "永远没被挡"和"永远被挡"都只体现在 <c>raiseHits</c> 上，看不出是哪一层错了。
+    /// 只能把链打出来：窗口在不在链上、坐标对不对、是不是被 UIPI 挡着，一眼就能分辨。
+    /// </para>
+    /// </summary>
+    public bool ZOrderProbe { get; set; }
+
+    /// <summary>
+    /// 自测：把自家可见窗口也算"遮挡"，用来验"检测 → 提顶 → 回到最顶"整条链（M4.21）。
+    /// 生产永远为 false —— 不然每秒都会把设置页顶到下面去。
+    /// </summary>
+    public bool TopmostIncludeOwn { get; set; }
+
+    /// <summary>Z 序诊断文本（<see cref="ZOrderProbe"/> 打开时才写）。</summary>
+    private string _zDiag = "";
+
+    /// <summary>提顶调用的返回值，以及提完仍压在上面的那个窗口是谁（诊断用）。</summary>
+    private bool _raiseOk = true;
+    private string _aboveAfterDesc = "";
+
+    /// <summary>自测窗口正中心命中测试的返回值。<c>int.MinValue</c> = 没探测过。</summary>
+    private int _hitTestResult = int.MinValue;
+
+    /// <summary>
+    /// 自测：给自己发一条 <c>WM_NCHITTEST</c>，结论写进 <see cref="InteractDiag"/>。
+    ///
+    /// <para>
+    /// 穿透改的是**命中测试的结论**，而这一层没有别的观测手段：
+    /// <c>WindowFromPoint</c> 不做命中测试（M4.1 踩过，它照样返回我们的 HWND），
+    /// 截图更是看不出任何差别（穿透不碰渲染，一个像素都不变）。
+    /// 只剩"发消息问窗口本人"这一条路 —— 而它正好就是真实鼠标走的那条路。
+    /// </para>
+    /// </summary>
+    public bool HitTestProbe { get; set; }
+
+    private void ProbeHitTest()
+    {
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT r)) return;
+
+        int x = (r.Left + r.Right) / 2, y = (r.Top + r.Bottom) / 2;
+        IntPtr lParam = (IntPtr)(((y & 0xFFFF) << 16) | (x & 0xFFFF));
+        _hitTestResult = SendMessage(hwnd, WM_NCHITTEST, IntPtr.Zero, lParam).ToInt32();
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>把命中测试的返回值翻成人能读的词。只列本项目会遇到的几个。</summary>
+    private static string DescribeHit(int hit) => hit switch
+    {
+        HTTRANSPARENT => "HTTRANSPARENT(-1 穿透中)",
+        0 => "HTNOWHERE(0)",
+        1 => "HTCLIENT(1 正常接收)",
+        2 => "HTCAPTION(2 可拖动)",
+        _ => hit.ToString(),
+    };
+
+    /// <summary>
+    /// 每秒把悬浮窗提回 topmost 组最顶。
+    ///
+    /// <para>
+    /// 为什么必须巡检：没有任何事件能告诉我们"Z 序变了"。别的置顶窗口盖上来时，
+    /// 我们收不到消息，等到用户发现"悬浮窗不见了"往往已经过了很久。
+    /// 提顶用的 <c>SetWindowPos</c> 带 <c>NOMOVE|NOSIZE|NOACTIVATE</c>，
+    /// 不改几何也不抢焦点，所以每秒一次没有可见副作用。
+    /// </para>
+    ///
+    /// <para>
+    /// 两个"别抢"的条件：① 本进程有窗口在前台（用户在跟设置页交互）——
+    /// 那时抢顶会把悬浮窗压到设置页上面，挡住正在看的内容；
+    /// ② 压在上面的是本进程自己的窗口 —— 同上，设置页本来就该在它上面。
+    /// </para>
+    /// </summary>
+    private void GuardTopmost()
+    {
+        if (!_hwndReady) return;
+
+        IntPtr hwnd0 = Handle;
+        if (hwnd0 != IntPtr.Zero)
+            _exTopmost = (GetWindowLongPtr(hwnd0, GWL_EXSTYLE).ToInt64() & WS_EX_TOPMOST) != 0;
+
+        if (!_alwaysOnTop || !IsVisible) return;
+
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        // 只看**可见**的上方窗口：IME 窗口、托盘消息窗这类隐藏窗口永远排在 Z 序最前，
+        // 但它们不占屏幕 —— 拿它们当"被压住了"会变成每秒一次提不动的无效功。
+        if (ZOrderProbe) _zDiag = Monitors.DescribeChain(hwnd, 8);
+
+        IntPtr above = Monitors.FirstBlockingAbove(hwnd);
+        _lastAbove = above;
+        _aboveOwn = Monitors.IsOwnVisibleWindow(above);
+        if (above == IntPtr.Zero) return;                 // 没有被任何可见窗口挡住
+
+        IntPtr foreground = Win32Window.ForegroundWindow;
+        _fgOwn = foreground != IntPtr.Zero && foreground != hwnd && Monitors.IsOwnWindow(foreground);
+        // 自家让路是策略，不是能力：自测要验的是"检测到就顶得动"这一段，
+        // 而本机造不出能压住提权进程的外部窗口（UIPI），只能拿自家窗口当遮挡物。
+        if (_fgOwn && !TopmostIncludeOwn) return;
+        if (_aboveOwn && !TopmostIncludeOwn) return;      // 自家可见窗口（设置页）：让它压着
+
+        _raiseOk = Monitors.RaiseToTopmost(hwnd);
+        _topmostHits++;
+
+        // 提完立刻再问一次：这是"提顶到底有没有生效"的唯一证据 ——
+        // 事前的 above 只能证明"被压了"，提完的 above 才证明"真的回到了最顶"。
+        _lastAboveAfter = Monitors.FirstBlockingAbove(hwnd);
+        _aboveAfterDesc = Monitors.Describe(_lastAboveAfter);
+    }
 
     /// <summary>
     /// 外观变化是否写回配置。默认 true；用 <c>--glass-dark</c> / <c>--glass-level</c>
@@ -1162,9 +1413,15 @@ public partial class FloatWindow : Window
     public string DwmBorderDiag { get; private set; } = "?";
 
     private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+    private const long WS_EX_TOPMOST = 0x00000008L;
     private const int WS_THICKFRAME = 0x00040000;
     private const int WM_NCCALCSIZE = 0x0083;
     private const int WM_NCACTIVATE = 0x0086;
+    private const int WM_NCHITTEST = 0x0084;
+
+    /// <summary>命中测试结论"这里没有我"，系统继续往下层窗口投递。</summary>
+    private const int HTTRANSPARENT = -1;
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
     private static extern IntPtr DefWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
@@ -1206,8 +1463,7 @@ public partial class FloatWindow : Window
         IntPtr hwnd = Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        HwndSource.FromHwnd(hwnd)?.AddHook(NcCalcSizeHook);
-
+        // 钩子已在 SourceInitialized 里挂好（那里不受 SystemShadow 影响），这里只管 style。
         IntPtr style = GetWindowLongPtr(hwnd, GWL_STYLE);
         SetWindowLongPtr(hwnd, GWL_STYLE, (IntPtr)((long)style | WS_THICKFRAME));
 
@@ -1331,6 +1587,22 @@ public partial class FloatWindow : Window
             handled = true;
             return DefWindowProc(hwnd, msg, wParam, (IntPtr)(-1));
         }
+        // WM_NCHITTEST（M4.21 鼠标穿透）：返回 HTTRANSPARENT，系统会把鼠标消息
+        // 继续投递给下层的窗口 —— 点悬浮窗等于点它下面的东西。
+        //
+        // 与任务栏那条用的是同一招，**不用 WS_EX_TRANSPARENT**：那个要配 LAYERED 才生效，
+        // 一配 WPF 就退软件合成、毛玻璃全变（M4.1 踩过）。HTTRANSPARENT 只改命中测试的结论，
+        // 不碰渲染，画面一个像素都不会变。切换也不需要重建窗口 —— 这条消息每次都读当前值。
+        //
+        // 代价：右键菜单也一起收不到了（消息根本不投递过来）。出口放在托盘图标、
+        // 设置页和全局热键三处，缺一个都会把用户困住，见 ConfigStore.FloatClickThrough。
+        if (msg == WM_NCHITTEST && _clickThrough)
+        {
+            _hitTestHits++;
+            handled = true;
+            return new IntPtr(HTTRANSPARENT);
+        }
+
         return IntPtr.Zero;
     }
 
@@ -2048,10 +2320,14 @@ public partial class FloatWindow : Window
     private void ToggleLock_Click(object sender, RoutedEventArgs e)
     {
         // IsCheckable 的菜单项点下去时 WPF 已经先把 IsChecked 翻过了，这里读到的就是新状态
-        _locked = LockMenu.IsChecked;
-        _config.FloatLocked = _locked;
-        ConfigStore.SaveCurrent();
+        Locked = LockMenu.IsChecked;
     }
+
+    private void ToggleThrough_Click(object sender, RoutedEventArgs e)
+        => ClickThrough = ThroughMenu.IsChecked;
+
+    private void ToggleTopmost_Click(object sender, RoutedEventArgs e)
+        => AlwaysOnTop = TopmostMenu.IsChecked;
 
     /// <summary>
     /// 把当前外观写回配置。改一次存一次，而不是等退出 ——
@@ -2068,6 +2344,9 @@ public partial class FloatWindow : Window
         _config.FloatVertical = _vertical;
         _config.FloatEdgeMode = _edgeMode;
         _config.TextKeepThreshold = _textKeepThreshold;
+        _config.FloatLocked = _locked;
+        _config.FloatClickThrough = _clickThrough;
+        _config.FloatAlwaysOnTop = _alwaysOnTop;
 
         // 整张表换掉而不是逐项改：用户在设置页"全部重置"时，旧表里那些项要真的消失，
         // 只改动的几项会留下"上次的色"这种幽灵值。
@@ -2092,6 +2371,12 @@ public partial class FloatWindow : Window
         // 菜单若还显示默认的勾选状态，用户会以为设置没生效。
         if (LockMenu is not null) LockMenu.IsChecked = _locked;
         if (GlassMenu is not null) GlassMenu.IsChecked = _glass;
+
+        // 穿透（M4.21）：穿透时"锁定位置"是**强制**的（鼠标消息根本不投递，拖不动），
+        // 所以把它一并勾上并禁用 —— 放用户在穿透状态下解锁，只会得到"解锁了却还是拖不动"。
+        if (ThroughMenu is not null) ThroughMenu.IsChecked = _clickThrough;
+        if (LockMenu is not null) LockMenu.IsEnabled = !_clickThrough;
+        if (TopmostMenu is not null) TopmostMenu.IsChecked = _alwaysOnTop;
 
         // 档位用数组走循环：加档时只要 XAML 补一项、LevelCount 加一，这里不用动
         MenuItem?[] levels =

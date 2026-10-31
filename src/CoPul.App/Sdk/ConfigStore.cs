@@ -55,6 +55,28 @@ public sealed class AppConfig
     public bool FloatLocked { get; set; }
 
     /// <summary>
+    /// 鼠标穿透（M4.21）：悬浮窗不接收任何鼠标消息，点它等于点它下面的东西。
+    ///
+    /// <para>
+    /// 默认关 —— 穿透之后右键菜单也收不到了（消息根本不投递过来），
+    /// 而菜单是悬浮窗唯一的出口。打开的入口在右键菜单 / 设置页 / 托盘图标三处，
+    /// 关掉它的出口也就必须在这三处都在，缺一个都会把用户困在"悬浮窗摸不到"的状态里。
+    /// </para>
+    /// </summary>
+    public bool FloatClickThrough { get; set; }
+
+    /// <summary>
+    /// 始终置顶（M4.21）：每秒把悬浮窗提回 topmost 组最顶。默认开。
+    ///
+    /// <para>
+    /// 本来 XAML 已经是 <c>Topmost="True"</c>，但那只保证"进 topmost 组"，
+    /// 不保证"排在组里最前"：另一个 topmost 窗口（游戏浮层、录屏工具条）一激活就会压到它上面，
+    /// 而没有任何事件通知我们。所以只能巡检。
+    /// </para>
+    /// </summary>
+    public bool FloatAlwaysOnTop { get; set; } = true;
+
+    /// <summary>
     /// 界面缩放档位（Q-05）：100 / 125 / 150。存整数百分比而不是枚举，
     /// 与配置里其它"人能读懂的数值"保持一致；越界由 <see cref="CoPul.App.FloatWindow"/> 夹取。
     /// </summary>

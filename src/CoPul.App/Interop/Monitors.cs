@@ -42,6 +42,14 @@ internal static class Monitors
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_FRAMECHANGED = 0x0020;
 
+    private const int GW_HWNDPREV = 3;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct MONITORINFOEX
     {
@@ -300,6 +308,139 @@ internal static class Monitors
             return false;
         }
     }
+
+    /// <summary>
+    /// 把窗口提到 <c>HWND_TOPMOST</c> 组的最顶（M4.21）。
+    ///
+    /// <para>
+    /// 位置、尺寸、激活状态一个都不动 —— 只改 Z 序。这样每秒巡检一次也不会有可见副作用：
+    /// 不抢焦点、不重排、不闪。它同时会把 <c>WS_EX_TOPMOST</c> 补回来（style 有可能被别的操作清掉）。
+    /// </para>
+    /// </summary>
+    public static bool RaiseToTopmost(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        return SetWindowPos(hwnd, new IntPtr(-1), 0, 0, 0, 0,          // -1 = HWND_TOPMOST
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
+    /// <summary>
+    /// 打印 <paramref name="hwnd"/> 往上数 <paramref name="count"/> 个窗口（诊断用，M4.21）。
+    /// 每条给句柄 / 类名 / 可见性 / 矩形 / 是否自家，用来判断"到底有没有被挡、被谁挡"。
+    /// </summary>
+    public static string DescribeChain(IntPtr hwnd, int count = 8)
+    {
+        if (hwnd == IntPtr.Zero) return "(无 HWND)";
+        GetWindowRect(hwnd, out Win32Window.RECT self);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"self({self.Left},{self.Top})-({self.Right},{self.Bottom}) -> ");
+
+        IntPtr cur = GetWindow(hwnd, GW_HWNDPREV);
+        for (int i = 0; i < count && cur != IntPtr.Zero; i++)
+        {
+            GetWindowRect(cur, out Win32Window.RECT r);
+            var cls = new System.Text.StringBuilder(64);
+            GetClassNameW(cur, cls, cls.Capacity);
+
+            sb.Append($"[{cls} {(IsWindowVisible(cur) ? "vis" : "hid")} " +
+                      $"({r.Left},{r.Top})-({r.Right},{r.Bottom}) {(IsOwnWindow(cur) ? "own" : "ext")}] ");
+            cur = GetWindow(cur, GW_HWNDPREV);
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// 窗口的类名 + 标题，诊断用（"到底被谁压住了"）。取不到返回 <c>"?"</c>。
+    /// </summary>
+    public static string Describe(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "(无)";
+
+        var cls = new System.Text.StringBuilder(256);
+        GetClassNameW(hwnd, cls, cls.Capacity);
+
+        int len = GetWindowTextLengthW(hwnd);
+        var text = new System.Text.StringBuilder(len + 1);
+        if (len > 0) GetWindowTextW(hwnd, text, text.Capacity);
+
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        string owner = IsOwnWindow(hwnd) ? "own" : $"pid={pid}";
+        string visible = IsWindowVisible(hwnd) ? "vis" : "hidden";
+
+        return $"0x{hwnd.ToInt64():X} [{cls}] '{text}' {owner} {visible}";
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassNameW(IntPtr hwnd, System.Text.StringBuilder cls, int max);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextW(IntPtr hwnd, System.Text.StringBuilder text, int max);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLengthW(IntPtr hwnd);
+
+    /// <summary>
+    /// Z 序上排在 <paramref name="hwnd"/> **上面**、且真的会挡住它的第一个窗口；
+    /// <c>IntPtr.Zero</c> = 没被挡。
+    ///
+    /// <para>
+    /// 三个条件缺一不可，都是实测逼出来的：
+    /// <list type="bullet">
+    /// <item><b>可见</b>：系统给线程挂的 IME 窗口（<c>Default IME</c>）永远占 Z 序第一且不可见，
+    /// 后面还跟着托盘消息窗、监听用的 <c>HwndSource</c> 这类没有界面的辅助窗口。</item>
+    /// <item><b>有面积</b>：<c>ThumbnailDeviceHelperWnd</c> 之类的窗口 <c>IsWindowVisible</c>
+    /// 为真但尺寸是 0 —— 它排在我们上面，可一个像素都不遮。</item>
+    /// <item><b>矩形相交</b>：屏幕另一头的置顶窗口排在我们前面，但跟我们各占一块地方，
+    /// 为它提顶没有任何意义，还会跟真正需要置顶的程序互相打架。</item>
+    /// </list>
+    /// 只看 <c>GW_HWNDPREV</c> 会得出"我永远被压着"，于是每秒提一次、一次都提不动（9 秒 9 次无效功）。
+    /// </para>
+    /// </summary>
+    public static IntPtr FirstBlockingAbove(IntPtr hwnd, int maxHops = 64)
+    {
+        if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+        if (!GetWindowRect(hwnd, out Win32Window.RECT self)) return IntPtr.Zero;
+
+        IntPtr cur = GetWindow(hwnd, GW_HWNDPREV);
+        for (int i = 0; i < maxHops && cur != IntPtr.Zero; i++)
+        {
+            if (IsWindowVisible(cur)
+                && GetWindowRect(cur, out Win32Window.RECT r)
+                && r.Right > r.Left && r.Bottom > r.Top
+                && r.Left < self.Right && r.Right > self.Left
+                && r.Top < self.Bottom && r.Bottom > self.Top)
+                return cur;
+
+            cur = GetWindow(cur, GW_HWNDPREV);
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>窗口是否属于本进程。用来避免"跟自己家的设置页抢顶层"。</summary>
+    public static bool IsOwnWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid == Environment.ProcessId;
+    }
+
+    /// <summary>
+    /// 是否本进程**且可见**的窗口。让路只让给这种（M4.21）。
+    ///
+    /// <para>
+    /// 不能只看"是不是自家"：本进程常驻着几个没有界面的辅助窗口（任务栏 <c>TaskbarCreated</c>
+    /// 监听用的 <c>HwndSource</c>、托盘图标的消息窗口），它们同样排在 Z 序上方且永远不消失。
+    /// 按"自家就不抢"判断，巡检会被它们永久挡住 —— 实测 <c>raiseHits</c> 一直是 0，
+    /// 而用户看到的还是被别的置顶窗口压着。真正的诉求只是"别压住用户正在看的自家界面"。
+    /// </para>
+    /// </summary>
+    public static bool IsOwnVisibleWindow(IntPtr hwnd)
+        => hwnd != IntPtr.Zero && IsWindowVisible(hwnd) && IsOwnWindow(hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
 
     /// <summary>
     /// 主显示器的**整屏**矩形（不扣任务栏）。与 <see cref="TryPrimary"/> 的区别：

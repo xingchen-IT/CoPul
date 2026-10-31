@@ -303,6 +303,9 @@ public partial class SettingsWindow : Window
         SyncTextColor(CurrentFieldColor());
         TextThresholdSwitch.IsChecked = CurrentTextKeepThreshold();
 
+        // 悬浮窗交互（M4.21）
+        SyncFloatInteract();
+
         switch (_config.TaskbarInk)
         {
             case "Light": InkLight.IsChecked = true; break;
@@ -568,6 +571,32 @@ public partial class SettingsWindow : Window
                     // 阈值色开关：<c>textthr:0</c> = 整条一个颜色
                     BeginTextProbeBackup();
                     TextThresholdSwitch.IsChecked = value != "0";
+                    break;
+
+                case "floatlock":
+                    // 悬浮窗交互（M4.21）：<c>floatlock:1</c> / <c>floatthrough:1</c> / <c>floattopmost:0</c>
+                    BeginInteractProbeBackup();
+                    FloatLockSwitch.IsChecked = value is "1" or "true" or "on";
+                    break;
+
+                case "floatthrough":
+                    BeginInteractProbeBackup();
+                    FloatThroughSwitch.IsChecked = value is "1" or "true" or "on";
+                    break;
+
+                case "floattopmost":
+                    BeginInteractProbeBackup();
+                    FloatTopmostSwitch.IsChecked = !(value is "0" or "false" or "off");
+                    break;
+
+                case "floatinteract":
+                    // 三个开关 + 窗口实际状态（截图里这块常被截断，靠肉眼数不准）
+                    FloatWindow? fi = _ctx.GetFloat();
+                    System.Console.WriteLine($"floatinteract: lock={FloatLockSwitch.IsChecked} " +
+                                             $"through={FloatThroughSwitch.IsChecked} " +
+                                             $"topmost={FloatTopmostSwitch.IsChecked} " +
+                                             $"lockEnabled={FloatLockSwitch.IsEnabled}");
+                    System.Console.WriteLine($"floatinteract: window={(fi is null ? "(未开)" : fi.InteractDiag)}");
                     break;
 
                 case "textcolors":
@@ -1068,6 +1097,33 @@ public partial class SettingsWindow : Window
     /// 能盖掉"窗口关闭时顺手写盘"那一次。
     /// </para>
     /// </summary>
+    /// <summary>
+    /// 探针改「悬浮窗交互」三项之前的备份。与文字色那份同一套理由：
+    /// 这里改的是共享的 <see cref="AppConfig"/>，而主窗口关闭时也会整份落盘 ——
+    /// 跑一次 <c>floatthrough:1</c> 就把用户的悬浮窗永久设成穿透，那是最难自查的一种污染
+    /// （表现为"鼠标点不到悬浮窗"，用户不会想到是上次跑过探针）。
+    /// </summary>
+    private (bool locked, bool through, bool topmost)? _probeInteractBackup;
+
+    private void BeginInteractProbeBackup()
+    {
+        if (_probeInteractBackup is not null) return;
+
+        _probeInteractBackup = (_config.FloatLocked, _config.FloatClickThrough, _config.FloatAlwaysOnTop);
+        Application.Current.Exit += (_, _) => RestoreInteractProbe();
+    }
+
+    private void RestoreInteractProbe()
+    {
+        if (_probeInteractBackup is not { } backup) return;
+
+        _config.FloatLocked = backup.locked;
+        _config.FloatClickThrough = backup.through;
+        _config.FloatAlwaysOnTop = backup.topmost;
+        _probeInteractBackup = null;
+        ConfigStore.SaveCurrent();
+    }
+
     private void BeginTextProbeBackup()
     {
         if (_probeTextColorBackup is not null) return;
@@ -1342,6 +1398,89 @@ public partial class SettingsWindow : Window
         }
 
         Hint(through ? "任务栏条已设为点击穿透（操作走托盘菜单）" : "任务栏条已可点击");
+    }
+
+    // ---- 悬浮窗交互（M4.21）----
+
+    /// <summary>
+    /// 三个开关都走同一个形状：窗口开着就改窗口（它自己会落盘），没开就只改配置。
+    /// 与缩放 / 排列同一套取舍 —— 悬浮窗是按需创建的，此刻多半不存在。
+    /// </summary>
+    private void FloatLockSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        bool locked = FloatLockSwitch.IsChecked == true;
+        FloatWindow? f = _ctx.GetFloat();
+
+        if (f is not null) f.Locked = locked;
+        else
+        {
+            _config.FloatLocked = locked;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(locked ? "悬浮窗位置已锁定（拖动无效）" : "悬浮窗位置已解锁");
+    }
+
+    private void FloatThroughSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        bool through = FloatThroughSwitch.IsChecked == true;
+        FloatWindow? f = _ctx.GetFloat();
+
+        if (f is not null) f.ClickThrough = through;
+        else
+        {
+            _config.FloatClickThrough = through;
+            ConfigStore.SaveCurrent();
+        }
+
+        // 穿透会连带把「锁定位置」顶成强制状态（鼠标消息根本不投递），UI 要跟着变，
+        // 否则用户会看到"锁定开着但我没开"却无从下手。
+        SyncFloatInteract();
+
+        Hint(through
+            ? "悬浮窗已设为鼠标穿透：右键菜单失效，可从本页 / 托盘图标 / 全局热键关掉"
+            : "悬浮窗已恢复接收鼠标");
+    }
+
+    private void FloatTopmostSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        bool onTop = FloatTopmostSwitch.IsChecked == true;
+        FloatWindow? f = _ctx.GetFloat();
+
+        if (f is not null) f.AlwaysOnTop = onTop;
+        else
+        {
+            _config.FloatAlwaysOnTop = onTop;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(onTop ? "悬浮窗每秒提回最顶层" : "悬浮窗不再强制置顶（仍是普通置顶窗口）");
+    }
+
+    /// <summary>
+    /// 三个开关与事实对齐。穿透会强制锁定，所以每次都要重读一次窗口的实际状态，
+    /// 而不是照抄配置 —— 配置里 <c>FloatLocked</c> 此刻可能已经被穿透顶成 true。
+    /// </summary>
+    private void SyncFloatInteract()
+    {
+        FloatWindow? f = _ctx.GetFloat();
+        bool locked = f?.Locked ?? _config.FloatLocked;
+        bool through = f?.ClickThrough ?? _config.FloatClickThrough;
+
+        _suppress = true;
+        FloatLockSwitch.IsChecked = locked;
+        FloatThroughSwitch.IsChecked = through;
+        FloatTopmostSwitch.IsChecked = f?.AlwaysOnTop ?? _config.FloatAlwaysOnTop;
+
+        // 穿透状态下「锁定位置」是被动结果，置灰免得用户点了没反应
+        FloatLockSwitch.IsEnabled = !through;
+        _suppress = false;
     }
 
     // ---- 采集与网络 ----

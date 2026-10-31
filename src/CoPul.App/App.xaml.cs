@@ -424,6 +424,11 @@ public partial class App : Application
                     // 穿透开着时条上收不到右键，文字颜色就调不了 —— 这里给唯一出口
                     TrayMenuEntry.Item("任务栏条可点击", "toggle:clickthrough",
                                        isChecked: !ConfigStore.Current.TaskbarClickThrough),
+
+                    // 悬浮窗穿透（M4.21）同理：穿透时悬浮窗收不到鼠标，
+                    // 这条是关掉它的三个出口之一（另两个是设置页与全局热键切视图）。
+                    TrayMenuEntry.Item("悬浮窗可点击", "toggle:floatthrough",
+                                       isChecked: !ConfigStore.Current.FloatClickThrough),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("设置…", "settings"),
                     TrayMenuEntry.Item("开机自启", "toggle:autostart", isChecked: AutoStart.IsEnabled()),
@@ -502,6 +507,19 @@ public partial class App : Application
                         ConfigStore.Current.TaskbarClickThrough = through;
                         ConfigStore.SaveCurrent();
                     }
+                    break;
+
+                case "toggle:floatthrough":
+                    // 悬浮窗穿透（M4.21）。窗口可能还没建（用户没进过悬浮窗模式），
+                    // 那种情况只改配置 —— 建出来时会从配置里读到。
+                    bool floatThrough = !ConfigStore.Current.FloatClickThrough;
+                    if (floating is not null && floating.IsLoaded) floating.ClickThrough = floatThrough;
+                    else
+                    {
+                        ConfigStore.Current.FloatClickThrough = floatThrough;
+                        ConfigStore.SaveCurrent();
+                    }
+                    Interop.Trace.Log("tray", $"悬浮窗穿透 → {floatThrough}");
                     break;
 
                 case "toggle:autostart":
@@ -638,6 +656,8 @@ public partial class App : Application
                                  || ArgValue(e.Args, "--float-scale") is not null
                                  || ArgValue(e.Args, "--float-edge") is not null
                                  || ArgValue(e.Args, "--float-text") is not null
+                                 || ArgValue(e.Args, "--float-through") is not null
+                                 || ArgValue(e.Args, "--float-topmost") is not null
                                  || e.Args.Contains("--float-vertical")
                                  || e.Args.Contains("--float-row");
             if (glassOverride) f.PersistToConfig = false;
@@ -696,6 +716,55 @@ public partial class App : Application
             // 默认 none —— 拖动时浅色主题会整圈亮成白边；default 放回系统色，纯色用于判定归属。
             if (ArgValue(e.Args, "--float-border") is string borderMode)
                 f.BorderMode = borderMode;
+
+            // --float-through 1：鼠标穿透（M4.21）。配合下面的探针量 WM_NCHITTEST 计数。
+            // --float-topmost 0：关掉"每秒提回顶层"，A/B 用。
+            if (ArgValue(e.Args, "--float-through") is { } thrSpec)
+                f.ClickThrough = thrSpec is "1" or "true" or "on";
+
+            // --float-hittest-probe：给自己发一条 WM_NCHITTEST，结论写进 sidecar 的 interact 行。
+            // 穿透只改命中测试的结论 —— WindowFromPoint 不做命中测试、截图也看不出差别，
+            // 只有问窗口本人才有答案（--float-through 1 时应为 -1，默认应为 1）。
+            if (e.Args.Contains("--float-hittest-probe")) f.HitTestProbe = true;
+
+            // --float-ztop-probe：每秒把"我"上面的 Z 序链打进 sidecar（M4.21 判据排错用）
+            if (e.Args.Contains("--float-ztop-probe")) f.ZOrderProbe = true;
+
+            // --float-ztop-own：自测时把自家可见窗口也算遮挡（验提顶链路，生产不打开）
+            if (e.Args.Contains("--float-ztop-own")) f.TopmostIncludeOwn = true;
+
+            // --float-blocker：造一个**本进程**的置顶可见窗口压在悬浮窗上（M4.21 自测）。
+            //
+            // 为什么不用外部程序来压：CoPul 是提权进程，UIPI 会保证高完整性窗口永远排在
+            // 低完整性窗口之上 —— 未提权的 Python 窗口根本压不住它（实测：整屏 blocker
+            // 建出来了，但悬浮窗的 Z 序链里一次都没出现）。同进程窗口才压得上去。
+            if (ArgValue(e.Args, "--float-blocker") is { } blockerSec)
+            {
+                var blocker = new Window
+                {
+                    WindowStyle = WindowStyle.None,
+                    ResizeMode = ResizeMode.NoResize,
+                    ShowInTaskbar = false,
+                    Topmost = true,
+                    Background = Brushes.DarkOrange,
+                    Left = 0, Top = 300, Width = 900, Height = 400,   // 盖住左下角那片区域
+                };
+                // 必须**晚于**悬浮窗 Show：同一 topmost 组里后 Show 的排在上面，
+                // 在参数区直接 Show 的话它反而落在悬浮窗下面，一次都遮挡不到（实测）。
+                var pop = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+                pop.Tick += (_, _) => { pop.Stop(); blocker.Show(); };
+                pop.Start();
+
+                if (double.TryParse(blockerSec, out double sec) && sec > 0)
+                {
+                    var kill = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5 + sec) };
+                    kill.Tick += (_, _) => { kill.Stop(); blocker.Close(); };
+                    kill.Start();
+                }
+            }
+
+            if (ArgValue(e.Args, "--float-topmost") is { } topSpec)
+                f.AlwaysOnTop = !(topSpec is "0" or "false" or "off");
 
             // --no-relayout-on-show：关掉"每次显示都强制重排"，A/B 对照用（M4.14）
             if (e.Args.Contains("--no-relayout-on-show")) f.RelayoutOnShow = false;
@@ -1015,6 +1084,12 @@ public partial class App : Application
         {
             timer.Stop();
 
+            // --float-zreport：把悬浮窗的交互诊断打到标准输出（M4.21）。
+            // 为什么要单独给一条：同时开设置页时截图目标会变成设置页，sidecar 就不写了，
+            // 而"设置页压住悬浮窗"恰恰是最需要这组数字的场景。
+            if (e.Args.Contains("--float-zreport") && floating is { IsVisible: true } zf)
+                System.Console.WriteLine("zreport: " + zf.InteractDiag);
+
             // 截哪个窗口必须在这一刻判：设置页 / 任务栏条都是"启动之后才出现的"，
             // 在定时器外面判出来永远是主窗口（第一版 --settings --shot-screen 就拍成了主窗口）。
             Window target = settings is { IsVisible: true } ? settings
@@ -1102,7 +1177,8 @@ public partial class App : Application
                                     $"border: {fw.DwmBorderDiag}{Environment.NewLine}" +
                                     $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
                                     $"scale: {fw.ScaleDiag}{Environment.NewLine}" +
-                                    $"{fw.TextDiag}" +
+                                    $"{fw.TextDiag}{Environment.NewLine}" +
+                                    $"{fw.InteractDiag}" +
                                     (fw.PlacementDiag.Length == 0
                                         ? string.Empty
                                         : Environment.NewLine + "place: " + fw.PlacementDiag));
@@ -1160,7 +1236,8 @@ public partial class App : Application
                             $"hwnd : {rfw.HwndDiag}{Environment.NewLine}" +
                             $"scale: {rfw.ScaleDiag}{Environment.NewLine}" +
                             $"cells: {rfw.FieldsDiag} cellGap={rfw.CellGap.Right:F1}{Environment.NewLine}" +
-                            $"{rfw.TextDiag}" +
+                            $"{rfw.TextDiag}{Environment.NewLine}" +
+                            $"{rfw.InteractDiag}" +
                             (rfw.PlacementDiag.Length == 0
                                 ? string.Empty
                                 : Environment.NewLine + "place: " + rfw.PlacementDiag));

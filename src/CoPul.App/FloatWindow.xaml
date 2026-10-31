@@ -90,6 +90,19 @@
                           Click="ToggleLock_Click"
                           ToolTip="锁定后拖动无效，防止误碰挪走（6.5）" />
 
+                <!--
+                    鼠标穿透（M4.21）。穿透后悬浮窗不接收任何鼠标消息（含右键），
+                    所以出口必须另有其人：托盘图标右键菜单、设置页「悬浮窗交互」卡片、
+                    全局热键切到大窗口。三者任一都能关掉它。
+                -->
+                <MenuItem x:Name="ThroughMenu" Header="鼠标穿透" IsCheckable="True"
+                          Click="ToggleThrough_Click"
+                          ToolTip="点悬浮窗等于点它下面的东西。开启后右键菜单失效，可从托盘图标或设置页关掉" />
+
+                <MenuItem x:Name="TopmostMenu" Header="始终置顶" IsCheckable="True"
+                          Click="ToggleTopmost_Click"
+                          ToolTip="每秒把悬浮窗提回最顶层，压过游戏浮层等其它置顶窗口" />
+
                 <Separator />
 
                 <!--

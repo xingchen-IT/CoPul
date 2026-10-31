@@ -570,6 +570,37 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 悬浮窗交互（M4.21） -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="悬浮窗交互" Style="{StaticResource SectionTitle}" />
+
+                                <Grid Margin="0,12,0,0">
+                                    <TextBlock Text="锁定位置" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton x:Name="FloatLockSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Checked="FloatLockSwitch_Toggled" Unchecked="FloatLockSwitch_Toggled" />
+                                </Grid>
+
+                                <Grid Margin="0,10,0,0">
+                                    <TextBlock Text="鼠标穿透" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton x:Name="FloatThroughSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Checked="FloatThroughSwitch_Toggled" Unchecked="FloatThroughSwitch_Toggled" />
+                                </Grid>
+
+                                <Grid Margin="0,10,0,0">
+                                    <TextBlock Text="始终置顶" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton x:Name="FloatTopmostSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Checked="FloatTopmostSwitch_Toggled" Unchecked="FloatTopmostSwitch_Toggled" />
+                                </Grid>
+
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="穿透后悬浮窗不接收任何鼠标操作（右键菜单也会失效），关掉它的出口有三处：本页这个开关、托盘图标右键菜单、全局热键切到其他视图。开启穿透会自动锁定位置——鼠标消息根本不投递，本来也拖不动。始终置顶每秒把悬浮窗提回最顶层，能压过游戏浮层等其它置顶窗口；独占全屏的游戏不在此列。" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 任务栏条 -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
