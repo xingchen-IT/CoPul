@@ -661,6 +661,52 @@
                                 </Grid>
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="独占全屏时把悬浮窗/任务栏条收起，避免盖在游戏画面上。办公软件的放映模式也会被识别为全屏。" />
+
+                                <!--
+                                    防抖档位（M4.23）：判定主体是前台窗口，切屏、弹窗、Alt+Tab 那一瞬间
+                                    都可能短暂"像全屏"。门限越长越稳，代价是切换反应变慢 —— 这个取舍
+                                    只有用户自己知道（打游戏 vs 频繁切屏），所以做成档位而不是替他定死。
+                                -->
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="进入确认" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <RadioButton x:Name="FsEnter500" Style="{StaticResource Segment}"
+                                                 GroupName="fsEnter" Content="0.5s" Tag="500"
+                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsEnter800" Style="{StaticResource Segment}"
+                                                 GroupName="fsEnter" Content="0.8s" Tag="800"
+                                                 Checked="FsHold_Checked"
+                                                 ToolTip="默认（需求 8.4 定值）" />
+                                    <RadioButton x:Name="FsEnter1000" Style="{StaticResource Segment}"
+                                                 GroupName="fsEnter" Content="1s" Tag="1000"
+                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsEnter2000" Style="{StaticResource Segment}"
+                                                 GroupName="fsEnter" Content="2s" Tag="2000"
+                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsEnter3000" Style="{StaticResource Segment}"
+                                                 GroupName="fsEnter" Content="3s" Tag="3000"
+                                                 Checked="FsHold_Checked" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <TextBlock Text="退出确认" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <RadioButton x:Name="FsExit500" Style="{StaticResource Segment}"
+                                                 GroupName="fsExit" Content="0.5s" Tag="500"
+                                                 Checked="FsHold_Checked"
+                                                 ToolTip="默认（需求 8.4 定值）" />
+                                    <RadioButton x:Name="FsExit1000" Style="{StaticResource Segment}"
+                                                 GroupName="fsExit" Content="1s" Tag="1000"
+                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsExit2000" Style="{StaticResource Segment}"
+                                                 GroupName="fsExit" Content="2s" Tag="2000"
+                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsExit3000" Style="{StaticResource Segment}"
+                                                 GroupName="fsExit" Content="3s" Tag="3000"
+                                                 Checked="FsHold_Checked" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="须连续满足这么久才切换：进入=进游戏后多久切到悬浮窗，退出=退出全屏后多久回任务栏条。调长可挡住切屏/弹窗造成的误判，切回来也会慢一点。" />
                             </StackPanel>
                         </Border>
 

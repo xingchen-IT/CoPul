@@ -224,6 +224,22 @@ public sealed class AppConfig
     /// </summary>
     public bool FullScreenAutoSwitch { get; set; } = true;
 
+    /// <summary>
+    /// 进入全屏的确认时长（ms，防抖门限）。默认 800（8.4 定值），可选 500/1000/2000/3000。
+    ///
+    /// <para>
+    /// 调长的唯一理由：判定主体是前台窗口，切屏、弹窗、进度条抢焦点那一瞬间都可能
+    /// 短暂"像全屏"。门限越长越不容易被带偏，代价是进游戏后要等更久才切到悬浮窗。
+    /// </para>
+    /// </summary>
+    public int FullScreenEnterHoldMs { get; set; } = 800;
+
+    /// <summary>
+    /// 退出全屏的确认时长（ms）。默认 500，可选 1000/2000/3000。
+    /// 调长可避免"游戏切出去一下就回落任务栏"（Alt+Tab 看一眼就切回来也照样稳住）。
+    /// </summary>
+    public int FullScreenExitHoldMs { get; set; } = 500;
+
     // ---- 悬浮窗位置（6.7）----
     // 存「显示器 + 相对比例」而不是绝对像素：换分辨率、改缩放、拔插显示器后，
     // 绝对坐标会把窗口扔到屏幕外。三个字段是一个整体，Monitor 为空即视为"从未摆放过"。

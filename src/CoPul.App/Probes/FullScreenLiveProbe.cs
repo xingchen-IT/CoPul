@@ -59,6 +59,7 @@ internal static class FullScreenLiveProbe
         sb.AppendLine($"采样 ：每 {SampleMs}ms，共 {endMs}ms");
         sb.AppendLine($"点悬浮：{(focusAtMs >= 0 ? focusAtMs + "ms 时 Activate 悬浮窗（模拟用户点它一下）" : "不做")}");
         sb.AppendLine($"替补  ：{(auto.UseFullHwndCandidate ? "开（前台是自己时改判上次的全屏窗口）" : "关（--no-fs-candidate，旧行为）")}");
+        sb.AppendLine($"档位  ：进入确认 {auto.EnterHoldMs}ms / 退出确认 {auto.ExitHoldMs}ms（--fs-hold，M4.23）");
         sb.AppendLine();
         sb.AppendLine("   t/ms view     origin  steady fg                   full  reason");
         sb.AppendLine();
@@ -90,6 +91,8 @@ internal static class FullScreenLiveProbe
             {
                 transitions++;
                 lastTransition = auto.LastTransition;
+                // 迁移时刻：档位取证主要看这一行 —— 门限越长，这里离"游戏真的全屏/退出"越远。
+                sb.AppendLine($"---- {ms}ms 迁移 #{transitions}：{auto.LastTransition} ----");
             }
 
             if (focusAtMs >= 0 && !focused && ms >= focusAtMs)

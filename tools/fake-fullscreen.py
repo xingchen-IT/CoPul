@@ -6,6 +6,7 @@
 #   python fake-fullscreen.py --hold 60  # 全屏 60 秒
 #   python fake-fullscreen.py --windowed # 不铺满（对照组，不该被判成全屏）
 #   python fake-fullscreen.py --shrink 8 # 第 8 秒缩成 800x600（模拟"退出全屏但窗口还在"）
+#   python fake-fullscreen.py --shrink 8 --restore 2  # 缩窗 2 秒后重新铺满（Alt+Tab 出去又回来）
 #
 # 关键点：必须真的铺满整屏、真的无 WS_CAPTION，否则测不出检测逻辑。
 
@@ -46,12 +47,15 @@ def main():
     hold = 25
     windowed = False
     shrink_at = -1
+    restore_after = -1   # 缩窗后多久重新铺满（<0 = 不恢复，模拟真的退出全屏）
     args = sys.argv[1:]
     for i, a in enumerate(args):
         if a == '--hold' and i + 1 < len(args):
             hold = int(args[i + 1])
         if a == '--shrink' and i + 1 < len(args):
             shrink_at = int(args[i + 1])
+        if a == '--restore' and i + 1 < len(args):
+            restore_after = float(args[i + 1])
         if a == '--windowed':
             windowed = True
 
@@ -180,15 +184,31 @@ def main():
     msg = wt.MSG()
     start = time.time()
     shrunk = False
+    restored = False
+    shrunk_at = 0.0
     while time.time() - start < hold:
         # "退出全屏但窗口还在"：缩成 800x600。这一路比"窗口直接销毁"更常见
         # （Alt+Enter 切窗口化、游戏自己退出全屏），替补主体必须跟着判成非全屏。
         if shrink_at >= 0 and not shrunk and time.time() - start >= shrink_at:
             shrunk = True
+            shrunk_at = time.time()
             sx, sy = (sw - 800) // 2, (sh - 600) // 2
             ok = user32.SetWindowPos(hwnd, wt.HWND(HWND_TOPMOST), sx, sy, 800, 600, 0)
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
-            print('shrunk at %.1fs: ret=%d rect=(%d,%d)-(%d,%d)'
+            print('shrunk at %.1fs: ret=%d rect=(%d,%d)-(%d,%d) restore_after=%s'
+                  % (time.time() - start, ok, rect.left, rect.top, rect.right, rect.bottom,
+                     ('%.1fs' % restore_after) if restore_after >= 0 else 'none'))
+            sys.stdout.flush()
+
+        # 又切回全屏（Alt+Tab 看一眼就回来）。退出档位够长的话不该回落任务栏 ——
+        # 这正是"退出确认"档位存在的意义（M4.23）。
+        if shrunk and restored is False and restore_after >= 0 \
+                and time.time() - shrunk_at >= restore_after:
+            restored = True
+            ok = user32.SetWindowPos(hwnd, wt.HWND(HWND_TOPMOST), 0, 0, sw, sh, 0)
+            user32.SetForegroundWindow(hwnd)
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            print('restored at %.1fs: ret=%d rect=(%d,%d)-(%d,%d)'
                   % (time.time() - start, ok, rect.left, rect.top, rect.right, rect.bottom))
             sys.stdout.flush()
 

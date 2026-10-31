@@ -48,6 +48,9 @@ internal sealed class SettingsContext
     /// <summary>全屏自动切换的总开关动作（F-11）。设置页不给 true/false 的猜法，直接调它。</summary>
     public Action<bool> SetFullScreenAutoSwitch { get; init; } = _ => { };
 
+    /// <summary>改两个防抖档位（进入 / 退出，ms）。状态机下一轮判定即生效。</summary>
+    public Action<int, int> SetFullScreenHold { get; init; } = (_, _) => { };
+
     /// <summary>
     /// 当前**真正生效**的热键写法；<c>null</c> = 没注册上（被占用或写法不认识）。
     /// 刻意不读配置：配置里存的是"用户想要的"，冲突时两者并不相同。
@@ -315,6 +318,14 @@ public partial class SettingsWindow : Window
 
         ThroughSwitch.IsChecked = _config.TaskbarClickThrough;
         FullScreenSwitch.IsChecked = _config.FullScreenAutoSwitch;
+
+        // 防抖档位（M4.23）。配置里的值可能不在档位表上（手改过配置）→ 先归一到最接近的档，
+        // 否则一个 1500 会让五个按钮一个都不亮，用户看到的是"当前档位未知"。
+        SelectHoldSegment(new[] { FsEnter500, FsEnter800, FsEnter1000, FsEnter2000, FsEnter3000 },
+                          FullScreenAutoSwitch.NormalizeHold(_config.FullScreenEnterHoldMs, true));
+        SelectHoldSegment(new[] { FsExit500, FsExit1000, FsExit2000, FsExit3000 },
+                          FullScreenAutoSwitch.NormalizeHold(_config.FullScreenExitHoldMs, false));
+
         PingBox.Text = _ctx.GetPingTarget();
 
         _suppress = false;
@@ -508,6 +519,29 @@ public partial class SettingsWindow : Window
 
                 case "fullscreen":
                     FullScreenSwitch.IsChecked = value != "0";
+                    break;
+
+                case "fshold":
+                    // 防抖档位（M4.23）。两个作用：
+                    //   ① 把档位点成指定值（等价于用户点了那个分段按钮，走同一条 Checked 路径）
+                    //   ② 把九个按钮的选中状态打到 stdout —— 常规页比窗口高，截图里这一块常被截断。
+                    {
+                        // 外层探针串按逗号切命令，所以这里的多值只能写分号（与 textcolor 同一套约定）
+                        string[] hv = value.Replace(',', ';').Split(';', StringSplitOptions.TrimEntries);
+                        if (hv.Length > 0 && int.TryParse(hv[0], out int he))
+                            SelectHoldSegment(new[] { FsEnter500, FsEnter800, FsEnter1000, FsEnter2000, FsEnter3000 },
+                                              FullScreenAutoSwitch.NormalizeHold(he, true));
+                        if (hv.Length > 1 && int.TryParse(hv[1], out int hx))
+                            SelectHoldSegment(new[] { FsExit500, FsExit1000, FsExit2000, FsExit3000 },
+                                              FullScreenAutoSwitch.NormalizeHold(hx, false));
+
+                        System.Console.WriteLine($"fshold cfg: enter={_config.FullScreenEnterHoldMs} " +
+                                                 $"exit={_config.FullScreenExitHoldMs}");
+                        foreach (RadioButton chip in new[] { FsEnter500, FsEnter800, FsEnter1000, FsEnter2000, FsEnter3000 })
+                            System.Console.WriteLine($"fshold enter: [{chip.Tag}] '{chip.Content}' checked={chip.IsChecked}");
+                        foreach (RadioButton chip in new[] { FsExit500, FsExit1000, FsExit2000, FsExit3000 })
+                            System.Console.WriteLine($"fshold exit : [{chip.Tag}] '{chip.Content}' checked={chip.IsChecked}");
+                    }
                     break;
 
                 case "mode":
@@ -1504,6 +1538,35 @@ public partial class SettingsWindow : Window
         Hint(string.IsNullOrWhiteSpace(target)
             ? $"探测目标为空，已回退默认 {_config.PingTarget}"
             : $"延迟探测目标：{_config.PingTarget}（下一轮生效）");
+    }
+
+    /// <summary>
+    /// 防抖档位（M4.23）：进入 / 退出各一套。
+    /// 立即生效（状态机下一轮判定就按新门限走），不用重启。
+    /// </summary>
+    private void FsHold_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+        if (!int.TryParse(tag, out int ms)) return;
+
+        bool enter = ((RadioButton)sender).GroupName == "fsEnter";
+        if (enter) _config.FullScreenEnterHoldMs = ms;
+        else _config.FullScreenExitHoldMs = ms;
+
+        ConfigStore.SaveCurrent();
+        _ctx.SetFullScreenHold(_config.FullScreenEnterHoldMs, _config.FullScreenExitHoldMs);
+
+        Hint(enter
+            ? $"进入全屏确认改为 {tag}ms：进游戏后要连续全屏这么久才切到悬浮窗"
+            : $"退出全屏确认改为 {tag}ms：要连续非全屏这么久才回任务栏条");
+    }
+
+    private static void SelectHoldSegment(IEnumerable<RadioButton> buttons, int ms)
+    {
+        string want = ms.ToString();
+        foreach (RadioButton b in buttons)
+            b.IsChecked = (b.Tag as string) == want;
     }
 
     private void FullScreenSwitch_Toggled(object sender, RoutedEventArgs e)

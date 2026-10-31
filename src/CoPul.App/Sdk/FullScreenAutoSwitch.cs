@@ -48,11 +48,48 @@ internal sealed class FullScreenAutoSwitch
     /// <summary>判定轮询间隔。8.4 定 500ms。</summary>
     public static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>进入全屏须持续满足的时间（8.4 防抖）。</summary>
-    public static readonly TimeSpan EnterHold = TimeSpan.FromMilliseconds(800);
+    /// <summary>进入全屏须持续满足的时间（8.4 防抖）的默认值。</summary>
+    public static readonly TimeSpan DefaultEnterHold = TimeSpan.FromMilliseconds(800);
 
-    /// <summary>退出全屏须持续满足的时间（8.4 防抖）。</summary>
-    public static readonly TimeSpan ExitHold = TimeSpan.FromMilliseconds(500);
+    /// <summary>退出全屏须持续满足的时间（8.4 防抖）的默认值。</summary>
+    public static readonly TimeSpan DefaultExitHold = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// 可选档位（ms）。UI 与探针共用同一份数字，避免"设置页有 2s、探针认不出来"这种分叉。
+    /// 两档都含 1s/2s/3s：门限越长越不容易被瞬时状态（切屏、弹窗、点一下悬浮窗）带偏，
+    /// 代价是切换反应变慢，所以交给用户按自己的使用习惯挑。
+    /// </summary>
+    public static readonly int[] EnterHoldChoices = { 500, 800, 1000, 2000, 3000 };
+
+    /// <summary>退出档位。默认 500ms 已在列。</summary>
+    public static readonly int[] ExitHoldChoices = { 500, 1000, 2000, 3000 };
+
+    /// <summary>实际生效的进入门限（ms）。改档位走 <see cref="SetHold"/>。</summary>
+    public int EnterHoldMs { get; private set; } = (int)DefaultEnterHold.TotalMilliseconds;
+
+    /// <summary>实际生效的退出门限（ms）。</summary>
+    public int ExitHoldMs { get; private set; } = (int)DefaultExitHold.TotalMilliseconds;
+
+    /// <summary>
+    /// 取最接近的合法值（与 <c>FloatWindow.NormalizeScale</c> 同一套取舍：不拒绝非法输入，
+    /// 只校正）。手改配置写了 1500 也能用，不至于退回默认把用户的意图抹掉。
+    /// </summary>
+    public static int NormalizeHold(int ms, bool enter)
+    {
+        int[] choices = enter ? EnterHoldChoices : ExitHoldChoices;
+        int best = choices[0];
+        foreach (int c in choices)
+            if (Math.Abs(c - ms) < Math.Abs(best - ms)) best = c;
+        return best;
+    }
+
+    /// <summary>改档位。**立即生效**（下一轮判定就按新门限走），不需要重启。</summary>
+    public void SetHold(int enterMs, int exitMs)
+    {
+        EnterHoldMs = NormalizeHold(enterMs, true);
+        ExitHoldMs = NormalizeHold(exitMs, false);
+        Log($"hold: enter={EnterHoldMs}ms exit={ExitHoldMs}ms");
+    }
 
     private readonly DispatcherTimer _timer;
 
@@ -245,7 +282,7 @@ internal sealed class FullScreenAutoSwitch
             _nonFullSince = 0;
             if (_fullSince == 0) _fullSince = now;
 
-            if (!_isFull && now - _fullSince >= EnterHold.TotalMilliseconds)
+            if (!_isFull && now - _fullSince >= EnterHoldMs)
             {
                 _isFull = true;
                 ApplyFullScreen(info);
@@ -256,7 +293,7 @@ internal sealed class FullScreenAutoSwitch
             _fullSince = 0;
             if (_nonFullSince == 0) _nonFullSince = now;
 
-            if (_isFull && now - _nonFullSince >= ExitHold.TotalMilliseconds)
+            if (_isFull && now - _nonFullSince >= ExitHoldMs)
             {
                 _isFull = false;
                 ApplyExitFullScreen(info);
@@ -341,5 +378,12 @@ internal sealed class FullScreenAutoSwitch
     {
         Enabled = enabled;
         SyncTimer();
+    }
+
+    /// <summary>启动时一次性应用：开关 + 两个防抖档位。</summary>
+    public void ApplyConfig(bool enabled, int enterMs, int exitMs)
+    {
+        SetHold(enterMs, exitMs);
+        ApplyConfig(enabled);
     }
 }
