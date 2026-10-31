@@ -642,8 +642,14 @@ public partial class App : Application
                                  || e.Args.Contains("--float-row");
             if (glassOverride) f.PersistToConfig = false;
 
-            // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路
-            if (e.Args.Contains("--float-persist-probe")) f.PersistProbe = true;
+            // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路。
+            // 必须显式把 PersistToConfig 打开：上面那些外观参数默认一律不落盘，
+            // 而这个探针的用途恰恰是"连外观一起存"——不打开它就永远验不到东西。
+            if (e.Args.Contains("--float-persist-probe"))
+            {
+                f.PersistProbe = true;
+                f.PersistToConfig = true;
+            }
 
             // --float-menu-probe：首帧后直接弹右键菜单，配合整屏抓屏验"竖向窗口下菜单弹在哪"
             if (e.Args.Contains("--float-menu-probe")) f.MenuProbe = true;
@@ -667,8 +673,14 @@ public partial class App : Application
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;
 
-            // --float-text #RRGGBB|auto：悬浮窗文字颜色（M4.19），配合 --shot 量实际前景色
-            if (ArgValue(e.Args, "--float-text") is { } textColor) f.TextColor = textColor;
+            // --float-text fps:#FF7FB8,cpu:#00E5FF：悬浮窗**逐字段**文字色（M4.20）。
+            // 只写一个色（--float-text #FF7FB8）= 九格一起设。配合 --shot 量每格实际前景色。
+            // 任务栏那边用 --tray-text 同一套写法。
+            if (ArgValue(e.Args, "--float-text") is { } textSpec)
+            {
+                foreach (KeyValuePair<string, string> kv in FloatInk.ParsePairs(textSpec))
+                    f.SetFieldColor(kv.Key, kv.Value);
+            }
 
             // --float-text-flat 1：连阈值色一起盖掉（整条一个颜色），A/B 用
             if (ArgValue(e.Args, "--float-text-flat") is { } flat)
@@ -729,6 +741,21 @@ public partial class App : Application
             TaskbarWindow t = EnsureTaskbar();
             t.Show();
             view = FullScreenAutoSwitch.View.Taskbar;
+
+            // --tray-text fps:#00E5FF,ram:#4FB3A6：任务栏**逐字段**文字色（M4.20），
+            // 写法与 --float-text 完全一样，只写个色就是九格一起设。
+            // 必须在 Show 之前：ApplyInk 在 ContentRendered 才第一次推色，晚一步就漏。
+            if (ArgValue(e.Args, "--tray-text") is { } trayTextSpec)
+            {
+                t.PersistToConfig = false;      // 同 --float-*：验收不该改用户的配置
+                foreach (KeyValuePair<string, string> kv in FloatInk.ParsePairs(trayTextSpec))
+                    t.SetFieldColor(kv.Key, kv.Value);
+            }
+
+            // --tray-force-level warn|danger：强制全部格子进阈值态（与 --float-force-level 同一件事）
+            if (ArgValue(e.Args, "--tray-force-level") is { } trayLevel
+                && Enum.TryParse<Level>(trayLevel, ignoreCase: true, out var tl))
+                t.ApplyForceLevel(tl);
 
             // 自测：--tray-restart-probe 在 3 秒后重启 explorer，
             // 配合 --wait 14000 就能验证 7.7「重启后自动恢复」
@@ -1079,6 +1106,12 @@ public partial class App : Application
                                     (fw.PlacementDiag.Length == 0
                                         ? string.Empty
                                         : Environment.NewLine + "place: " + fw.PlacementDiag));
+                            else if (target is TaskbarWindow tb)
+                                // 任务栏条：抓屏只用来看"字在任务栏上读不读得出来"，
+                                // 逐字段配色靠 sidecar 的运行值判 —— 那边是系统底色，数像素不可靠。
+                                File.WriteAllText(shotScreen + ".info.txt",
+                                    $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
+                                    $"{tb.TextDiag}");
                         }
                         catch (Exception ex)
                         {
@@ -1131,6 +1164,8 @@ public partial class App : Application
                             (rfw.PlacementDiag.Length == 0
                                 ? string.Empty
                                 : Environment.NewLine + "place: " + rfw.PlacementDiag));
+                    else if (target is TaskbarWindow rtb)
+                        File.WriteAllText(shot + ".info.txt", rtb.TextDiag);
                 }
             }
             catch (Exception ex)

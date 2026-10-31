@@ -82,24 +82,42 @@ public sealed class AppConfig
     public string FloatEdgeMode { get; set; } = "normal";
 
     /// <summary>
-    /// 悬浮窗文字颜色（M4.19）：<c>#RRGGBB</c>，空串 = 「自动」（跟随玻璃主题）。
+    /// 悬浮窗**逐字段**的文字颜色（M4.20）：字段名 → <c>#RRGGBB</c>。
+    /// 只在表里出现的才是被改过的，缺 = 「自动」（跟随玻璃主题）。key 见 <see cref="FloatFields.Keys"/>。
     ///
     /// <para>
-    /// 只管悬浮窗，不动任务栏条：任务栏那边的底色是系统的任务栏，深浅不由我们决定，
-    /// 用同一个自定义色大概率读不出来，而它自己的「文字取色」已经能三档切换。
+    /// 不存「九项全写一遍」：那样看不出改了哪几项，而且以后加字段要给老配置补种一遍。
+    /// 缺项即默认值，这条规则让加字段变成零成本。
     /// </para>
     /// </summary>
-    public string FloatTextColor { get; set; } = FloatInk.Auto;
+    public Dictionary<string, string> FloatFieldColors { get; set; } = FloatInk.NewMap();
 
     /// <summary>
-    /// 自定义文字色时，数值到了阈值是否仍然变黄 / 变红（M4.19）。默认**开**。
+    /// 任务栏条**逐字段**的文字颜色（M4.20）。与上面那份各存各的：
+    /// 两处字段名不同（悬浮窗有 <c>net</c>、任务栏有 <c>lat</c>），
+    /// 而且底色一个是我们的玻璃、一个是系统任务栏 —— 同一个色在两边不见得都可读。
+    /// key 见 <see cref="TrayFields.Keys"/>。
+    /// </summary>
+    public Dictionary<string, string> TrayFieldColors { get; set; } = FloatInk.NewMap();
+
+    /// <summary>
+    /// 自定义文字色时，数值到了阈值是否仍然变黄 / 变红（M4.19，M4.20 起两视图共用）。默认**开**。
     ///
     /// <para>
     /// 单色会盖掉"这个数字现在不正常"这层信息 —— 温度 85°C 和 40°C 都是同一个颜色，
-    /// 悬浮窗本来就是扫一眼看的，颜色是唯一不用读数的提示。所以默认保留阈值色，
+    /// 悬浮窗和任务栏本来都是扫一眼看的，颜色是唯一不用读数的提示。所以默认保留阈值色，
     /// 真要"整条一个颜色"由用户自己关。
     /// </para>
     /// </summary>
+    public bool TextKeepThreshold { get; set; } = true;
+
+    /// <summary>
+    /// <b>旧版</b>（M4.19）的"整条一个色"。M4.20 起读一次就迁移到
+    /// <see cref="FloatFieldColors"/>，之后不再写 —— 留着这个属性只是为了不丢老配置。
+    /// </summary>
+    public string FloatTextColor { get; set; } = FloatInk.Auto;
+
+    /// <summary><b>旧版</b>（M4.19）的阈值开关。同样只读一次就迁移到 <see cref="TextKeepThreshold"/>。</summary>
     public bool FloatTextKeepThreshold { get; set; } = true;
 
     /// <summary>
@@ -198,7 +216,8 @@ public sealed class AppConfig
     public double FloatRatioY { get; set; } = double.NaN;
 
     /// <summary>
-    /// 配置结构版本。1 = M4.17 及以前；2 = M4.18 起（悬浮窗九字段，新增三项默认关闭）。
+    /// 配置结构版本。1 = M4.17 及以前；2 = M4.18 起（悬浮窗九字段，新增三项默认关闭）；
+    /// 3 = M4.20 起（文字色改成逐字段，旧版的"整条一个色"迁移进 <see cref="FloatFieldColors"/>）。
     /// </summary>
     public int ConfigVersion { get; set; } = 1;
 
@@ -223,7 +242,7 @@ public static class ConfigStore
     /// 表现为"刚调好的浓度，关掉大窗口又变回去了"。
     /// </para>
     /// </summary>
-    public static AppConfig Current => _current ??= SeedFields(LoadFromDisk());
+    public static AppConfig Current => _current ??= Normalize(MigrateTextColor(SeedFields(LoadFromDisk())));
 
     private static AppConfig? _current;
 
@@ -261,6 +280,60 @@ public static class ConfigStore
         config.FloatHiddenFields = hidden.ToArray();
         config.ConfigVersion = 2;
         return config;
+    }
+
+    /// <summary>
+    /// M4.20 的文字色迁移：旧版的"整条一个色"铺到悬浮窗九项上，阈值开关换个名字继续用。
+    ///
+    /// <para>
+    /// 只铺给悬浮窗：M4.19 那个色本来就只作用于悬浮窗，任务栏那时候没有自定义色，
+    /// 凭空给它染一遍等于替用户改了一个他没改过的视图。
+    /// 迁移完把旧字段清空 —— 配置里留一个"看着像在生效、其实没人读"的值，
+    /// 下次排查会先被它骗一次。
+    /// </para>
+    /// </summary>
+    private static AppConfig MigrateTextColor(AppConfig config)
+    {
+        if (config.ConfigVersion >= 3) return config;
+
+        string legacy = FloatInk.Normalize(config.FloatTextColor);
+        if (!FloatInk.IsAuto(legacy) && config.FloatFieldColors.Count == 0)
+        {
+            foreach (string key in FloatFields.Keys) FloatInk.Set(config.FloatFieldColors, key, legacy);
+        }
+
+        // 旧开关只在"用户明确关掉"时才和默认值不同，所以只有 false 需要搬过来
+        if (!config.FloatTextKeepThreshold) config.TextKeepThreshold = false;
+
+        config.FloatTextColor = FloatInk.Auto;
+        config.ConfigVersion = 3;
+        return config;
+    }
+
+    /// <summary>
+    /// 把两张配色表收拾成"可直接用"的样子：字典换回不区分大小写的比较器、
+    /// 写法统一成 <c>#RRGGBB</c>、值为「自动」的占位项丢掉。
+    ///
+    /// <para>
+    /// 为什么必须重造一遍：<c>System.Text.Json</c> 反序列化出来的字典用的是<b>默认</b>比较器，
+    /// 属性初始值里那个 <c>OrdinalIgnoreCase</c> 根本传不进去 ——
+    /// 而字段名是用户手改配置时最爱写错大小写的地方（<c>FPS</c> vs <c>fps</c>）。
+    /// </para>
+    /// </summary>
+    private static AppConfig Normalize(AppConfig config)
+    {
+        config.FloatFieldColors = Rekey(config.FloatFieldColors);
+        config.TrayFieldColors = Rekey(config.TrayFieldColors);
+        return config;
+    }
+
+    private static Dictionary<string, string> Rekey(Dictionary<string, string>? src)
+    {
+        var map = FloatInk.NewMap();
+        if (src is null) return map;
+
+        foreach (KeyValuePair<string, string> kv in src) FloatInk.Set(map, kv.Key, kv.Value);
+        return map;
     }
 
     /// <summary>从磁盘读一次。外部请用 <see cref="Current"/>，不要绕过缓存。</summary>

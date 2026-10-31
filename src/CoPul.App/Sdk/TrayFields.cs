@@ -39,6 +39,8 @@ public static class TrayFields
         "pwr", "lat", "io", "disk", "ram", "vram", "gpu", "cpu",
     };
 
+    /// <summary>
+    /// 切换一个字段的显示，返回 true = 已改变，false = 被拒绝。
     /// <summary>该字段当前是否显示（即用户没有关掉它）。</summary>
     public static bool IsVisible(AppConfig config, string key)
     {
@@ -59,6 +61,16 @@ public static class TrayFields
             if (IsVisible(config, key)) n++;
         }
         return n;
+    }
+
+    /// <summary>字段的中文/英文名，找不到时回原 key（设置页与日志里用）。M4.20 加，与 <see cref="FloatFields.LabelOf"/> 对称。</summary>
+    public static string LabelOf(string key)
+    {
+        for (int i = 0; i < Keys.Length; i++)
+        {
+            if (string.Equals(Keys[i], key, StringComparison.OrdinalIgnoreCase)) return Labels[i];
+        }
+        return key;
     }
 
     /// <summary>

@@ -163,6 +163,11 @@ public partial class TaskbarWindow : Window
         if (Enum.TryParse(config.TaskbarInk, out InkMode saved)) _ink = saved;
         _clickThrough = config.TaskbarClickThrough;
 
+        // 逐字段文字色（M4.20）。与悬浮窗那份各存各的：字段名不同（这里有 lat 没有 net），
+        // 底色也不同（这边是系统任务栏）。只抄配置里出现的键，缺的仍是「自动」。
+        foreach (string key in TrayFields.Keys)
+            FloatInk.Set(_fieldColors, key, FloatInk.Get(config.TrayFieldColors, key));
+
         SourceInitialized += (_, _) =>
         {
             // 先拿掉 Alt+Tab 里的条目，再挂到任务栏位置：顺序反了会先闪一个空壳
@@ -552,6 +557,11 @@ public partial class TaskbarWindow : Window
         LabelBrush = taskbarIsLight
             ? new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63))
             : new SolidColorBrush(Color.FromRgb(0xB8, 0xC2, 0xCE));
+
+        // 把逐字段的自定义色盖上去（M4.20）。放在主题色之后：主题色是"自动"那一档的兜底，
+        // 被覆盖的格子用自定义色，没覆盖的仍用上面那个。
+        // 只改 alt 那一路 —— 悬浮窗那一条条有自己的表，两边互不相干。
+        _state?.SetTrayText(_fieldColors, LabelBrush);
 
         // 给条一层淡底。为什么不能纯透明（7.5 的「跟随系统」）：
         // 实测任务栏是"跟随壁纸"的半透明，壁纸很亮时（现场是一张橙红星球）深色字
@@ -1043,6 +1053,118 @@ public partial class TaskbarWindow : Window
 
     private void ToFloat_Click(object sender, RoutedEventArgs e)
         => FloatRequested?.Invoke(this, EventArgs.Empty);
+
+    // =================================================================
+    // 逐字段文字颜色（M4.20）
+    // =================================================================
+
+    /// <summary>任务栏九个字段各自的文字色。key 见 <see cref="TrayFields.Keys"/>。</summary>
+    public IReadOnlyDictionary<string, string> FieldColors => _fieldColors;
+
+    /// <summary>某个字段当前的文字色写法（没单独设就是「自动」）。</summary>
+    public string FieldColor(string key) => FloatInk.Get(_fieldColors, key);
+
+    /// <summary>逐字段的文字色。只存被改过的，「自动」的不留占位。</summary>
+    private readonly Dictionary<string, string> _fieldColors = FloatInk.NewMap();
+
+    /// <summary>
+    /// 自测 sidecar 用的文字色诊断串（M4.20）。
+    ///
+    /// <para>
+    /// 与悬浮窗那份同理：cfg 只是"配置写了什么"，live 才是"这一格实际是什么颜色"。
+    /// 中间隔着"阈值色压过自定义色"和"字段名对不对得上"两道，只有运行值能证明链路通了。
+    /// </para>
+    /// </summary>
+    public string TextDiag
+    {
+        get
+        {
+            var sb = new StringBuilder();
+            sb.Append($"text(tray): label={Name(LabelBrush as SolidColorBrush)}{Environment.NewLine}");
+
+            foreach ((string key, FloatField field, FrameworkElement host) in _cells)
+            {
+                (Brush? main, Brush? sub) = _state.FieldInk(key, alt: true);
+                sb.Append($"  {key,-4} cfg={(FloatInk.IsAuto(FieldColor(key)) ? "auto" : FieldColor(key)),-8} " +
+                          $"main={Name(main as SolidColorBrush)} sub={Name(sub as SolidColorBrush)} " +
+                          $"live={Name(LiveBrush(host) as SolidColorBrush)}{Environment.NewLine}");
+            }
+            return sb.ToString().TrimEnd('\r', '\n');
+
+            static string Name(SolidColorBrush? b) => b is null ? "null" : b.Color.ToString();
+        }
+    }
+
+    /// <summary>取一格数值 TextBlock 实际的前景色。</summary>
+    private static Brush? LiveBrush(FrameworkElement host)
+    {
+        if (host.Visibility != Visibility.Visible) return null;
+        foreach (object? child in LogicalTreeHelper.GetChildren(host))
+        {
+            if (child is TextBlock { Foreground: { } brush }) return brush;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 强制所有格子进入某个阈值态（M4.19 的 <c>--float-force-level</c> 在任务栏这边的同一件事）：
+    /// 本机平时一项都超不了阈值，"自定义色要不要让位给告警色"这条分支根本走不到。
+    /// </summary>
+    public void ApplyForceLevel(Level level)
+    {
+        DashboardState.ForceLevel = level;
+        ApplyInk();
+    }
+
+    /// <summary>
+    /// 改一个字段的文字色。与悬浮窗那边是同一套入口语义（改完立刻重刷 + 落盘），
+    /// 但各写各的表 —— 两视图要能同屏显示不同的配色。
+    /// </summary>
+    public void SetFieldColor(string key, string hex)
+    {
+        if (!FloatInk.IsFieldKey(key)) return;
+
+        string normalized = FloatInk.Normalize(hex);
+        if (FloatInk.Get(_fieldColors, key) == normalized) return;
+
+        FloatInk.Set(_fieldColors, key, normalized);
+        ApplyInk();              // 重算主题色的同时会把新表推给字段
+        PersistFieldColors();
+    }
+
+    /// <summary>九个字段一起设成同一个色（A/B 与"全部重置"用）。</summary>
+    public void SetAllFieldColors(string hex)
+    {
+        string normalized = FloatInk.Normalize(hex);
+
+        bool changed = false;
+        foreach (string key in TrayFields.Keys)
+        {
+            if (FloatInk.Get(_fieldColors, key) == normalized) continue;
+            FloatInk.Set(_fieldColors, key, normalized);
+            changed = true;
+        }
+        if (!changed) return;
+
+        ApplyInk();
+        PersistFieldColors();
+    }
+
+    /// <summary>
+    /// 阈值开关在悬浮窗那边的 <see cref="DashboardState.SetFloatText"/> 里改，
+    /// 但开关只影响"自定义色要不要让位给阈值色"，改完任务栏这一路也要重算一遍。
+    /// </summary>
+    public void RefreshText() => ApplyInk();
+
+    private void PersistFieldColors()
+    {
+        if (!PersistToConfig) return;
+
+        _config.TrayFieldColors = FloatInk.NewMap();
+        foreach (KeyValuePair<string, string> kv in _fieldColors)
+            FloatInk.Set(_config.TrayFieldColors, kv.Key, kv.Value);
+        ConfigStore.SaveCurrent();
+    }
 
     private void InkAuto_Click(object sender, RoutedEventArgs e) => SetInk(InkMode.Auto);
     private void InkLight_Click(object sender, RoutedEventArgs e) => SetInk(InkMode.Light);

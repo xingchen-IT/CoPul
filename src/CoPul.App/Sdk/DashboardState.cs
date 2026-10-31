@@ -381,60 +381,150 @@ public sealed class DashboardState : INotifyPropertyChanged
     }
 
     // =================================================================
-    // 悬浮窗文字颜色（M4.19）
+    // 文字颜色（M4.19 整条一个色 → M4.20 逐字段）
     // =================================================================
 
-    /// <summary>用户选的主值色；<c>null</c> = 跟随玻璃主题（语义色 / 阈值色那套）。</summary>
-    private SolidColorBrush? _floatTextBrush;
+    /// <summary>
+    /// 悬浮窗：字段名 → 用户选的主值 / 次值画刷。不在表里 = 「自动」（跟随主题）。
+    ///
+    /// <para>
+    /// 主次两色一起存：次值是同色降浓度（<see cref="FloatInk.ToSubBrush"/>），
+    /// 每次重算会造新画刷，而画刷是引用比较去重的 —— 存住这一对才能真的"没变就不通知"。
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, (SolidColorBrush Main, SolidColorBrush Sub)> _floatInk =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>自定义色下是否仍放行阈值色。默认开，见 <see cref="AppConfig.FloatTextKeepThreshold"/>。</summary>
-    private bool _floatKeepThreshold = true;
+    /// <summary>任务栏那一套（M4.20）。与 <see cref="_floatInk"/> 完全独立。</summary>
+    private readonly Dictionary<string, (SolidColorBrush Main, SolidColorBrush Sub)> _trayInk =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>自定义色下是否仍放行阈值色。默认开，两视图共用，见 <see cref="AppConfig.TextKeepThreshold"/>。</summary>
+    private bool _keepThreshold = true;
+
+    private Brush? _floatThemedSub;
+    private Brush? _trayThemedSub;
 
     /// <summary>
-    /// 悬浮窗文字色改了。立即重刷一次画刷，不等下一拍采集 ——
+    /// 悬浮窗的逐字段文字色。立即重刷一次画刷，不等下一拍采集 ——
     /// 设置页是"点完就要看到"的，0.5 秒的延迟会被当成没生效。
     /// </summary>
-    /// <param name="brush">自定义主值色；<c>null</c> = 跟随主题。</param>
+    /// <param name="hexByKey">字段名 → <c>#RRGGBB</c>（空 / 缺 = 自动）。</param>
     /// <param name="keepThreshold">自定义色下是否仍让超阈值的格子变黄 / 变红。</param>
-    public void SetFloatText(SolidColorBrush? brush, bool keepThreshold)
+    /// <param name="themedSub">次值在"自动"下用的主题色。</param>
+    public void SetFloatText(IReadOnlyDictionary<string, string>? hexByKey, bool keepThreshold, Brush? themedSub)
     {
-        _floatTextBrush = brush;
-        _floatKeepThreshold = keepThreshold;
+        Rebuild(_floatInk, hexByKey);
+        _keepThreshold = keepThreshold;
+        _floatThemedSub = themedSub;
         PushFloatText();
+    }
+
+    /// <summary>
+    /// 任务栏的逐字段文字色（M4.20）。<paramref name="keepThreshold"/> 归悬浮窗那次调用管 ——
+    /// 两个视图共用一个开关，设置页改一次两处都要变，分开传迟早有一个漏掉。
+    /// </summary>
+    public void SetTrayText(IReadOnlyDictionary<string, string>? hexByKey, Brush? themedSub)
+    {
+        Rebuild(_trayInk, hexByKey);
+        _trayThemedSub = themedSub;
+        PushTrayText();
+    }
+
+    private static void Rebuild(Dictionary<string, (SolidColorBrush Main, SolidColorBrush Sub)> into,
+                                IReadOnlyDictionary<string, string>? hexByKey)
+    {
+        into.Clear();
+        if (hexByKey is null) return;
+
+        foreach (KeyValuePair<string, string> kv in hexByKey)
+        {
+            SolidColorBrush? main = FloatInk.ToBrush(kv.Value);
+            if (main is null) continue;      // 「自动」不进表，查不到就是自动
+            into[kv.Key] = (main, FloatInk.ToSubBrush(main));
+        }
     }
 
     /// <summary>把当前取色规则重算一遍并刷到九格上（只动画刷，文字不动）。</summary>
     private void PushFloatText()
     {
-        Repaint(FloatFps, FpsValue);
-        Repaint(FloatCpu, CpuLoad);
-        Repaint(FloatGpu, GpuLoad);
-        Repaint(FloatRam, MemLoad);
-        Repaint(FloatVram, GpuMem);
-        Repaint(FloatNet, NetLatency);
-        Repaint(FloatIo, NetUp);
-        Repaint(FloatLat, NetLatency);
-        Repaint(FloatDisk, CpuTemp);
-        Repaint(FloatPwr, CpuPower);
+        Repaint(FloatFps, FpsValue, alt: false);
+        Repaint(FloatCpu, CpuLoad, alt: false);
+        Repaint(FloatGpu, GpuLoad, alt: false);
+        Repaint(FloatRam, MemLoad, alt: false);
+        Repaint(FloatVram, GpuMem, alt: false);
+        Repaint(FloatNet, NetLatency, alt: false);
+        Repaint(FloatDisk, CpuTemp, alt: false);
+        Repaint(FloatIo, NetUp, alt: false);
+        Repaint(FloatPwr, CpuPower, alt: false);
     }
 
-    private void Repaint(FloatField field, MetricCell cell) => field.SetOverride(FloatOverride(cell));
+    /// <summary>任务栏那九格。<c>net</c> 不在它字段表里，<c>lat</c> 才在 —— 两边各刷各的。</summary>
+    private void PushTrayText()
+    {
+        Repaint(FloatFps, FpsValue, alt: true);
+        Repaint(FloatCpu, CpuLoad, alt: true);
+        Repaint(FloatGpu, GpuLoad, alt: true);
+        Repaint(FloatRam, MemLoad, alt: true);
+        Repaint(FloatVram, GpuMem, alt: true);
+        Repaint(FloatDisk, CpuTemp, alt: true);
+        Repaint(FloatIo, NetUp, alt: true);
+        Repaint(FloatLat, NetLatency, alt: true);
+        Repaint(FloatPwr, CpuPower, alt: true);
+    }
+
+    private void Repaint(FloatField field, MetricCell cell, bool alt)
+    {
+        Dictionary<string, (SolidColorBrush Main, SolidColorBrush Sub)> table = alt ? _trayInk : _floatInk;
+        table.TryGetValue(field.InkKey, out (SolidColorBrush Main, SolidColorBrush Sub) ink);
+
+        // 阈值色压过自定义色是刻意的：CPU 92% 的时候仍要变红 —— 悬浮窗 / 任务栏都是扫一眼看的，
+        // 颜色是唯一不用读数的提示，把整条刷成一个颜色等于把告警一起刷掉。
+        // 非要"纯色不要告警"的用户可以关掉 <see cref="AppConfig.TextKeepThreshold"/>。
+        // 不可用（<c>Muted</c>）不算阈值：那一格是 <c>—</c>，本来就没有"超没超"。
+        bool overThreshold = _keepThreshold && cell.Level is Level.Warn or Level.Danger;
+        bool useCustom = ink.Main is not null && !overThreshold;
+
+        field.SetInk(useCustom ? ink.Main : null,
+                     useCustom ? ink.Sub : null,
+                     alt ? _trayThemedSub : _floatThemedSub,
+                     alt);
+    }
 
     /// <summary>
-    /// 悬浮窗一格主值的覆盖色：<c>null</c> = 不覆盖（沿用 <see cref="Set"/> 传进来的语义色）。
+    /// 诊断用：某个字段**当前实际**用的主值 / 次值画刷。
+    /// <paramref name="alt"/> = true 取任务栏那一路。
     ///
     /// <para>
-    /// 阈值色压过自定义色是刻意的：CPU 92% 的时候仍要变红 —— 悬浮窗是扫一眼看的，
-    /// 颜色是唯一不用读数的提示，把整条刷成一个颜色等于把告警一起刷掉。
-    /// 非要"纯色不要告警"的用户可以关掉 <see cref="AppConfig.FloatTextKeepThreshold"/>。
-    /// 不可用（<c>Muted</c>）不算阈值：那一格是 <c>—</c>，本来就没有"超没超"。
+    /// 为什么要有这个：配置写了什么和元素上是什么是两件事，中间隔着"阈值色压过自定义色"、
+    /// "字段名对不对得上"两道。自测只能拿运行值当判据。
     /// </para>
     /// </summary>
-    private Brush? FloatOverride(MetricCell cell)
+    public (Brush? Main, Brush? Sub) FieldInk(string key, bool alt)
     {
-        if (_floatTextBrush is null) return null;
-        return _floatKeepThreshold && cell.Level is Level.Warn or Level.Danger ? null : _floatTextBrush;
+        FloatField? field = FieldOf(key, alt);
+        if (field is null) return (null, null);
+        return alt ? (field.TopBrushAlt, field.SubBrushAlt) : (field.TopBrush, field.SubBrush);
     }
+
+    /// <summary>
+    /// 字段名 → 字段对象。两个视图的字段名不同（<c>net</c> / <c>lat</c>），
+    /// 所以按视图分表 —— 查错表会静默返回"自动"，那正是最难查的一类 bug。
+    /// </summary>
+    private FloatField? FieldOf(string key, bool alt) => key.ToLowerInvariant() switch
+    {
+        "fps" => FloatFps,
+        "cpu" => FloatCpu,
+        "gpu" => FloatGpu,
+        "ram" => FloatRam,
+        "vram" => FloatVram,
+        "disk" => FloatDisk,
+        "io" => FloatIo,
+        "pwr" => FloatPwr,
+        "net" => alt ? null : FloatNet,
+        "lat" => alt ? FloatLat : null,
+        _ => null,
+    };
 
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
@@ -651,6 +741,15 @@ public sealed class DashboardState : INotifyPropertyChanged
         if (!MemBlock.Collapsed) ApplyMemory(snap);
         if (!NetBlock.Collapsed) ApplyNetwork(snap);
         if (!DiskBlock.Collapsed) ApplyDisk(snap);
+
+        // 每拍重算一次"自定义色要不要让位给阈值色"。
+        //
+        // 不能只在改配置时算一次：让不让位取决于**当前**的 Level，
+        // 而 Level 每拍都在变 —— CPU 从 30% 冲到 92% 的那一次，
+        // 只有这一拍的重算能把它变红。只在配置变更时算，等于把告警色永久刷掉。
+        // 没有自定义色时整段跳过：那是最常见的情况，不该为它付出每拍 20 次查表。
+        if (_floatInk.Count > 0) PushFloatText();
+        if (_trayInk.Count > 0) PushTrayText();
     }
 
     /// <summary>

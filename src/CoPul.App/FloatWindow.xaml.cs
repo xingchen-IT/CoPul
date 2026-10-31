@@ -1,3 +1,4 @@
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -125,8 +126,11 @@ public partial class FloatWindow : Window
         _scalePercent = NormalizeScale(config.FloatScale);
         _vertical = config.FloatVertical;
         _edgeMode = NormalizeEdgeMode(config.FloatEdgeMode);
-        _textColor = FloatInk.Normalize(config.FloatTextColor);
-        _textKeepThreshold = config.FloatTextKeepThreshold;
+
+        // 逐字段文字色（M4.20）。只把配置里出现的键抄进内存表，缺的仍是「自动」。
+        foreach (string key in FloatFields.Keys)
+            FloatInk.Set(_fieldColors, key, FloatInk.Get(config.FloatFieldColors, key));
+        _textKeepThreshold = config.TextKeepThreshold;
 
         // 缩放必须在 Show 之前落定：窗口尺寸会决定 SizeToContent 算出的宽度，
         // 而定位（ContentRendered）依赖最终尺寸。晚一步改就会出现"先按 100% 摆好，
@@ -475,39 +479,67 @@ public partial class FloatWindow : Window
     }
 
     // =================================================================
-    // 文字颜色（M4.19）
+    // 文字颜色（M4.19 整条一个色 → M4.20 逐字段）
     // =================================================================
 
     /// <summary>
-    /// 悬浮窗文字颜色：<c>#RRGGBB</c>，空串 = 「自动」（跟随玻璃主题）。
+    /// 悬浮窗九个字段各自的文字色。key 见 <see cref="FloatFields.Keys"/>，
+    /// 值是 <c>#RRGGBB</c>，空串 = 「自动」（跟随玻璃主题）。
     ///
     /// <para>
-    /// 一个值管两段字：主值用所选色，次值用同色降浓度（78%）——
+    /// 一个字段一个色，而不是整条一个色：用户要的是"温度那一格单独标成橙色"，
+    /// 整条一个色做不到。主值用所选色、次值用同色降浓度（78%）——
     /// 原来两段的深浅关系（<c>#1B2027</c> / <c>#5C6672</c>）不能被抹平，
-    /// 全同色会让 34px 高的条看起来糊成一片。
+    /// 全同浓度会让 34px 高的条看起来糊成一片。
     /// </para>
     ///
     /// <para>
-    /// 只影响悬浮窗：任务栏条读的是 <see cref="Sdk.FloatField.TopBrushAlt"/>，
-    /// 那边底色由系统任务栏决定，套同一个自定义色大概率读不出来。
+    /// 只影响悬浮窗：任务栏条读的是 <see cref="Sdk.FloatField.TopBrushAlt"/> 那一套，
+    /// 与这里互不相干（M4.20 起任务栏有自己的一张表）。
     /// </para>
     /// </summary>
-    public string TextColor
+    public IReadOnlyDictionary<string, string> FieldColors => _fieldColors;
+
+    /// <summary>某个字段当前的文字色写法（没单独设就是「自动」）。</summary>
+    public string FieldColor(string key) => FloatInk.Get(_fieldColors, key);
+
+    /// <summary>
+    /// 改一个字段的文字色。设置页点色板 / 填十六进制 / 自测探针都走这里 ——
+    /// 只有一个入口，"改完要不要重刷、要不要落盘"才不会漏。
+    /// </summary>
+    public void SetFieldColor(string key, string hex)
     {
-        get => _textColor;
-        set
+        if (!FloatInk.IsFieldKey(key)) return;
+
+        string normalized = FloatInk.Normalize(hex);
+        if (FloatInk.Get(_fieldColors, key) == normalized) return;
+
+        FloatInk.Set(_fieldColors, key, normalized);
+        ApplyTextTheme(_theme == GlassTheme.Light);
+        PersistAppearance();
+    }
+
+    /// <summary>九个字段一起设成同一个色（A/B 与"全部重置"用）。</summary>
+    public void SetAllFieldColors(string hex)
+    {
+        string normalized = FloatInk.Normalize(hex);
+
+        bool changed = false;
+        foreach (string key in FloatFields.Keys)
         {
-            string v = FloatInk.Normalize(value);
-            if (_textColor == v) return;
-            _textColor = v;
-            ApplyTextTheme(_theme == GlassTheme.Light);
-            PersistAppearance();
+            if (FloatInk.Get(_fieldColors, key) == normalized) continue;
+            FloatInk.Set(_fieldColors, key, normalized);
+            changed = true;
         }
+        if (!changed) return;
+
+        ApplyTextTheme(_theme == GlassTheme.Light);
+        PersistAppearance();
     }
 
     /// <summary>
     /// 自定义文字色下，数值超阈值是否仍然变黄 / 变红。默认开 ——
-    /// 见 <see cref="AppConfig.FloatTextKeepThreshold"/> 的说明。
+    /// 两个视图共用同一个开关，见 <see cref="AppConfig.TextKeepThreshold"/>。
     /// </summary>
     public bool TextKeepThreshold
     {
@@ -521,11 +553,10 @@ public partial class FloatWindow : Window
         }
     }
 
-    private string _textColor = FloatInk.Auto;
-    private bool _textKeepThreshold = true;
+    /// <summary>逐字段的文字色。只存被改过的，「自动」的不留占位。</summary>
+    private readonly Dictionary<string, string> _fieldColors = FloatInk.NewMap();
 
-    /// <summary>用户选的主值画刷；跟随主题时为 <c>null</c>。</summary>
-    private SolidColorBrush? _textBrush;
+    private bool _textKeepThreshold = true;
 
     /// <summary>
     /// 自测 sidecar 用的文字色诊断串。
@@ -533,29 +564,41 @@ public partial class FloatWindow : Window
     /// <para>
     /// 判据必须是**运行值**而不是配置项：配置写了 <c>#FFFFFF</c> 而画刷没换上时，
     /// 两处看起来都对，只有"格子上实际是什么颜色"能证明这条链路通了。
-    /// 所以这里连 <see cref="LabelBrush"/> 一起打，并顺手取一格实测的 Foreground。
+    /// 所以每行都打两份：cfg 是配置、live 是那一格 TextBlock 的 Foreground。
     /// </para>
     /// </summary>
     public string TextDiag
     {
         get
         {
-            string cfg = FloatInk.IsAuto(_textColor) ? "auto" : _textColor;
-            string main = Name(_textBrush);
-            string label = Name(LabelBrush as SolidColorBrush);
-            string live = Name(LiveValueBrush());
-            return $"text: cfg={cfg} keepThreshold={_textKeepThreshold} main={main} label={label} live={live}";
+            var sb = new StringBuilder();
+            sb.Append($"text: keepThreshold={_textKeepThreshold} ");
+            sb.Append($"label={Name(LabelBrush as SolidColorBrush)}{Environment.NewLine}");
+
+            foreach ((string key, StackPanel row, StackPanel col) in FieldCells())
+            {
+                Brush? live = LiveBrush(row, col);
+                (Brush? main, Brush? sub) = _state.FieldInk(key, alt: false);
+                sb.Append($"  {key,-4} cfg={(FloatInk.IsAuto(FieldColor(key)) ? "auto" : FieldColor(key)),-8} " +
+                          $"main={Name(main as SolidColorBrush)} sub={Name(sub as SolidColorBrush)} " +
+                          $"live={Name(live as SolidColorBrush)}{Environment.NewLine}");
+            }
+            return sb.ToString().TrimEnd('\r', '\n');
 
             static string Name(SolidColorBrush? b) => b is null ? "null" : b.Color.ToString();
         }
     }
 
-    /// <summary>取 FPS 那一格数值的实际前景色。"改了到底有没有落到元素上"的判据。</summary>
-    private SolidColorBrush? LiveValueBrush()
+    /// <summary>取一格数值 TextBlock 实际的前景色。"改了到底有没有落到元素上"的判据。</summary>
+    private static Brush? LiveBrush(StackPanel row, StackPanel col)
     {
-        foreach (object? child in LogicalTreeHelper.GetChildren(RowFps))
+        foreach (StackPanel panel in new[] { row, col })
         {
-            if (child is TextBlock { Foreground: SolidColorBrush b }) return b;
+            if (panel.Visibility != Visibility.Visible) continue;
+            foreach (object? child in LogicalTreeHelper.GetChildren(panel))
+            {
+                if (child is TextBlock { Foreground: { } brush }) return brush;
+            }
         }
         return null;
     }
@@ -1611,18 +1654,17 @@ public partial class FloatWindow : Window
     {
         // 用户选的色深浅通用：条的底色有七档 × 深浅两套，替他"自动提亮"等于猜，
         // 猜错了更难解释。设置页给了深底 / 浅底两块预览，让用户自己看。
-        _textBrush = FloatInk.ToBrush(_textColor);
+        Brush themedSub = Palette.Brush(light ? "BrushTextSecondaryLight" : "BrushTextSecondary");
 
         if (DataContext is DashboardState state)
         {
             state.SetFloatTheme(light);
-            state.SetFloatText(_textBrush, _textKeepThreshold);
+            state.SetFloatText(_fieldColors, _textKeepThreshold, themedSub);
         }
 
-        // 次值：自定义时取同色降浓度（保留"主值更重"这一层），跟随主题时仍走原来那套
-        LabelBrush = _textBrush is null
-            ? Palette.Brush(light ? "BrushTextSecondaryLight" : "BrushTextSecondary")
-            : FloatInk.ToSubBrush(_textBrush);
+        // 保留这个 DP：任务栏那种"整条一个次值色"的写法已被逐字段取代，
+        // 但它是诊断里"主题色现在是什么"的参照，也让老的自测脚本不至于读不到东西。
+        LabelBrush = themedSub;
 
         _edgeNormal = EdgeBrushFor(light, _edgeMode);
         _edgeHover = Palette.Brush(light ? "BrushGlassEdgeHover" : "BrushGlassEdgeDarkHover");
@@ -2025,8 +2067,13 @@ public partial class FloatWindow : Window
         _config.FloatScale = _scalePercent;
         _config.FloatVertical = _vertical;
         _config.FloatEdgeMode = _edgeMode;
-        _config.FloatTextColor = _textColor;
-        _config.FloatTextKeepThreshold = _textKeepThreshold;
+        _config.TextKeepThreshold = _textKeepThreshold;
+
+        // 整张表换掉而不是逐项改：用户在设置页"全部重置"时，旧表里那些项要真的消失，
+        // 只改动的几项会留下"上次的色"这种幽灵值。
+        _config.FloatFieldColors = FloatInk.NewMap();
+        foreach (KeyValuePair<string, string> kv in _fieldColors)
+            FloatInk.Set(_config.FloatFieldColors, kv.Key, kv.Value);
         ConfigStore.SaveCurrent();
     }
 

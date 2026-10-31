@@ -93,28 +93,28 @@
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatFps.Top}"
                            Foreground="{Binding FloatFps.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatFps.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatFps.SubBrushAlt}" />
             </StackPanel>
 
             <StackPanel x:Name="CpuCell" Width="{Binding FloatCpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatCpu.Top}"
                            Foreground="{Binding FloatCpu.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatCpu.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatCpu.SubBrushAlt}" />
             </StackPanel>
 
             <StackPanel x:Name="GpuCell" Width="{Binding FloatGpu.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatGpu.Top}"
                            Foreground="{Binding FloatGpu.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatGpu.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatGpu.SubBrushAlt}" />
             </StackPanel>
 
             <StackPanel x:Name="RamCell" Width="{Binding FloatRam.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatRam.Top}"
                            Foreground="{Binding FloatRam.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatRam.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatRam.SubBrushAlt}" />
             </StackPanel>
 
             <!-- 显存：紧跟在内存后面，方便一眼对比"内存 / 显存"两条占用。
@@ -123,7 +123,7 @@
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatVram.Top}"
                            Foreground="{Binding FloatVram.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatVram.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatVram.SubBrushAlt}" />
             </StackPanel>
 
             <!-- 硬盘温度：7.4 要求上下排列（上行盘 1、下行盘 2） -->
@@ -131,7 +131,7 @@
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatDisk.Top}"
                            Foreground="{Binding FloatDisk.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatDisk.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatDisk.SubBrushAlt}" />
             </StackPanel>
 
             <!-- 上下行：↑ 上、↓ 下 -->
@@ -139,21 +139,21 @@
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatIo.Top}"
                            Foreground="{Binding FloatIo.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatIo.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatIo.SubBrushAlt}" />
             </StackPanel>
 
             <StackPanel x:Name="LatCell" Width="{Binding FloatLat.Width}" Margin="0,0,7,0" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatLat.Top}"
                            Foreground="{Binding FloatLat.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatLat.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatLat.SubBrushAlt}" />
             </StackPanel>
 
             <StackPanel x:Name="PwrCell" Width="{Binding FloatPwr.Width}" VerticalAlignment="Center">
                 <TextBlock Style="{StaticResource TrayValue}" Text="{Binding FloatPwr.Top}"
                            Foreground="{Binding FloatPwr.TopBrushAlt}" />
                 <TextBlock Style="{StaticResource TrayLabel}" Text="{Binding FloatPwr.Bottom}"
-                           Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                           Foreground="{Binding FloatPwr.SubBrushAlt}" />
             </StackPanel>
 
         </StackPanel>

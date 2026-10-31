@@ -192,42 +192,42 @@
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatFps.Top}"
                                Foreground="{Binding FloatFps.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatFps.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowCpu" Width="{Binding FloatCpu.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatCpu.Top}"
                                Foreground="{Binding FloatCpu.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatCpu.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowGpu" Width="{Binding FloatGpu.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatGpu.Top}"
                                Foreground="{Binding FloatGpu.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatGpu.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowRam" Width="{Binding FloatRam.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatRam.Top}"
                                Foreground="{Binding FloatRam.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatRam.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowVram" Width="{Binding FloatVram.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatVram.Top}"
                                Foreground="{Binding FloatVram.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatVram.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowNet" Width="{Binding FloatNet.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatNet.Top}"
                                Foreground="{Binding FloatNet.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatNet.SubBrush}" />
                 </StackPanel>
 
                 <!-- M4.18 补齐的三项（默认关闭，勾开才占位）。
@@ -237,21 +237,21 @@
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatDisk.Top}"
                                Foreground="{Binding FloatDisk.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatDisk.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatDisk.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowIo" Width="{Binding FloatIo.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatIo.Top}"
                                Foreground="{Binding FloatIo.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatIo.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatIo.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="RowPwr" Width="{Binding FloatPwr.Width}" VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatPwr.Top}"
                                Foreground="{Binding FloatPwr.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatPwr.Bottom}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatPwr.SubBrush}" />
                 </StackPanel>
 
             </StackPanel>
@@ -284,66 +284,66 @@
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatFps.Top}"
                                Foreground="{Binding FloatFps.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatFps.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatFps.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatFps.Line3}"
                                Visibility="{Binding FloatFps.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatFps.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColCpu" Grid.Row="1" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatCpu.Top}"
                                Foreground="{Binding FloatCpu.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatCpu.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatCpu.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatCpu.Line3}"
                                Visibility="{Binding FloatCpu.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatCpu.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColGpu" Grid.Row="2" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatGpu.Top}"
                                Foreground="{Binding FloatGpu.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatGpu.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatGpu.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatGpu.Line3}"
                                Visibility="{Binding FloatGpu.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatGpu.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColRam" Grid.Row="3" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatRam.Top}"
                                Foreground="{Binding FloatRam.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatRam.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatRam.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatRam.Line3}"
                                Visibility="{Binding FloatRam.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatRam.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColVram" Grid.Row="4" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatVram.Top}"
                                Foreground="{Binding FloatVram.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatVram.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatVram.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatVram.Line3}"
                                Visibility="{Binding FloatVram.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatVram.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColNet" Grid.Row="5" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatNet.Top}"
                                Foreground="{Binding FloatNet.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatNet.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatNet.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatNet.Line3}"
                                Visibility="{Binding FloatNet.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatNet.SubBrush}" />
                 </StackPanel>
 
                 <!-- M4.18 补齐的三项，追加在末尾（老用户记的"第六个是网络延迟"不能挪） -->
@@ -351,33 +351,33 @@
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatDisk.Top}"
                                Foreground="{Binding FloatDisk.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatDisk.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatDisk.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatDisk.Line3}"
                                Visibility="{Binding FloatDisk.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatDisk.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColIo" Grid.Row="7" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatIo.Top}"
                                Foreground="{Binding FloatIo.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatIo.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatIo.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatIo.Line3}"
                                Visibility="{Binding FloatIo.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatIo.SubBrush}" />
                 </StackPanel>
 
                 <StackPanel x:Name="ColPwr" Grid.Row="8" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
                     <TextBlock Style="{StaticResource FloatValueCentered}" Text="{Binding FloatPwr.Top}"
                                Foreground="{Binding FloatPwr.TopBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatPwr.Line2}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatPwr.SubBrush}" />
                     <TextBlock Style="{StaticResource FloatLabelCentered}" Text="{Binding FloatPwr.Line3}"
                                Visibility="{Binding FloatPwr.Line3Visibility}"
                                Margin="{Binding SplitGap, RelativeSource={RelativeSource AncestorType=Window}}"
-                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                               Foreground="{Binding FloatPwr.SubBrush}" />
                 </StackPanel>
             </Grid>
         </Grid>

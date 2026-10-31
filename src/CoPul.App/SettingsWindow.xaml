@@ -239,6 +239,41 @@
             </Setter>
         </Style>
         <!--
+            字段选择条里的一格（M4.20）。用 RadioButton 是为了让 WPF 自己管互斥，
+            外层描边表示"正在编辑这一格"。字色由代码按该字段当前的颜色染 ——
+            九个格子只改了三格时，"哪几格改过"不能靠记。
+        -->
+        <Style x:Key="FieldChip" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Padding" Value="10,4,10,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="ToolTipService.ShowDuration" Value="8000" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Box" CornerRadius="5" Padding="{TemplateBinding Padding}"
+                                Background="{StaticResource BrushPanel}"
+                                BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextBlock.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource BrushTextTertiary}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource AccentGpu}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!--
             色板方块（M4.19）。用 RadioButton + Tag 存 #RRGGBB，与「缩放 / 取色」同一套：
             选中态交给 WPF 互斥，代码只在 Checked 里读 Tag。
             选中标记画成外圈描边而不是方块内的勾 —— 深色色块里放一个勾几乎看不见。
@@ -439,15 +474,28 @@
                         </Border>
 
                         <!--
-                            文字颜色（M4.19）。
-                            主值 13px 粗 + 次值 10px 两段用一个色（次值降浓度到 78%），
-                            所以预览必须**两段一起看**：只看大数字会以为小字也够清楚。
-                            深底 / 浅底都给一块是因为悬浮窗的底色有七档 × 深浅两套 ——
-                            同一个色在浅玻璃上清楚，在深色玻璃上可能就沉下去了。
+                            文字颜色（M4.19 整条一个色 → M4.20 逐字段，悬浮窗 / 任务栏各一套）。
+                            先选视图、再选字段：九格 × 两个视图 = 18 个色，
+                            每个都摆一整排色板会把设置页撑成一面墙，而用户一次只调一格。
+                            字段条里的字**用它自己的颜色**显示，改了哪几格一眼看得出来。
+                            深底 / 浅底两块预览必须**两段一起看**：只看大数字会以为小字也够清楚。
                         -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
-                                <TextBlock Text="悬浮窗文字颜色" Style="{StaticResource SectionTitle}" />
+                                <TextBlock Text="文字颜色" Style="{StaticResource SectionTitle}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <RadioButton x:Name="InkViewFloat" Style="{StaticResource Segment}"
+                                                 GroupName="inkview" Content="悬浮窗" Tag="float"
+                                                 Checked="InkView_Changed"
+                                                 ToolTip="悬浮窗：底色是我们自己的玻璃，深浅由主题 / 浓度档决定" />
+                                    <RadioButton x:Name="InkViewTray" Style="{StaticResource Segment}"
+                                                 GroupName="inkview" Content="任务栏条" Tag="tray"
+                                                 Checked="InkView_Changed"
+                                                 ToolTip="任务栏条：底色是系统任务栏，深浅由「文字取色」决定" />
+                                </StackPanel>
+
+                                <WrapPanel x:Name="TextFieldBar" Margin="0,10,0,0" />
 
                                 <WrapPanel x:Name="TextSwatches" Margin="0,10,0,0" />
 
@@ -497,12 +545,18 @@
                                     </Border>
                                 </Grid>
 
-                                <CheckBox x:Name="TextThresholdSwitch" Style="{StaticResource FieldCheck}"
-                                          Content="数值超阈值时仍变黄 / 红" Margin="0,12,0,0"
-                                          Checked="TextThreshold_Toggled" Unchecked="TextThreshold_Toggled" />
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                    <CheckBox x:Name="TextThresholdSwitch" Style="{StaticResource FieldCheck}"
+                                              Content="数值超阈值时仍变黄 / 红"
+                                              Checked="TextThreshold_Toggled" Unchecked="TextThreshold_Toggled" />
+                                    <Button x:Name="TextResetAll" Style="{StaticResource MiniButton}"
+                                            Content="本视图全部重置" Margin="16,0,0,0"
+                                            Click="ResetAllTextColors_Click"
+                                            ToolTip="把当前视图九个字段都改回「自动」" />
+                                </StackPanel>
 
                                 <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="默认跟随玻璃主题（浅底深字、深底浅字）。自定义后主值用所选色、次值用同色降浓度；超阈值的格子默认仍变黄 / 红，取消勾选才是整条一个颜色。只作用于悬浮窗，任务栏条有自己的「文字取色」。" />
+                                           Text="每个字段都能单独选色，没选过的字段保持「自动」（悬浮窗跟随玻璃主题、任务栏跟随「文字取色」）。主值用所选色、次值用同色降浓度；超阈值的格子默认仍变黄 / 红，取消勾选才是整条一个颜色。两个视图各存一套。" />
                             </StackPanel>
                         </Border>
 

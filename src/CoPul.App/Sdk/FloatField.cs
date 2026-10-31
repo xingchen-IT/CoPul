@@ -27,6 +27,19 @@ public sealed class FloatField : INotifyPropertyChanged
 
     /// <summary>悬浮窗的自定义主值色（M4.19）。null = 跟随语义色 / 阈值色。</summary>
     private Brush? _overrideBrush;
+
+    /// <summary>任务栏的自定义主值色（M4.20）。与上面那套**互不相干**。</summary>
+    private Brush? _overrideBrushAlt;
+
+    private Brush? _overrideSub;
+
+    /// <summary>任务栏的自定义次值色（M4.20）。</summary>
+    private Brush? _overrideSubAlt;
+
+    /// <summary>次值的主题色（两视图各一份，由各自窗口给）。</summary>
+    private Brush _themedSub = Brushes.Gray;
+    private Brush _themedSubAlt = Brushes.Gray;
+
     private bool _onLight = true;
 
     /// <summary>第二视图主题；null = 跟随 <see cref="OnLight"/>。</summary>
@@ -121,7 +134,21 @@ public sealed class FloatField : INotifyPropertyChanged
     }
 
     /// <summary>任务栏用的主值颜色，与 <see cref="TopBrush"/> 互不影响。</summary>
-    public Brush TopBrushAlt => OnLightAlt ? _lightBrush : _darkBrush;
+    public Brush TopBrushAlt => _overrideBrushAlt ?? (OnLightAlt ? _lightBrush : _darkBrush);
+
+    /// <summary>
+    /// 次值颜色（M4.20）。自定义色时是"同色降浓度"，否则是窗口给的主题色。
+    ///
+    /// <para>
+    /// 为什么次值也要跟着改：主值 13px 粗、次值 10px 常规，两段字只改一段的话，
+    /// 改过的那段会和没改的那段打架（"为什么只有数字变色、单位不变"）。
+    /// 但两段又不能同浓度 —— 那就没有"先看大数字"这层了，所以次值统一降一档。
+    /// </para>
+    /// </summary>
+    public Brush SubBrush => _overrideSub ?? _themedSub;
+
+    /// <summary>任务栏的次值颜色。</summary>
+    public Brush SubBrushAlt => _overrideSubAlt ?? _themedSubAlt;
 
     /// <summary>当前用哪套画刷。切浅色/深色时由 <see cref="DashboardState"/> 统一翻。</summary>
     public bool OnLight
@@ -191,13 +218,47 @@ public sealed class FloatField : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 只换覆盖画刷、不动文字（M4.19）。用户在设置页改文字色时要**立刻**看到效果，
+    /// 只换画刷、不动文字（M4.19）。用户在设置页改文字色时要**立刻**看到效果，
     /// 而采集是 0.5 秒一拍 —— 等下一拍才变会被当成"改了没反应"。
     ///
     /// <para>
-    /// 传 <c>null</c> 表示"回到语义色 / 阈值色"，画刷本身不动，
-    /// 所以任务栏那一路（<see cref="TopBrushAlt"/>）完全不受影响。
+    /// 两视图各走各的通道：<paramref name="alt"/> = true 时改任务栏那一路，
+    /// 悬浮窗那一路（<see cref="TopBrush"/> / <see cref="SubBrush"/>）完全不动。
+    /// 传 <c>null</c> 表示"回到语义色 / 阈值色"，底下两套画刷本身不动。
     /// </para>
     /// </summary>
-    public void SetOverride(Brush? brush) => OverrideBrush = brush;
+    public void SetInk(Brush? main, Brush? sub, Brush? themedSub, bool alt)
+    {
+        bool changed = false;
+
+        if (alt)
+        {
+            if (!ReferenceEquals(_overrideBrushAlt, main)) { _overrideBrushAlt = main; changed = true; }
+            if (!ReferenceEquals(_overrideSubAlt, sub)) { _overrideSubAlt = sub; changed = true; }
+            if (themedSub is not null && !ReferenceEquals(_themedSubAlt, themedSub)) { _themedSubAlt = themedSub; changed = true; }
+            if (changed)
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrushAlt)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SubBrushAlt)));
+            }
+            return;
+        }
+
+        if (!ReferenceEquals(_overrideBrush, main)) { _overrideBrush = main; changed = true; }
+        if (!ReferenceEquals(_overrideSub, sub)) { _overrideSub = sub; changed = true; }
+        if (themedSub is not null && !ReferenceEquals(_themedSub, themedSub)) { _themedSub = themedSub; changed = true; }
+        if (changed)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrush)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SubBrush)));
+        }
+    }
+
+    public void SetOverride(Brush? brush) => SetInk(brush, null, null!, alt: false);
+
+    /// <summary>
+    /// 字段名在配色表里用的写法。<see cref="Key"/> 是给 XAML 和诊断看的（<c>FPS</c>），
+    /// 配置表里存小写（<c>fps</c>）—— 两边同一个东西两种写法，全靠这一行对齐。
+    /// </summary>
+    public string InkKey => Key.ToLowerInvariant();
 }

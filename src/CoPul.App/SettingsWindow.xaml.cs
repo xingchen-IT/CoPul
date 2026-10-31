@@ -111,8 +111,11 @@ public partial class SettingsWindow : Window
     /// <summary>代码内部改控件状态时的重入锁（比如拒绝关闭最后一个字段后把勾恢复）。</summary>
     private bool _suppress;
 
-    /// <summary>探针改文字色之前的原值。非空 = 改过，退出时要还原。</summary>
+    /// <summary>探针改文字色之前的原值（整张表序列化成 <c>fps:#FFF,cpu:#000</c>）。非空 = 改过。</summary>
     private string? _probeTextColorBackup;
+
+    /// <summary>探针改**任务栏**配色之前的原值。与上面那份分开存：两组表互不相干。</summary>
+    private string? _probeTrayColorBackup;
 
     /// <summary>探针改阈值开关之前的原值。</summary>
     private bool? _probeThrBackup;
@@ -127,6 +130,7 @@ public partial class SettingsWindow : Window
         InitFieldGrid();
         InitFloatFieldGrid();
         InitTextSwatches();
+        InitTextFieldBar();
         LoadFromConfig();
         LoadDiag();
 
@@ -294,8 +298,9 @@ public partial class SettingsWindow : Window
             default: EdgeNormal.IsChecked = true; break;
         }
 
-        // 文字颜色（M4.19）：同理以当前窗口为准
-        SyncTextColor(CurrentTextColor());
+        // 文字颜色（M4.20）：默认编辑悬浮窗第一格，选中态由字段条自己带
+        (_inkView == "tray" ? InkViewTray : InkViewFloat).IsChecked = true;
+        SyncTextColor(CurrentFieldColor());
         TextThresholdSwitch.IsChecked = CurrentTextKeepThreshold();
 
         switch (_config.TaskbarInk)
@@ -534,9 +539,29 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "textcolor":
-                    // 文字颜色（M4.19）：<c>textcolor:#FF7FB8</c> / <c>textcolor:auto</c>
+                    // 文字颜色（M4.20）：<c>textcolor:fps:#FF7FB8;cpu:#00E5FF</c>（分号分隔 ——
+                    // 逗号被命令串自己占了），也可以只写一个色（<c>textcolor:#FF7FB8</c>）
+                    // = 当前视图九格一起设，<c>textcolor:auto</c> = 当前格改回自动。
                     BeginTextProbeBackup();
-                    ApplyTextColor(FloatInk.Normalize(value));
+                    ApplyTextColorPairs(value);
+                    break;
+
+                case "textview":
+                    // 切到哪个视图再改：<c>textview:tray</c>
+                    InkViewTray.IsChecked = value == "tray";
+                    InkViewFloat.IsChecked = value != "tray";
+                    _inkView = value == "tray" ? "tray" : "float";
+                    _inkField = InkKeys()[0];
+                    InitTextFieldBar();
+                    SyncTextColor(CurrentFieldColor());
+                    break;
+
+                case "textfield":
+                    // 选中某个字段：<c>textfield:ram</c>
+                    foreach (object child in TextFieldBar.Children)
+                    {
+                        if (child is RadioButton { Tag: string k } chip && k == value) chip.IsChecked = true;
+                    }
                     break;
 
                 case "textthr":
@@ -546,16 +571,17 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "textcolors":
-                    // 色板全表打印（截图里这块常被截断，靠肉眼数不准）
+                    // 全表打印（截图里这块常被截断，靠肉眼数不准）
                     foreach (object child in TextSwatches.Children)
                     {
                         if (child is not RadioButton chip) continue;
                         System.Console.WriteLine($"textswatch: [{chip.Tag}] '{chip.Content}' " +
                                                  $"checked={chip.IsChecked} bg={chip.Background}");
                     }
-                    System.Console.WriteLine($"textcolor: cfg={_config.FloatTextColor} " +
-                                             $"hexBox='{TextHexBox.Text}' thr={TextThresholdSwitch.IsChecked} " +
-                                             $"window={_ctx.GetFloat()?.TextColor ?? "(未开)"}");
+                    System.Console.WriteLine($"textview: {_inkView} field={_inkField} " +
+                                             $"hexBox='{TextHexBox.Text}' thr={TextThresholdSwitch.IsChecked}");
+                    System.Console.WriteLine("textdump float: " + DumpColors(false));
+                    System.Console.WriteLine("textdump tray : " + DumpColors(true));
                     System.Console.WriteLine($"textpreview: darkMain={PreviewValueDark.Foreground} " +
                                              $"darkSub={PreviewLabelDark.Foreground} " +
                                              $"lightMain={PreviewValueLight.Foreground} " +
@@ -896,13 +922,115 @@ public partial class SettingsWindow : Window
         });
     }
 
-    // ---- 悬浮窗文字颜色（M4.19）----
+    // ---- 文字颜色（M4.19 整条一个色 → M4.20 逐字段，悬浮窗 / 任务栏各一套）----
 
-    /// <summary>当前生效的文字色；窗口没开着就看配置（与 <see cref="IsFloatVertical"/> 同一套取舍）。</summary>
-    private string CurrentTextColor() => _ctx.GetFloat()?.TextColor ?? _config.FloatTextColor;
+    /// <summary>当前正在编辑哪个视图（<c>float</c> / <c>tray</c>）。</summary>
+    private string _inkView = "float";
+
+    /// <summary>当前视图的字段名表。两视图的字段并不一样（<c>net</c> vs <c>lat</c>）。</summary>
+    private string[] InkKeys() => _inkView == "tray" ? TrayFields.Keys : FloatFields.Keys;
+
+    private string[] InkLabels() => _inkView == "tray" ? TrayFields.Labels : FloatFields.Labels;
+
+    /// <summary>当前正在编辑的字段。切视图时落到该视图的第一项。</summary>
+    private string _inkField = FloatFields.Keys[0];
+
+    /// <summary>当前视图 + 当前字段的配色写法；窗口开着就以窗口为准（与排列 / 边框同一套取舍）。</summary>
+    private string CurrentFieldColor()
+    {
+        if (_inkView == "tray")
+        {
+            TaskbarWindow? bar = _ctx.GetTaskbar();
+            return bar is not null ? bar.FieldColor(_inkField) : FloatInk.Get(_config.TrayFieldColors, _inkField);
+        }
+
+        FloatWindow? f = _ctx.GetFloat();
+        return f is not null ? f.FieldColor(_inkField) : FloatInk.Get(_config.FloatFieldColors, _inkField);
+    }
 
     private bool CurrentTextKeepThreshold()
-        => _ctx.GetFloat()?.TextKeepThreshold ?? _config.FloatTextKeepThreshold;
+    {
+        FloatWindow? f = _ctx.GetFloat();
+        return f?.TextKeepThreshold ?? _config.TextKeepThreshold;
+    }
+
+    /// <summary>
+    /// 字段选择条：九个字段各一格，**字用它自己的颜色**显示。
+    ///
+    /// <para>
+    /// 为什么要染色：九个格子里只改了三格时，靠"我记得改过哪几个"是靠不住的，
+    /// 而色板一次只能反映一格的状态。让字段名自己呈现当前色，改了哪几格一眼可见。
+    /// 「自动」保持默认字色 —— 那正是"没改过"的意思。
+    /// </para>
+    /// </summary>
+    private void InitTextFieldBar()
+    {
+        TextFieldBar.Children.Clear();
+
+        string[] keys = InkKeys();
+        string[] labels = InkLabels();
+        Brush normal = (Brush)FindResource("BrushTextPrimary");
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            string key = keys[i];
+            var chip = new RadioButton
+            {
+                Style = (Style)FindResource("FieldChip"),
+                GroupName = "inkfield",
+                Content = labels[i],
+                Tag = key,
+                IsChecked = key == _inkField,
+                ToolTip = $"{labels[i]}（{key}）",
+            };
+            chip.Checked += TextField_Checked;
+            PaintFieldChip(chip, key, normal);
+            TextFieldBar.Children.Add(chip);
+        }
+    }
+
+    /// <summary>把一格字段条染成它当前的颜色。</summary>
+    private void PaintFieldChip(RadioButton chip, string key, Brush normal)
+    {
+        string hex = _inkView == "tray"
+            ? (_ctx.GetTaskbar()?.FieldColor(key) ?? FloatInk.Get(_config.TrayFieldColors, key))
+            : (_ctx.GetFloat()?.FieldColor(key) ?? FloatInk.Get(_config.FloatFieldColors, key));
+
+        chip.Foreground = FloatInk.IsAuto(hex) ? normal : FloatInk.ToBrush(hex) ?? normal;
+        chip.ToolTip = FloatInk.IsAuto(hex) ? $"{chip.Content}（{key}）：自动" : $"{chip.Content}（{key}）：{hex}";
+    }
+
+    /// <summary>改完一个字段后刷新整条（只重染色，不重建 —— 重建会把选中态抖一下）。</summary>
+    private void RefreshFieldBar()
+    {
+        Brush normal = (Brush)FindResource("BrushTextPrimary");
+        foreach (object child in TextFieldBar.Children)
+        {
+            if (child is RadioButton { Tag: string key } chip) PaintFieldChip(chip, key, normal);
+        }
+    }
+
+    private void InkView_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+
+        _inkView = tag;
+        _inkField = InkKeys()[0];
+
+        InitTextFieldBar();
+        SyncTextColor(CurrentFieldColor());
+        Hint(_inkView == "tray" ? "正在编辑：任务栏条的文字颜色" : "正在编辑：悬浮窗的文字颜色");
+    }
+
+    private void TextField_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string key }) return;
+
+        _inkField = key;
+        SyncTextColor(CurrentFieldColor());
+    }
 
     /// <summary>
     /// 把色板 / 输入框 / 预览三处对齐到 <paramref name="hex"/>。
@@ -934,8 +1062,8 @@ public partial class SettingsWindow : Window
     ///
     /// <para>
     /// 为什么必须还原：这里改的是共享的那份 <see cref="AppConfig"/>，
-    /// 而主窗口关闭时也会整份落盘 —— 跑一次 <c>textcolor:#FF7FB8</c> 就会把用户的
-    /// 悬浮窗文字永久改成粉色，之后每次"默认长什么样"的验收量到的都是上次探针留的色。
+    /// 而主窗口关闭时也会整份落盘 —— 跑一次 <c>textcolor:fps=#FF7FB8</c> 就会把用户的
+    /// 配色永久改掉，之后每次"默认长什么样"的验收量到的都是上次探针留的色。
     /// 挂 <see cref="Application.Exit"/> 是因为它比任何窗口的 <c>Closing</c> 都晚，
     /// 能盖掉"窗口关闭时顺手写盘"那一次。
     /// </para>
@@ -944,17 +1072,28 @@ public partial class SettingsWindow : Window
     {
         if (_probeTextColorBackup is not null) return;
 
-        _probeTextColorBackup = _config.FloatTextColor;
-        _probeThrBackup = _config.FloatTextKeepThreshold;
+        _probeTextColorBackup = Snapshot(_config.FloatFieldColors);
+        _probeTrayColorBackup = Snapshot(_config.TrayFieldColors);
+        _probeThrBackup = _config.TextKeepThreshold;
         Application.Current.Exit += (_, _) => RestoreTextProbe();
+    }
+
+    private static string Snapshot(Dictionary<string, string>? map)
+    {
+        if (map is null || map.Count == 0) return string.Empty;
+
+        var parts = new List<string>();
+        foreach (KeyValuePair<string, string> kv in map) parts.Add($"{kv.Key}:{kv.Value}");
+        return string.Join(",", parts);
     }
 
     private void RestoreTextProbe()
     {
         if (_probeTextColorBackup is null) return;
 
-        _config.FloatTextColor = _probeTextColorBackup;
-        _config.FloatTextKeepThreshold = _probeThrBackup ?? true;
+        _config.FloatFieldColors = FloatInk.ParsePairs(_probeTextColorBackup);
+        _config.TrayFieldColors = FloatInk.ParsePairs(_probeTrayColorBackup);
+        _config.TextKeepThreshold = _probeThrBackup ?? true;
         _probeTextColorBackup = null;
         ConfigStore.SaveCurrent();
     }
@@ -1011,23 +1150,127 @@ public partial class SettingsWindow : Window
         ApplyTextColor(FloatInk.Normalize(text));
     }
 
-    /// <summary>改悬浮窗文字色。窗口开着就直接改，没开就只落盘（与缩放 / 边框同一套写法）。</summary>
+    /// <summary>
+    /// 改**当前视图当前字段**的文字色。窗口开着就直接改，没开就只落盘
+    /// （与缩放 / 边框同一套写法）。
+    ///
+    /// <para>
+    /// 落盘那一支不能少：用户在悬浮窗没开着的时候打开设置页调色，
+    /// 改完下次启动必须还是那个色，否则等于改了个寂寞。
+    /// </para>
+    /// </summary>
     private void ApplyTextColor(string hex)
     {
-        FloatWindow? f = _ctx.GetFloat();
-        if (f is not null)
+        string normalized = FloatInk.Normalize(hex);
+        string view = _inkView == "tray" ? "任务栏条" : "悬浮窗";
+        string field = _inkView == "tray"
+            ? TrayFields.LabelOf(_inkField)
+            : FloatFields.LabelOf(_inkField);
+
+        if (_inkView == "tray")
         {
-            f.TextColor = hex;
-            _config.FloatTextColor = f.TextColor;
+            TaskbarWindow? bar = _ctx.GetTaskbar();
+            if (bar is not null) bar.SetFieldColor(_inkField, normalized);
+            else
+            {
+                FloatInk.Set(_config.TrayFieldColors, _inkField, normalized);
+                ConfigStore.SaveCurrent();
+            }
         }
         else
         {
-            _config.FloatTextColor = hex;
-            ConfigStore.SaveCurrent();
+            FloatWindow? f = _ctx.GetFloat();
+            if (f is not null) f.SetFieldColor(_inkField, normalized);
+            else
+            {
+                FloatInk.Set(_config.FloatFieldColors, _inkField, normalized);
+                ConfigStore.SaveCurrent();
+            }
         }
 
-        SyncTextColor(_config.FloatTextColor);
-        Hint(FloatInk.IsAuto(hex) ? "文字颜色改回「自动」（跟随玻璃主题）" : $"悬浮窗文字颜色 {hex}");
+        SyncTextColor(normalized);
+        RefreshFieldBar();
+        Hint(FloatInk.IsAuto(normalized)
+            ? $"{view}「{field}」改回「自动」（跟随底色）"
+            : $"{view}「{field}」文字颜色 {normalized}");
+    }
+
+    /// <summary>
+    /// 一次改好几个字段（<c>fps:#FF7FB8,cpu:#00E5FF</c>）。探针专用 ——
+    /// 真人一次只调一格，但自测要能一口气摆出"三格三个色"的画面来验。
+    /// 没被提到的一律不动，所以它能叠在现有配色上用。
+    /// </summary>
+    private void ApplyTextColorPairs(string? spec)
+    {
+        var map = FloatInk.ParsePairs(spec);
+        if (map.Count == 0) return;
+
+        bool changed = false;
+        foreach (string key in InkKeys())
+        {
+            if (!map.TryGetValue(key, out string? hex)) continue;
+
+            if (_inkView == "tray")
+            {
+                TaskbarWindow? bar = _ctx.GetTaskbar();
+                if (bar is not null) bar.SetFieldColor(key, hex);
+                else FloatInk.Set(_config.TrayFieldColors, key, hex);
+            }
+            else
+            {
+                FloatWindow? f = _ctx.GetFloat();
+                if (f is not null) f.SetFieldColor(key, hex);
+                else FloatInk.Set(_config.FloatFieldColors, key, hex);
+            }
+            changed = true;
+        }
+
+        if (changed && _ctx.GetFloat() is null && _ctx.GetTaskbar() is null) ConfigStore.SaveCurrent();
+        SyncTextColor(CurrentFieldColor());
+        RefreshFieldBar();
+    }
+
+    /// <summary>诊断用：把一个视图九格的配色打成一行。</summary>
+    private string DumpColors(bool tray)
+    {
+        var parts = new List<string>();
+        foreach (string key in tray ? TrayFields.Keys : FloatFields.Keys)
+        {
+            string hex = tray
+                ? (_ctx.GetTaskbar()?.FieldColor(key) ?? FloatInk.Get(_config.TrayFieldColors, key))
+                : (_ctx.GetFloat()?.FieldColor(key) ?? FloatInk.Get(_config.FloatFieldColors, key));
+            parts.Add($"{key}={(FloatInk.IsAuto(hex) ? "auto" : hex)}");
+        }
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>当前视图九个字段全部改回「自动」。逐点九次太反人类，给个总开关。</summary>
+    private void ResetAllTextColors_Click(object sender, RoutedEventArgs e)
+    {
+        if (_inkView == "tray")
+        {
+            TaskbarWindow? bar = _ctx.GetTaskbar();
+            if (bar is not null) bar.SetAllFieldColors(FloatInk.Auto);
+            else
+            {
+                _config.TrayFieldColors = FloatInk.NewMap();
+                ConfigStore.SaveCurrent();
+            }
+        }
+        else
+        {
+            FloatWindow? f = _ctx.GetFloat();
+            if (f is not null) f.SetAllFieldColors(FloatInk.Auto);
+            else
+            {
+                _config.FloatFieldColors = FloatInk.NewMap();
+                ConfigStore.SaveCurrent();
+            }
+        }
+
+        SyncTextColor(FloatInk.Auto);
+        RefreshFieldBar();
+        Hint(_inkView == "tray" ? "任务栏条九个字段都改回「自动」" : "悬浮窗九个字段都改回「自动」");
     }
 
     private void TextThreshold_Toggled(object sender, RoutedEventArgs e)
@@ -1036,19 +1279,16 @@ public partial class SettingsWindow : Window
 
         bool on = TextThresholdSwitch.IsChecked == true;
 
+        // 开关只有一个，两个视图共用：改完两边都要重算一遍，
+        // 否则任务栏那一路会停在"自定义色让不让位"的旧结论上。
         FloatWindow? f = _ctx.GetFloat();
-        if (f is not null)
-        {
-            f.TextKeepThreshold = on;
-            _config.FloatTextKeepThreshold = on;
-        }
-        else
-        {
-            _config.FloatTextKeepThreshold = on;
-            ConfigStore.SaveCurrent();
-        }
+        if (f is not null) f.TextKeepThreshold = on;
+        _ctx.GetTaskbar()?.RefreshText();
 
-        Hint(on ? "超阈值的数值仍会变黄 / 红" : "整条悬浮窗统一用所选颜色（不再有告警色）");
+        _config.TextKeepThreshold = on;
+        ConfigStore.SaveCurrent();
+
+        Hint(on ? "超阈值的数值仍会变黄 / 红" : "自定义色不再让位给告警色（整条一个颜色）");
     }
 
     // ---- 任务栏条 ----
