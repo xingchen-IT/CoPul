@@ -641,7 +641,7 @@ public partial class App : Application
             // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路
             if (e.Args.Contains("--float-persist-probe")) f.PersistProbe = true;
 
-            // --float-menu-probe：首帧后直接弹右键菜单，配合整屏抓屏验"竖向（旋转）下菜单弹在哪"
+            // --float-menu-probe：首帧后直接弹右键菜单，配合整屏抓屏验"竖向窗口下菜单弹在哪"
             if (e.Args.Contains("--float-menu-probe")) f.MenuProbe = true;
 
             if (e.Args.Contains("--glass-dark")) f.Theme = FloatWindow.GlassTheme.Dark;

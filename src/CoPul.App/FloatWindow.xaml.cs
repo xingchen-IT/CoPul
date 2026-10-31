@@ -146,6 +146,17 @@ public partial class FloatWindow : Window
         // 定位必须等首帧渲染完：SizeToContent 的窗口在 Loaded 阶段宽度还没定型，
         // 实测此时 GetWindowRect 量到的是 94px（最终 381 DIP × 1.5 = 571px）。
         // 拿这个宽度去算「60% 可见」的夹紧范围会算出完全错误的结果。
+        //
+        // 竖向还有第二次尺寸变化：首帧时六格的数据都还是「—」（28 DIP 宽），
+        // 采集到第一个快照后 `18.5/31.6G` 这类长串一进来，窗口才撑到 61 DIP。
+        // 如果它正贴着右边缘，这 33 DIP 就会长到屏幕外 —— 尺寸变一次再夹一次。
+        // 没有缩放边框（ResizeMode=NoResize），尺寸只会因布局/数据变，不会和用户抢。
+        SizeChanged += (_, _) =>
+        {
+            if (!_contentRenderedOnce) return;
+            EnsureFullyVisible();
+        };
+
         ContentRendered += (_, _) =>
         {
             // 首帧渲染完再补一次玻璃。改过窗口 style 之后 accent 会丢掉（实测背景
@@ -259,9 +270,8 @@ public partial class FloatWindow : Window
         double workLeftDip = work.Left / scale;
         double workBottomDip = work.Bottom / scale;
 
-        // 短边是确定的（34 × 档位）；长边由内容决定 —— 横向是宽、竖向是高。
-        // 所以横向按"左边界锚定、底边对齐"摆，竖向按"上边界 = 底边 - 条长"摆，
-        // 两者都是"贴左下角 12 DIP 内缩"，不需要各自一套规则。
+        // 横向的高度是定值（34 × 档位），竖向的高度要由六行内容决定 —— Show 之前量不到，
+        // 用 EstimateVerticalLength 估。两者都是"底边对齐、左边界锚定"，不需要两套规则。
         double heightDip = _vertical ? EstimateVerticalLength() : BaseHeight * (_scalePercent / 100.0);
         Left = workLeftDip + 12;
         Top = workBottomDip - heightDip - 12;
@@ -326,8 +336,8 @@ public partial class FloatWindow : Window
 
     /// <summary>
     /// 自测：<c>--float-menu-probe</c>。首帧渲染后直接弹右键菜单，配合整屏抓屏验收
-    /// "菜单弹在哪"。存在的意义是竖向（旋转 90°）——菜单是独立 Popup，落点由元素变换算，
-    /// 只靠看代码判断不了，必须实拍。
+    /// "菜单弹在哪"。存在的意义是竖向 —— 竖向窗口只有一百来 DIP 宽、一百多高，
+    /// 菜单落点由元素位置算，只靠看代码判断不了，必须实拍。
     /// </summary>
     public bool MenuProbe { get; set; }
 
@@ -404,16 +414,29 @@ public partial class FloatWindow : Window
 
     // ---- 竖向排列（M4.10）----
 
+    /// <summary>竖向时格与格之间的行距（100% 档）。横向是列间 8，竖向取 6：格内本来就是两行，8 会显得散。</summary>
+    private const double BaseRowGap = 6;
+
+    /// <summary>竖向的上下内边距（100% 档）。</summary>
+    private const double BasePadY = 10;
+
     /// <summary>
-    /// 竖向的旋转角（度，WPF 正角 = 顺时针）。
+    /// 竖向的左右内边距（100% 档）。横向是 10，竖向收到 6：
+    /// 竖条宽度完全由"最长的那句次值"撑着（实测 `19.0/31.6G` 要 53 DIP），
+    /// 内边距每多 1 DIP 条就胖 2 DIP，这里是最划算的一刀。
+    /// </summary>
+    private const double BasePadXCompact = 6;
+
+    /// <summary>
+    /// 竖向下次值的字号比例（相对 <see cref="BaseLabelFont"/> 的 10 → 9）。
     ///
     /// <para>
-    /// 90 = 条首在上、条尾在下，文字头朝右 —— 贴在屏幕右/左侧时是常见的侧边标签读法。
-    /// 想反过来（条首在下、文字头朝左）改成 -90 即可，不需要动任何尺寸逻辑：
-    /// 旋转只交换长短边，不改变 34 这个短边。
+    /// 竖条宽度 = 最长次值 + 内边距，而次值字号每降 1px，那句最长的就窄约 5 DIP。
+    /// 只降次值、不动主值：竖排时用户的视线落在数字上，10 → 9 只是"详情更次要"，
+    /// 主值仍是 13 号不用歪头。
     /// </para>
     /// </summary>
-    private const double VerticalAngle = 90;
+    private const double VerticalLabelRatio = 0.9;
 
     /// <summary>竖向排列会话（M4.10）。横向是 6.1 的默认形态。</summary>
     private bool _vertical;
@@ -473,41 +496,50 @@ public partial class FloatWindow : Window
         // 描边取整：0.8 DIP 的边框在布局取整后有时变 0、有时变 1，看上去像"描边时有时无"。
         Shell.BorderThickness = new Thickness(Math.Max(1, Math.Round(s)));
 
-        // 旋转必须在设窗口尺寸**之前**落地：SizeToContent 的量测是按"当前布局结果"算的，
-        // 先量再转会先得到横向尺寸，窗口随后跳到正确大小，肉眼能看见一闪。
-        // 用 LayoutTransform 而非 RenderTransform：后者不参与测量，旋转后的内容会被窗口矩形裁掉。
-        Shell.LayoutTransform = _vertical ? new RotateTransform(VerticalAngle) : null;
+        ValueFontSize = BaseValueFont * s;
+        ValueLineHeight = BaseValueLine * s;
 
-        // 短边恒为 34（6.2）：横着时是条高，竖着时是条宽 —— 旋转只是把长短边换了个方向。
-        ShellHeight = BaseHeight * s;
+        // 次值在竖向下缩一档：条宽就是被最长的那句次值撑出来的（见 VerticalLabelRatio）。
+        LabelFontSize = BaseLabelFont * ( _vertical ? VerticalLabelRatio : 1.0) * s;
+        LabelLineHeight = BaseLabelLine * s;
+
+        // 横向的列间距、竖向的行距。竖向那个 Margin 只在竖向面板上用，
+        // 横向时留着不参与布局，所以不用清。
+        CellGap = new Thickness(0, 0, BaseGap * s, 0);
+        RowCellMargin = new Thickness(0, 0, 0, BaseRowGap * s);
+
+        // 圆角、内边距这几个必须走代码：CornerRadius / Thickness 类型绑起来要先写转换器，
+        // 而它们只在切档时变一次，代码直接给更省事。
+        Shell.CornerRadius = new CornerRadius(10 * s);
 
         if (!_vertical)
         {
             // 横向（6.1）：高度定死，宽度交给 SizeToContent —— 六格宽度是内容决定的。
+            RowPanel.Visibility = Visibility.Visible;
+            ColumnPanel.Visibility = Visibility.Collapsed;
+
             SizeToContent = SizeToContent.Width;
             Width = double.NaN;          // 从竖向切回来时清掉定死的宽度，否则不会跟着内容走
             Height = BaseHeight * s;
+            ShellHeight = BaseHeight * s;
+            Shell.Padding = new Thickness(BasePadX * s, 0, BasePadX * s, 0);
         }
         else
         {
-            // 竖向：宽 = 旋转前的条高，高交给 SizeToContent（= 旋转前的条长，六格宽之和）。
-            // 两个方向各自定一个、另一个交给内容，和横向是完全对称的，不用手算 381 这种数字。
-            SizeToContent = SizeToContent.Height;
+            // 竖向：宽高都按内容长（一列六格），没有一条边是手算的。
+            RowPanel.Visibility = Visibility.Collapsed;
+            ColumnPanel.Visibility = Visibility.Visible;
+
+            // 最后一格也带着行距，所以底部内边距要减去这段，视觉留白才和顶部一致 ——
+            // 不扣的话底边会明显悬空，扣多了又会贴边。
+            double padBottom = Math.Max(0, BasePadY - BaseRowGap) * s;
+            Shell.Padding = new Thickness(BasePadXCompact * s, BasePadY * s, BasePadXCompact * s, padBottom);
+
+            ShellHeight = double.NaN;    // 条高改由内容决定
+            SizeToContent = SizeToContent.WidthAndHeight;
+            Width = double.NaN;
             Height = double.NaN;
-            Width = BaseHeight * s;
         }
-
-        ValueFontSize = BaseValueFont * s;
-        ValueLineHeight = BaseValueLine * s;
-        LabelFontSize = BaseLabelFont * s;
-        LabelLineHeight = BaseLabelLine * s;
-        CellGap = new Thickness(0, 0, BaseGap * s, 0);
-
-        // 圆角、内边距这几个必须走代码：CornerRadius / Thickness 类型绑起来要先写转换器，
-        // 而它们只在切档时变一次，代码直接给更省事。
-        // 内边距跟着一起转：横向的左右 10 在竖向下变成上下 10，两端留白与横向完全一致。
-        Shell.CornerRadius = new CornerRadius(10 * s);
-        Shell.Padding = new Thickness(BasePadX * s, 0, BasePadX * s, 0);
 
         foreach (FloatField f in AllFields) f.ApplyScale(s);
     }
@@ -541,19 +573,15 @@ public partial class FloatWindow : Window
     }
 
     /// <summary>
-    /// 竖排时的估算长度（DIP，即旋转后的窗口高）。只给 <see cref="PrePlaceBeforeShow"/> 用 ——
-    /// Show 之前量不到窗口高度，先按"六格宽 + 列间距 + 两端内边距"估一个（这串数字其实
-    /// 就是旋转前的条长，是定值，不是猜的），误差只剩边框那 2 像素。
+    /// 竖排时的高度估计（DIP）。只给 <see cref="PrePlaceBeforeShow"/> 用 —— Show 之前
+    /// 量不到窗口尺寸，先按"六格 × 两行文字 + 行距 + 上下内边距"估一个；这串数字是定值不是猜的，
+    /// 误差只剩边框那 2 像素，随后的物理像素校正会吸收掉。
     /// </summary>
     private double EstimateVerticalLength()
     {
         double s = _scalePercent / 100.0;
-        FloatField[] fields = AllFields;
-
-        double sum = 0;
-        foreach (FloatField f in fields) sum += f.Width;
-
-        return sum + BaseGap * s * (fields.Length - 1) + 2 * BasePadX * s
+        double cell = BaseValueLine + BaseLabelLine;
+        return (6 * cell + 5 * BaseRowGap + BasePadY + Math.Max(0, BasePadY - BaseRowGap)) * s
                + 2 * Shell.BorderThickness.Left;
     }
 
@@ -578,6 +606,13 @@ public partial class FloatWindow : Window
             foreach (FloatField f in AllFields)
                 sb.Append(f.Key).Append('=').Append(f.Width.ToString("F1")).Append(' ');
             sb.Append($"font={ValueFontSize:F1}/{LabelFontSize:F1} h={ShellHeight:F1}");
+
+            // 竖向时量的是那一套面板 —— 横向面板此时是 Collapsed，量出来全是 0，
+            // 拿它判断"布局对不对"只会得到"没生效"的错觉。
+            if (_vertical)
+            {
+                sb.Append($" panel={ColumnPanel.ActualWidth:F0}x{ColumnPanel.ActualHeight:F0}");
+            }
 
             // 布局实测：Style Setter 里的绑定是否真的落到元素上，只能看元素的运行值。
             // 光看 XAML 会误以为"写了就一定生效"——这里把第一列两个 TextBlock 的
@@ -622,6 +657,11 @@ public partial class FloatWindow : Window
         DependencyProperty.Register(nameof(CellGap), typeof(Thickness), typeof(FloatWindow),
             new PropertyMetadata(new Thickness(0, 0, BaseGap, 0)));
 
+    /// <summary>竖向面板里每一格的外边距：下侧是行距。</summary>
+    public static readonly DependencyProperty RowCellMarginProperty =
+        DependencyProperty.Register(nameof(RowCellMargin), typeof(Thickness), typeof(FloatWindow),
+            new PropertyMetadata(new Thickness(0, 0, 0, BaseRowGap)));
+
     public double ShellHeight
     {
         get => (double)GetValue(ShellHeightProperty);
@@ -656,6 +696,12 @@ public partial class FloatWindow : Window
     {
         get => (Thickness)GetValue(CellGapProperty);
         set => SetValue(CellGapProperty, value);
+    }
+
+    public Thickness RowCellMargin
+    {
+        get => (Thickness)GetValue(RowCellMarginProperty);
+        set => SetValue(RowCellMarginProperty, value);
     }
 
     /// <summary>
@@ -1068,8 +1114,8 @@ public partial class FloatWindow : Window
 
     /// <summary>
     /// 弹右键菜单。抽成方法是为了让 <c>--float-menu-probe</c> 走同一条路径 ——
-    /// 旋转 90° 之后必须重验一次：菜单是独立 Popup，位置由 PlacementTarget 的
-    /// 变换矩阵换算成屏幕坐标，元素一旦被旋转，这一步最容易偏到别处。
+    /// 竖向窗口比横向矮胖得多（约 110 × 140），菜单落点是 Popup 按 PlacementTarget
+    /// 的屏幕矩形算的，换形态必须重验一次。
     /// </summary>
     private void ShowContextMenu()
     {
@@ -1081,13 +1127,13 @@ public partial class FloatWindow : Window
 
     /// <summary>
     /// 自测：<c>--float-menu-probe</c>。验两件事 ——
-    /// ① 右键路由事件还能把菜单打开（事件链没被旋转打断）；
-    /// ② 命中测试能在旋转 90° 的 Border 上找到子元素（找得到 = 点得到 = 也能拖）。
+    /// ① 右键路由事件还能把菜单打开（事件链没被打断）；
+    /// ② 命中测试能在 Border 上找到子元素（找得到 = 点得到 = 也能拖）。
     ///
     /// <para>
     /// 不靠真实鼠标：本机光标随时会被使用者挪走（M4.3 踩过），
     /// 而 <c>RaiseEvent</c> 走的是与 WPF 输入系统同一套路由，差别只在"谁第一个收到"。
-    /// 命中测试用元素本地坐标取中心点 —— <c>LayoutTransform</c> 的逆变换由 WPF 自己算。
+    /// 取窗口正中一点，横向 / 竖向都落在条内。
     /// </para>
     /// </summary>
     private void ProbeMenuAndHitTest()
@@ -1100,13 +1146,16 @@ public partial class FloatWindow : Window
 
         bool open = Shell.ContextMenu?.IsOpen == true;
 
-        // 条内一点（旋转后仍在条内）：能取到元素 = 命中测试没被 LayoutTransform 打断，
-        // 右键与拖动走的是同一套命中。取 null 就说明"看得见却点不到"。
-        object? hit = Shell.InputHitTest(new Point(25, 17));
+        // 取正中一点：能取到元素 = 命中测试正常，右键与拖动走的是同一套命中。
+        // 取 null 就说明"看得见却点不到"。
+        // 先 UpdateLayout 再量：ContentRendered 那一刻竖向窗口的 SizeToContent 还没跑完，
+        // 不刷会量到 28 宽这种中间值，看着像"条子只占了一半"。
+        Shell.UpdateLayout();
+        object? hit = Shell.InputHitTest(new Point(Shell.ActualWidth / 2, Shell.ActualHeight / 2));
         Point origin = Shell.PointToScreen(new Point(0, 0));
 
         PlacementDiag = $"menu-probe: isOpen={open} hit={hit?.GetType().Name ?? "null"} " +
-                        $"shell={Shell.ActualWidth:F0}x{Shell.ActualHeight:F0} " +
+                        $"win={ActualWidth:F0}x{ActualHeight:F0} shell={Shell.ActualWidth:F0}x{Shell.ActualHeight:F0} " +
                         $"origin=({origin.X:F0},{origin.Y:F0})";
 
         if (Shell.ContextMenu is { IsOpen: true } m) m.IsOpen = false;

@@ -68,9 +68,9 @@
                 <Separator />
 
                 <!--
-                    排列（M4.10）：横向 = 6.1 的单行长条；竖向 = 把同一根条整体顺时针
-                    转 90°，文字跟着转，像贴在屏幕侧边的标签。与"缩放"一样是单选，
-                    互斥靠代码（WPF 菜单没有现成的 RadioMenuItem）。
+                    排列（M4.10）：横向 = 6.1 的单行长条；竖向 = 同一组六项竖着摞起来。
+                    竖向**不旋转文字**：字体一律保持水平正立，否则侧边条上的数字得歪头看。
+                    与"缩放"一样是单选，互斥靠代码（WPF 菜单没有现成的 RadioMenuItem）。
                 -->
                 <MenuItem Header="排列">
                     <MenuItem x:Name="LayoutRowMenu" Header="横向" IsCheckable="True" IsChecked="True"
@@ -78,7 +78,7 @@
                               ToolTip="单行长条（6.1 默认形态）" />
                     <MenuItem x:Name="LayoutColumnMenu" Header="竖向" IsCheckable="True"
                               Click="Layout_Click" Tag="column"
-                              ToolTip="整条顺时针旋转 90°，文字随之竖排，适合贴屏幕侧边" />
+                              ToolTip="六项上下排列，文字保持横向正立，适合贴屏幕侧边" />
                 </MenuItem>
 
                 <!-- 单选靠代码互斥（WPF 菜单没有现成的 RadioMenuItem） -->
@@ -124,19 +124,22 @@
         </Border.ContextMenu>
 
         <!--
-            竖向排列（M4.10）是**整条旋转 90°**，不是把六格改成纵向堆叠。
-            所以这里只有一套横向面板：内容永远按 6.1 的单行长条排，竖向与否由
-            Shell.LayoutTransform 上的 RotateTransform 决定（代码里设，见 ApplyScale）。
+            两套面板并存，靠 Visibility 切换（同一时刻只有一套参与测量与渲染）。
 
-            内容跟着一起转，文字也就成了竖排读法 —— 这是用户要的效果：把横条
-            "扳直"贴在屏幕侧边，六格顺序、每格上下两行关系都原样保留。
+            横向（6.1）：六格横排，每格"主值在上、次值在下"两行，列宽绑 FloatField.Width
+                         （6.3 的 34/44/44/74/78/44），窗口 SizeToContent=Width。
 
-            LayoutTransform 而不是 RenderTransform：后者不参与测量，窗口仍是横的，
-            旋转后的内容会被窗口矩形裁掉；前者会把"旋转后的需求尺寸"报给父级，
-            窗口才会跟着变成 34 × N。
+            竖向（M4.10）：同一组六项沿竖直方向排成一条细高的条子，格内结构完全不变
+                         （还是主值在上、次值在下），**文字一律水平正立**。
+                         不旋转的理由：转过 90° 的字要歪头读，且 WPF 只对轴对齐的文字用
+                         ClearType，旋转后必然退成灰度 AA 发虚。
+
+                         注意这里必然比"旋转后那条"宽：旋转版每格只有 34 DIP 高，
+                         两个文字各占半条；正立之后"18.5/31.6G"这种串要完整横着放下，
+                         条宽就得让内容说话（实测 75 DIP）。窄和正立只能二选一，
+                         这里按用户要求选正立。
         -->
         <Grid>
-            <!-- 列宽严格照 6.3：34 / 44 / 44 / 74 / 78 / 44，间距 8，两端内边距各 10 -->
             <StackPanel x:Name="RowPanel" Orientation="Horizontal" VerticalAlignment="Center">
 
                 <StackPanel Width="{Binding FloatFps.Width}" Margin="{Binding CellGap, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Center">
@@ -183,6 +186,69 @@
 
             </StackPanel>
 
+            <!--
+                竖向（M4.10）：整条变成细高的竖条，六项沿竖直方向排下去；
+                每一格仍是"主值在上、次值在下"的两行式 —— 与横向格内结构完全一致，
+                只是格与格之间从左右排变成上下排，文字一律水平正立（不旋转，ClearType 也在）。
+
+                用 Grid 而不是 StackPanel：一列 Auto 宽，六个格子都被拉到同一宽度，
+                左边界天然对齐，不会出现 "12%" 和 "18.9/31.6G" 各占一截、右侧参差的情况。
+            -->
+            <Grid x:Name="ColumnPanel" Visibility="Collapsed" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatFps.Top}"
+                               Foreground="{Binding FloatFps.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatFps.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatCpu.Top}"
+                               Foreground="{Binding FloatCpu.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatCpu.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatGpu.Top}"
+                               Foreground="{Binding FloatGpu.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatGpu.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="3" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatRam.Top}"
+                               Foreground="{Binding FloatRam.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatRam.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatVram.Top}"
+                               Foreground="{Binding FloatVram.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatVram.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="5" Margin="{Binding RowCellMargin, RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Style="{StaticResource FloatValueScaled}" Text="{Binding FloatNet.Top}"
+                               Foreground="{Binding FloatNet.TopBrush}" />
+                    <TextBlock Style="{StaticResource FloatLabelScaled}" Text="{Binding FloatNet.Bottom}"
+                               Foreground="{Binding LabelBrush, RelativeSource={RelativeSource AncestorType=Window}}" />
+                </StackPanel>
+            </Grid>
         </Grid>
     </Border>
 </Window>

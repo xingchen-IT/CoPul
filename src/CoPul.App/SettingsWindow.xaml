@@ -353,7 +353,7 @@
                                     <RadioButton x:Name="LayoutColumn" Style="{StaticResource Segment}"
                                                  GroupName="layout" Content="竖向" Tag="column"
                                                  Checked="Layout_Checked"
-                                                 ToolTip="整条顺时针旋转 90°，文字随之竖排" />
+                                                 ToolTip="六项上下排列，文字保持横向正立" />
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
