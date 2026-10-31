@@ -60,9 +60,12 @@
     <SolidColorBrush x:Key="BrushGlassEdge"       Color="#1F000000" />  <!-- 黑 12% -->
     <SolidColorBrush x:Key="BrushGlassEdgeHover"  Color="#3D000000" />  <!-- 黑 24% -->
 
-    <!-- 深色玻璃的描边：奶白底上用黑、深色底上用白，各取"能在自己底上看见"的那一头 -->
+    <!-- 深色玻璃的描边：奶白底上用黑、深色底上用白，各取"能在自己底上看见"的那一头。
+         hover 那一档从 22% 收到 14%（M4.13）：深色玻璃底本来只有 25 luma，
+         22% 白一叠就是一圈明显的白线，鼠标一碰、一拖就整圈亮；
+         14% 仍然看得出"这块可以点"，但不至于像给条子镶了银边。 -->
     <SolidColorBrush x:Key="BrushGlassEdgeDark"       Color="#1FFFFFFF" />  <!-- 白 12% -->
-    <SolidColorBrush x:Key="BrushGlassEdgeDarkHover"  Color="#38FFFFFF" />  <!-- 白 22% -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDarkHover"  Color="#24FFFFFF" />  <!-- 白 14% -->
 
     <!-- 文字 -->
     <SolidColorBrush x:Key="BrushTextOnGlass"          Color="#1B2027" />

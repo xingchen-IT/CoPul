@@ -661,6 +661,11 @@ public partial class App : Application
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;
 
+            // --float-border none|default|#RRGGBB：DWM 那条 1px 窗口边框（M4.13）。
+            // 默认 none —— 拖动时浅色主题会整圈亮成白边；default 放回系统色，纯色用于判定归属。
+            if (ArgValue(e.Args, "--float-border") is string borderMode)
+                f.BorderMode = borderMode;
+
             // --float-snap-probe x,y：摆到 (x,y) 再跑吸附，结果写进 shots 的 sidecar 文件
             string? snapProbe = ArgValue(e.Args, "--float-snap-probe");
             if (snapProbe is not null)
@@ -974,6 +979,7 @@ public partial class App : Application
                             if (target is FloatWindow fw)
                                 File.WriteAllText(shotScreen + ".info.txt",
                                     $"glass: {fw.GlassMode}{Environment.NewLine}" +
+                                    $"border: {fw.DwmBorderDiag}{Environment.NewLine}" +
                                     $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
                                     $"scale: {fw.ScaleDiag}" +
                                     (fw.PlacementDiag.Length == 0

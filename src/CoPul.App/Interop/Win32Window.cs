@@ -24,6 +24,15 @@ internal static class Win32Window
     /// <summary>DWM_WINDOW_CORNER_PREFERENCE.DWMWCP_ROUND。</summary>
     private const int DWMWCP_ROUND = 2;
 
+    /// <summary>DWMWA_BORDER_COLOR，Win11 22000 起支持（Win10 返回失败，无害）。</summary>
+    private const int DWMWA_BORDER_COLOR = 34;
+
+    /// <summary>DWMWA_COLOR_NONE：让 DWM 不画那条 1px 窗口边框。</summary>
+    private const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+
+    /// <summary>DWMWA_COLOR_DEFAULT：恢复系统默认（跟随主题）。</summary>
+    private const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
@@ -167,6 +176,47 @@ internal static class Win32Window
         return DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference,
                                      sizeof(int)) == 0;
     }
+
+    /// <summary>
+    /// 关掉 DWM 给窗口画的那条 1px 边框。
+    ///
+    /// <para>
+    /// <b>为什么需要</b>：悬浮窗为了拿系统阴影给窗口加了 <c>WS_THICKFRAME</c>（见
+    /// <c>FloatWindow.EnableSystemShadow</c>），DWM 从此把它当成"有框架的窗口"，
+    /// 除了阴影之外还会在外沿画一条边框。这条边框的颜色默认跟随主题 ——
+    /// 浅色主题下是近白色，静止时被圆角与阴影挡住不明显，<b>一旦拖动（进 move loop）就整圈亮起来</b>，
+    /// 在深色壁纸上像贴了一圈白胶带。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>为什么不动 <c>WS_THICKFRAME</c></b>：那是阴影的唯一开关（M2 报告 2.11 已证伪别的路），
+    /// 去掉边框比去掉阴影更划算 —— 阴影是"这扇窗浮在桌面上"的主要线索。
+    /// </para>
+    ///
+    /// <para>
+    /// Win10 没有这个属性，调用返回非 0，忽略即可（那边本来也没有 Win11 的圆角边框）。
+    /// </para>
+    /// </summary>
+    /// <returns>true = 系统接受了设置。</returns>
+    public static bool TryDisableDwmBorder(IntPtr hwnd) => TrySetDwmBorderColor(hwnd, DWMWA_COLOR_NONE);
+
+    /// <summary>
+    /// 直接指定 DWM 边框色。<paramref name="colorRef"/> 用 Win32 的 <c>COLORREF</c>
+    /// （<c>0x00BBGGRR</c>，注意红蓝是反的），或用上面两个语义常量。
+    ///
+    /// <para>
+    /// 之所以留"随便给个颜色"这条路：白边到底是不是这条属性画的，光看"关掉之后没了"不够
+    /// —— 桌面背景随时在变。把边框涂成纯红，拖一下就知道管辖范围。
+    /// </para>
+    /// </summary>
+    public static bool TrySetDwmBorderColor(IntPtr hwnd, int colorRef)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        return DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref colorRef, sizeof(int)) == 0;
+    }
+
+    /// <summary>把 DWM 边框色恢复成系统默认（自测开关 <c>--float-border default</c> 用）。</summary>
+    public static bool TryResetDwmBorder(IntPtr hwnd) => TrySetDwmBorderColor(hwnd, DWMWA_COLOR_DEFAULT);
 
     /// <summary>
     /// 旧系统的圆角兜底：直接把窗口区域裁成圆角矩形。

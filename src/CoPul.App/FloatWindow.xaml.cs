@@ -744,6 +744,15 @@ public partial class FloatWindow : Window
     /// <summary>是否启用系统阴影。<c>--no-shadow</c> 可关掉，用于排查阴影/边框异常。</summary>
     public bool SystemShadow { get; set; } = true;
 
+    /// <summary>
+    /// DWM 那条 1px 窗口边框怎么处理（M4.13）：<c>none</c>（默认，关掉）/ <c>default</c>
+    /// （系统主题色）/ <c>#RRGGBB</c>（指定色，仅用于判定"拖动白边是不是这条属性画的"）。
+    /// </summary>
+    public string BorderMode { get; set; } = "none";
+
+    /// <summary>边框设置结果，写进截图 sidecar（<c>border: none / default / #FF0000 / unsupported</c>）。</summary>
+    public string DwmBorderDiag { get; private set; } = "?";
+
     private const int GWL_STYLE = -16;
     private const int WS_THICKFRAME = 0x00040000;
     private const int WM_NCCALCSIZE = 0x0083;
@@ -792,6 +801,44 @@ public partial class FloatWindow : Window
 
         // 改完 style 必须通知框架已变，否则 DWM 仍按旧框架缓存渲染。
         Monitors.NotifyFrameChanged(hwnd);
+
+        // 顺序同样是"加完框架再抹边框"：WS_THICKFRAME 正是 DWM 决定要不要画边框的依据，
+        // 先设边框色再改 style，这一次 style 变更会把边框带回来。
+        DwmBorderDiag = ApplyDwmBorder(hwnd);
+    }
+
+    /// <summary>
+    /// 按 <see cref="BorderMode"/> 设置 DWM 边框色，返回给 sidecar 的诊断字符串。
+    ///
+    /// <para>
+    /// 这条边框不是我们画的，是 DWM 对"有框架窗口"（<see cref="WS_THICKFRAME"/>）的附加产物：
+    /// 颜色跟随主题，浅色主题下接近白色。静止时它压在圆角与阴影之间不太显眼，
+    /// 一旦进入拖动（move loop）就整圈亮起来 —— 用户说的"移动时的白色边框"就是它。
+    /// </para>
+    /// </summary>
+    private string ApplyDwmBorder(IntPtr hwnd)
+    {
+        switch (BorderMode.ToLowerInvariant())
+        {
+            case "none":
+                return Win32Window.TryDisableDwmBorder(hwnd) ? "none" : "unsupported";
+
+            case "default":
+                return Win32Window.TryResetDwmBorder(hwnd) ? "default" : "unsupported";
+
+            default:
+                if (BorderMode.Length == 7 && BorderMode[0] == '#' && int.TryParse(
+                        BorderMode.AsSpan(1), System.Globalization.NumberStyles.HexNumber,
+                        System.Globalization.CultureInfo.InvariantCulture, out int rgb))
+                {
+                    // #RRGGBB → COLORREF 0x00BBGGRR（红蓝对调，Win32 的老约定）
+                    int colorRef = (rgb & 0xFF) << 16 | (rgb >> 8 & 0xFF) << 8 | (rgb >> 16 & 0xFF);
+                    return Win32Window.TrySetDwmBorderColor(hwnd, colorRef)
+                        ? BorderMode.ToUpperInvariant()
+                        : "unsupported";
+                }
+                return "none";
+        }
     }
 
     private IntPtr NcCalcSizeHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1113,6 +1160,12 @@ public partial class FloatWindow : Window
         // 不闸住数据入口的话数字仍每 0.5s 重排一次，拖起来有顿感。
         // Paused 在共享 State 上，两个视图同时静默。
         _state.Paused = true;
+
+        // 拖动时把描边压回常态（M4.13）。拖动必然按住窗口 —— 也就必然在窗口上，
+        // MouseEnter 早把描边换成了 hover 档（深色主题下 22% 白）。整条被拖着走的时候
+        // 那圈高亮特别扎眼，用户原话"移动时的白色边框非常不好看"就是它。
+        // 松手后按光标是否还在窗口上恢复（不是无脑还原成常态，那会让悬停反馈失灵）。
+        Shell.BorderBrush = _edgeIdle;
         try
         {
             DragMove();
@@ -1125,6 +1178,7 @@ public partial class FloatWindow : Window
         finally
         {
             _state.Paused = false;
+            Shell.BorderBrush = IsMouseOver ? _edgeHover : _edgeIdle;
         }
 
         // 吸附、夹紧与落盘放在松手之后：拖动途中改位置会和 DragMove 抢，窗口会抖
