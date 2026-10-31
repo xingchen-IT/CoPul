@@ -372,6 +372,16 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 悬浮窗字段（M4.14） -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="悬浮窗字段" Style="{StaticResource SectionTitle}" />
+                                <UniformGrid x:Name="FloatFieldGrid" Columns="3" Margin="0,12,0,0" />
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="关闭的字段不占位：横向条会变窄，竖向条会变矮。只剩一个字段时该项不可关闭。与任务栏条各自独立保存。" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- 任务栏条 -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>

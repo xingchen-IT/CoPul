@@ -112,6 +112,9 @@ public partial class FloatWindow : Window
         _config = config;
         DataContext = state;
 
+        // 字段子菜单按 FloatFields.Keys 生成（M4.14）：顺序与表一致，加字段不用改 XAML。
+        BuildFieldMenu();
+
         // 外观从配置读回。必须先于 InitializeComponent 之后、Show 之前落到字段上，
         // 否则窗口会先按默认值画一遍再被改掉（闪一下浅色再变深色）。
         if (Enum.TryParse(config.FloatTheme, ignoreCase: true, out GlassTheme theme))
@@ -126,6 +129,7 @@ public partial class FloatWindow : Window
         // 而定位（ContentRendered）依赖最终尺寸。晚一步改就会出现"先按 100% 摆好，
         // 再放大成 150%"，结果窗口跑出屏幕。
         ApplyScale();
+        ApplyFieldVisibility();
 
         SourceInitialized += (_, _) =>
         {
@@ -155,6 +159,21 @@ public partial class FloatWindow : Window
         {
             if (!_contentRenderedOnce) return;
             EnsureFullyVisible();
+        };
+
+        // 每次被切到前台都强制重排一次（M4.14）。
+        //
+        // 症状：从大窗口切到竖向悬浮窗，第一次进去宽度不对，改一下任意设置又恢复正常。
+        // 成因是"尺寸在不可见期间被改过"：排列、缩放、字段都是隐藏时也能改的，
+        // SizeToContent 的窗口在不可见时只更新了布局缓存，HWND 尺寸还是旧的；
+        // 再次 Show 时 WPF 认为"没变化"就沿用了旧尺寸。改设置会再走一次 ApplyScale，
+        // 于是看起来"改一下就好了"。
+        //
+        // 这里不重读配置、只重排 —— 用户在本次会话里选过的东西不能被配置反向覆盖。
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is not true) return;
+            if (RelayoutOnShow) RelayoutNow();
         };
 
         ContentRendered += (_, _) =>
@@ -210,6 +229,8 @@ public partial class FloatWindow : Window
             }
 
             // 自测放在最后：走到这里尺寸已定型，命中测试量到的才是真实布局
+            if (DragProbe is { } dragMode) RunDragProbe(dragMode);
+            if (FieldProbe is { } fieldKeys) RunFieldProbe(fieldKeys);
             if (MenuProbe) ProbeMenuAndHitTest();
         };
     }
@@ -340,6 +361,35 @@ public partial class FloatWindow : Window
     /// 菜单落点由元素位置算，只靠看代码判断不了，必须实拍。
     /// </summary>
     public bool MenuProbe { get; set; }
+
+    /// <summary>
+    /// 自测：<c>--float-drag-probe keep|release</c>（M4.14）。
+    ///
+    /// <para>
+    /// 拖动时的粉色描边没法靠"真的按住窗口拖"来截图：<c>DragMove</c> 是模态循环，
+    /// 定时器根本不进，抓不到那一帧。这里直接把窗口切进"拖动外观"，
+    /// 配合 <c>--shot</c>（RTB 拍的是视觉树，颜色是准的）看颜色；
+    /// <c>keep</c> 留在粉色上供拍照，<c>release</c> 立刻撤掉 —— 两条路的描边色都写进 sidecar。
+    /// </para>
+    /// </summary>
+    public string? DragProbe { get; set; }
+
+    /// <summary>
+    /// 自测：<c>--float-field-probe ram,vram</c>（M4.14）。首帧后按逗号逐个翻字段开关，
+    /// 用来验"关掉一格之后条真的变窄/变矮"，以及 sidecar 里各格的高度。
+    /// </summary>
+    public string? FieldProbe { get; set; }
+
+    /// <summary>
+    /// 自测：<c>--no-relayout-on-show</c> 关掉它（M4.14）。
+    ///
+    /// <para>
+    /// 只用来做 A/B：同一份代码跑两遍，一遍开着一遍关着，
+    /// 才能证明「显示时强制重排」这一步确实修了"首进竖向宽度不对"，
+    /// 而不是"这个场景下本来就不会犯"。
+    /// </para>
+    /// </summary>
+    public bool RelayoutOnShow { get; set; } = true;
 
     /// <summary>
     /// 外观变化是否写回配置。默认 true；用 <c>--glass-dark</c> / <c>--glass-level</c>
@@ -598,10 +648,19 @@ public partial class FloatWindow : Window
         double twoLine = BaseValueLine + BaseLabelLine;
         double threeLine = BaseValueLine + BaseLabelLine + BaseSplitGap + BaseLabelLine;
 
-        // 六格里只有内存 / 显存拆成三行（M4.11），其余四格还是两行 —— 少了这个区分，
-        // 预摆位会矮两行，窗口首帧就会贴得偏高。
-        double cells = 4 * twoLine + 2 * threeLine;
-        return (cells + 5 * BaseRowGap + BasePadY + Math.Max(0, BasePadY - BaseRowGap)) * s
+        // 内存 / 显存拆成三行（M4.11），其余是两行；关掉的字段不占位（M4.14），
+        // 行距个数也跟着可见字段数走 —— 否则预摆位会把条估高，首帧就贴得偏高。
+        double cells = 0;
+        int visible = 0;
+        foreach (string key in FloatFields.Keys)
+        {
+            if (!FloatFields.IsVisible(_config, key)) continue;
+            visible++;
+            cells += key is "ram" or "vram" ? threeLine : twoLine;
+        }
+
+        double gaps = Math.Max(0, visible - 1) * BaseRowGap;
+        return (cells + gaps + BasePadY + Math.Max(0, BasePadY - BaseRowGap)) * s
                + 2 * Shell.BorderThickness.Left;
     }
 
@@ -611,6 +670,177 @@ public partial class FloatWindow : Window
         _state.FloatFps, _state.FloatCpu, _state.FloatGpu,
         _state.FloatRam, _state.FloatVram, _state.FloatNet,
     };
+
+    // =================================================================
+    // 字段开关（M4.14）
+    // =================================================================
+
+    /// <summary>
+    /// 字段 key ↔ 两个面板里那一格。横竖两套面板各有一份同名元素，
+    /// 关掉一个字段必须两处一起收 —— 只改一套的话，切排列时它会"复活"，
+    /// 而这种错位编译完全不报错。
+    /// </summary>
+    private (string Key, StackPanel Row, StackPanel Col)[] FieldCells() => new[]
+    {
+        ("fps", RowFps, ColFps),
+        ("cpu", RowCpu, ColCpu),
+        ("gpu", RowGpu, ColGpu),
+        ("ram", RowRam, ColRam),
+        ("vram", RowVram, ColVram),
+        ("net", RowNet, ColNet),
+    };
+
+    /// <summary>按配置把「显示字段」落到两套面板上。构造函数里调一次，之后每次切换再调。</summary>
+    private void ApplyFieldVisibility()
+    {
+        foreach ((string key, StackPanel row, StackPanel col) in FieldCells())
+        {
+            Visibility v = FloatFields.IsVisible(_config, key) ? Visibility.Visible : Visibility.Collapsed;
+            if (row.Visibility != v) row.Visibility = v;
+            if (col.Visibility != v) col.Visibility = v;
+        }
+    }
+
+    /// <summary>
+    /// 「显示字段」子菜单。按 <see cref="FloatFields.Keys"/> 生成，
+    /// 与设置页的勾选框共用同一张表 —— 两处各写一份顺序，迟早会有一个勾错。
+    /// </summary>
+    private void BuildFieldMenu()
+    {
+        if (FieldMenu is null) return;
+        FieldMenu.Items.Clear();
+
+        for (int i = 0; i < FloatFields.Keys.Length; i++)
+        {
+            var item = new MenuItem
+            {
+                Header = FloatFields.Labels[i],
+                Tag = FloatFields.Keys[i],
+                IsCheckable = true,
+                IsChecked = FloatFields.IsVisible(_config, FloatFields.Keys[i]),
+            };
+            item.Click += Field_Click;
+            FieldMenu.Items.Add(item);
+        }
+    }
+
+    private void Field_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string key } item) return;
+
+        if (!FloatFields.Toggle(_config, key))
+        {
+            // 只剩这一个：WPF 已经把勾翻掉了，翻回来并说明原因。
+            item.IsChecked = true;
+            return;
+        }
+
+        if (PersistToConfig) ConfigStore.SaveCurrent();
+        ReloadFields();
+    }
+
+    /// <summary>
+    /// 探针专用：翻一个字段开关，返回 true = 已改变。
+    ///
+    /// <para>
+    /// 比 <see cref="FloatFields.Toggle(AppConfig, string)"/> 多做的唯一一件事是
+    /// <b>退出时还原</b>：探针改的是共享的那份 <c>AppConfig</c>，而主窗口关闭时也会整份落盘
+    /// —— 实测跑一次字段探针就把用户的字段永久关掉了，之后每次验收量到的都是
+    /// "上次探针留下的尺寸"。挂 <c>Application.Exit</c> 在最末尾写回原值，
+    /// 位置比任何窗口的 Closing 都晚，谁先存都不会把它带走。
+    /// </para>
+    /// </summary>
+    private bool ProbeToggle(string key)
+    {
+        if (_probeHiddenBackup is null)
+        {
+            _probeHiddenBackup = _config.FloatHiddenFields is { } cur ? (string[])cur.Clone() : Array.Empty<string>();
+
+            if (Application.Current is { } app)
+                app.Exit += (_, _) =>
+                {
+                    _config.FloatHiddenFields = _probeHiddenBackup;
+                    ConfigStore.SaveCurrent();
+                };
+        }
+
+        return FloatFields.Toggle(_config, key);
+    }
+
+    /// <summary>探针改字段之前的原值；非 null 就说明这次运行动过字段。</summary>
+    private string[]? _probeHiddenBackup;
+
+    /// <summary>自测用：按 key 翻一个字段开关，走的是菜单那条路（<c>--switch-view field:ram@3000</c>）。</summary>
+    public void ToggleFieldForProbe(string key)
+    {
+        if (ProbeToggle(key)) ReloadFields();
+    }
+
+    /// <summary>
+    /// 字段变化后重排：关掉一格，条要立刻跟着变窄/变矮，而不是等下次显示。
+    ///
+    /// <para>
+    /// 供设置页调（<c>GetFloat()?.ReloadFields()</c>）：窗口没开时设置页只改配置，
+    /// 窗口开着就直接走这里，两边不会出现"配置说关了、条上还在"。
+    /// </para>
+    /// </summary>
+    public void ReloadFields()
+    {
+        ApplyFieldVisibility();
+        SyncMenuChecks();
+        RelayoutNow();
+    }
+
+    /// <summary>
+    /// 强制重排一次并夹回屏幕内。
+    ///
+    /// <para>
+    /// <c>UpdateLayout</c> 必须在这里：<c>SizeToContent</c> 的窗口改完可见性/内边距后，
+    /// 布局是延迟的，不刷一次 <c>GetWindowRect</c> 拿到的还是旧尺寸，
+    /// 夹取就会按旧宽高算 —— 表现是"改完字段条跑出屏幕"或"宽度没变"。
+    /// </para>
+    /// </summary>
+    private void RelayoutNow()
+    {
+        // 不要在这里把 Width/Height 清成 NaN —— 实测（M4.14）：那样做反而更糟。
+        // 隐藏状态下清 NaN 之后，WPF 不会给 HWND 重新定尺寸（Show 之后 Width 仍读到 NaN，
+        // 尺寸停在旧值）；而 SizeToContent 自己写的那个定值（如 47.33）在
+        // InvalidateMeasure + UpdateLayout 之后是会跟着内容走的。
+        InvalidateMeasure();
+        Shell.InvalidateMeasure();
+        UpdateLayout();
+
+        // 首帧之前位置还没摆过（Left/Top 是默认值），这时候夹取与落盘都会算错比例 ——
+        // 交给 ContentRendered 那条路。
+        if (!_contentRenderedOnce || !_hwndReady) return;
+
+        EnsureFullyVisible();
+        SavePlacement();
+    }
+
+    /// <summary>
+    /// HWND 的真实尺寸（物理像素）与 <c>SizeToContent</c> 当前值（M4.14）。
+    ///
+    /// <para>
+    /// 为什么必须单列一项：<c>--shot</c> 走 <c>RenderTargetBitmap</c>，它按
+    /// <c>ActualWidth/Height</c>（WPF 布局值）画，**量不到 HWND 实际多大**。
+    /// 两者不一致时 —— 布局已重排、HWND 还是旧尺寸 —— 截图看起来完全正常，
+    /// 而用户屏幕上看到的就是"宽度不对"。这个洞不补，宽度类的 bug 会一直"复现不了"。
+    /// </para>
+    /// </summary>
+    public string HwndDiag
+    {
+        get
+        {
+            IntPtr h = Handle;
+            string rect = h != IntPtr.Zero && Monitors.TryGetRect(h, out Win32Window.RECT r)
+                ? $"({r.Left},{r.Top})-({r.Right},{r.Bottom}) {r.Right - r.Left}x{r.Bottom - r.Top}px"
+                : "no-hwnd";
+
+            return $"hwnd={rect} dip={ActualWidth:F2}x{ActualHeight:F2} " +
+                   $"stc={SizeToContent} vertical={_vertical} width={(double.IsNaN(Width) ? "NaN" : Width.ToString("F2"))}";
+        }
+    }
 
     /// <summary>
     /// 缩放诊断串，供截图 sidecar 文件输出。缩放是"每列宽 + 字号 + 条高"一起变，
@@ -1119,11 +1349,22 @@ public partial class FloatWindow : Window
 
         _edgeNormal = Palette.Brush(light ? "BrushGlassEdge" : "BrushGlassEdgeDark");
         _edgeHover = Palette.Brush(light ? "BrushGlassEdgeHover" : "BrushGlassEdgeDarkHover");
+        _edgeDrag = Palette.Brush(light ? "BrushGlassEdgeDrag" : "BrushGlassEdgeDragDark");
         Shell.BorderBrush = _edgeNormal;
     }
 
     private Brush _edgeNormal = Palette.Brush("BrushGlassEdge");
     private Brush _edgeHover = Palette.Brush("BrushGlassEdgeHover");
+
+    /// <summary>
+    /// 按住拖动时的描边（M4.14）：粉色。
+    /// 拖动期间窗口一直在动，靠"提亮一档"表达"被抓住"只会变成一圈白边；
+    /// 换成一个只在这种状态下出现的颜色，手一松就消失，语义反而更清楚。
+    /// </summary>
+    private Brush _edgeDrag = Palette.Brush("BrushGlassEdgeDrag");
+
+    /// <summary>是否正处在拖动循环里（DragMove 是模态循环，期间不能切悬停描边）。</summary>
+    private bool _dragging;
 
     /// <summary>
     /// 鼠标不在窗口上时实际用的描边。平时等于 <see cref="_edgeNormal"/>；
@@ -1161,11 +1402,11 @@ public partial class FloatWindow : Window
         // Paused 在共享 State 上，两个视图同时静默。
         _state.Paused = true;
 
-        // 拖动时把描边压回常态（M4.13）。拖动必然按住窗口 —— 也就必然在窗口上，
-        // MouseEnter 早把描边换成了 hover 档（深色主题下 22% 白）。整条被拖着走的时候
-        // 那圈高亮特别扎眼，用户原话"移动时的白色边框非常不好看"就是它。
-        // 松手后按光标是否还在窗口上恢复（不是无脑还原成常态，那会让悬停反馈失灵）。
-        Shell.BorderBrush = _edgeIdle;
+        // 拖动时整圈换成粉色描边（M4.14）。之前那版是"压回常态"，可拖动必然按住窗口
+        // —— 也就必然触发 MouseEnter，常态压不住多久就被悬停档顶回去；用户看到的是
+        // 一圈白边跟着窗口跑，松手后还要等鼠标移开才消失。粉色只属于"正在拖"这个状态，
+        // 松手立刻撤掉，既不会误认为悬停，也不会拖完还挂着。
+        BeginDragVisual();
         try
         {
             DragMove();
@@ -1178,7 +1419,7 @@ public partial class FloatWindow : Window
         finally
         {
             _state.Paused = false;
-            Shell.BorderBrush = IsMouseOver ? _edgeHover : _edgeIdle;
+            EndDragVisual();
         }
 
         // 吸附、夹紧与落盘放在松手之后：拖动途中改位置会和 DragMove 抢，窗口会抖
@@ -1186,11 +1427,83 @@ public partial class FloatWindow : Window
         SavePlacement();
     }
 
+    /// <summary>
+    /// 进入拖动外观：粉色描边。抽成方法是为了让自测探针能走同一条路 ——
+    /// "拖动时是什么颜色"靠截图看，而截图没法真的按住窗口去拖。
+    /// </summary>
+    private void BeginDragVisual()
+    {
+        _dragging = true;
+        Shell.BorderBrush = _edgeDrag;
+    }
+
+    /// <summary>
+    /// 退出拖动外观：一律回到常态，**不是** <c>IsMouseOver ? hover : idle</c>。
+    ///
+    /// <para>
+    /// 松手时鼠标一定还在窗口上，按悬停恢复等于"粉色换成白色继续挂着" ——
+    /// 用户说的"拖动结束白边不能及时消失"就是这个。悬停反馈等下一次 MouseEnter 再给。
+    /// </para>
+    /// </summary>
+    private void EndDragVisual()
+    {
+        _dragging = false;
+        Shell.BorderBrush = _edgeIdle;
+        Shell.InvalidateVisual();
+    }
+
     private void Shell_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
         // 右键菜单挂在 Border 上，Topmost 窗口里也照常弹（ContextMenu 自身是独立 popup）
         ShowContextMenu();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 自测：<c>--float-drag-probe keep|release</c>。
+    ///
+    /// <para>
+    /// 两个值各管一半证据：<c>keep</c> 停在拖动外观上给 <c>--shot</c> 拍（RTB 走视觉树，
+    /// 颜色是准的），<c>release</c> 立刻撤掉，验的就是"松手后到底有没有回到常态"。
+    /// 三个色都写进 sidecar —— 只看截图分不清"回到常态"和"本来就没变"。
+    /// </para>
+    /// </summary>
+    private void RunDragProbe(string mode)
+    {
+        static string Name(Brush b) => b is SolidColorBrush sc ? sc.Color.ToString() : b?.ToString() ?? "null";
+
+        BeginDragVisual();
+        string during = Name(Shell.BorderBrush);
+        UpdateLayout();
+
+        if (!string.Equals(mode, "keep", StringComparison.OrdinalIgnoreCase))
+            EndDragVisual();
+
+        PlacementDiag = $"drag-probe: mode={mode} during={during} " +
+                        $"after={Name(Shell.BorderBrush)} idle={Name(_edgeIdle)} " +
+                        $"hover={Name(_edgeHover)}";
+    }
+
+    /// <summary>
+    /// 自测：<c>--float-field-probe ram,vram</c>。逐个翻字段开关，
+    /// 把"翻的结果 + 翻完的窗口尺寸"写进 sidecar —— 关掉两格之后条必须真的变窄/变矮，
+    /// 光看菜单上的勾说明不了布局有没有跟着收。
+    /// </summary>
+    private void RunFieldProbe(string keys)
+    {
+        var sb = new System.Text.StringBuilder("field-probe:");
+
+        foreach (string raw in keys.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string key = raw.ToLowerInvariant();
+            sb.Append(' ').Append(key).Append(ProbeToggle(key) ? "=toggled" : "=blocked");
+        }
+
+        ReloadFields();
+        Shell.UpdateLayout();
+
+        sb.Append($" win={ActualWidth:F1}x{ActualHeight:F1} visible={FloatFields.VisibleCount(_config)}");
+        PlacementDiag = sb.ToString();
     }
 
     /// <summary>
@@ -1244,11 +1557,24 @@ public partial class FloatWindow : Window
 
     /// <summary>
     /// 悬停时把描边加深一档。浅色玻璃上"提亮"等于看不见，所以是加深（黑 12% → 24%）；
-    /// 深色玻璃则反过来提亮（白 12% → 22%）。
+    /// 深色玻璃则反过来提亮（白 12% → 14%）。
+    ///
+    /// <para>
+    /// 拖动期间直接返回：<c>DragMove</c> 是模态循环，中途冒出来的 MouseEnter
+    /// 会把粉色描边盖成悬停色，看起来像"一拖就变白"。
+    /// </para>
     /// </summary>
-    private void Shell_MouseEnter(object sender, MouseEventArgs e) => Shell.BorderBrush = _edgeHover;
+    private void Shell_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (_dragging) return;
+        Shell.BorderBrush = _edgeHover;
+    }
 
-    private void Shell_MouseLeave(object sender, MouseEventArgs e) => Shell.BorderBrush = _edgeIdle;
+    private void Shell_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_dragging) return;   // 拖动中偶尔会漏进 Leave（窗口跟着光标走），别把粉色抹掉
+        Shell.BorderBrush = _edgeIdle;
+    }
 
     private void ShowMain_Click(object sender, RoutedEventArgs e)
         => MainWindowRequested?.Invoke(this, EventArgs.Empty);
@@ -1345,6 +1671,16 @@ public partial class FloatWindow : Window
         {
             LayoutRowMenu.IsChecked = !_vertical;
             LayoutColumnMenu.IsChecked = _vertical;
+        }
+
+        // 显示字段：真值只在配置里，勾选状态每次从配置反推
+        if (FieldMenu is not null)
+        {
+            foreach (object child in FieldMenu.Items)
+            {
+                if (child is MenuItem { Tag: string key } item)
+                    item.IsChecked = FloatFields.IsVisible(_config, key);
+            }
         }
     }
 

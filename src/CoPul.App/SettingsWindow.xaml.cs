@@ -119,6 +119,7 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         InitFieldGrid();
+        InitFloatFieldGrid();
         LoadFromConfig();
         LoadDiag();
 
@@ -176,6 +177,28 @@ public partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// 悬浮窗六个字段的勾选框（M4.14）。同样按 <see cref="FloatFields.Keys"/> 生成 ——
+    /// 菜单、设置页、落盘用的 hidden 列表三处必须认同一个顺序，写死两份迟早勾错。
+    /// </summary>
+    private void InitFloatFieldGrid()
+    {
+        Style style = (Style)FindResource("FieldCheck");
+
+        for (int i = 0; i < FloatFields.Keys.Length; i++)
+        {
+            var box = new CheckBox
+            {
+                Style = style,
+                Content = FloatFields.Labels[i],
+                Tag = FloatFields.Keys[i],
+            };
+            box.Checked += FloatField_Changed;
+            box.Unchecked += FloatField_Changed;
+            FloatFieldGrid.Children.Add(box);
+        }
+    }
+
     private void LoadFromConfig()
     {
         _suppress = true;
@@ -191,6 +214,12 @@ public partial class SettingsWindow : Window
         {
             if (child is CheckBox { Tag: string key } box)
                 box.IsChecked = TrayFields.IsVisible(_config, key);
+        }
+
+        foreach (object child in FloatFieldGrid.Children)
+        {
+            if (child is CheckBox { Tag: string key } box)
+                box.IsChecked = FloatFields.IsVisible(_config, key);
         }
 
         GlassSwitch.IsChecked = _config.FloatGlassEnabled;
@@ -220,6 +249,7 @@ public partial class SettingsWindow : Window
 
         _suppress = false;
         UpdateFieldEnabled();
+        UpdateFloatFieldEnabled();
         ShowHotkey();       // 问一次"真正注册上的"热键，冲突时这里会显示"未生效"
     }
 
@@ -342,6 +372,16 @@ public partial class SettingsWindow : Window
             {
                 case "field":
                     foreach (object child in FieldGrid.Children)
+                    {
+                        if (child is not CheckBox box || (string)box.Tag != value) continue;
+                        box.IsChecked = box.IsChecked != true;   // 触发 apply
+                        break;
+                    }
+                    break;
+
+                case "floatfield":
+                    // 悬浮窗字段（M4.14）：<c>floatfield:ram</c> 翻一下「内存」。
+                    foreach (object child in FloatFieldGrid.Children)
                     {
                         if (child is not CheckBox box || (string)box.Tag != value) continue;
                         box.IsChecked = box.IsChecked != true;   // 触发 apply
@@ -538,6 +578,77 @@ public partial class SettingsWindow : Window
 
         _suppress = true;
         foreach (object child in FieldGrid.Children)
+        {
+            if (child is CheckBox box) box.IsEnabled = !(visible <= 1 && ReferenceEquals(box, only));
+        }
+        _suppress = false;
+    }
+
+    // ---- 悬浮窗字段（M4.14）----
+
+    /// <summary>
+    /// 悬浮窗字段勾选。与任务栏那套同一套写法，区别只有两个落点：
+    /// 写 <see cref="AppConfig.FloatHiddenFields"/>，以及让窗口（如果开着）立刻重排。
+    /// </summary>
+    private void FloatField_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not CheckBox { Tag: string key } box) return;
+
+        string[] old = _config.FloatHiddenFields ?? Array.Empty<string>();
+
+        // 不是"翻一下"而是"按控件当前状态写一遍"：连点时 WPF 已经把 IsChecked 定好了，
+        // 以它为准比再算一次反状态可靠。
+        var hidden = new List<string>(old);
+        hidden.RemoveAll(h => string.Equals(h, key, StringComparison.OrdinalIgnoreCase));
+        if (box.IsChecked != true) hidden.Add(key);
+        _config.FloatHiddenFields = hidden.ToArray();
+
+        if (FloatFields.VisibleCount(_config) <= 0)
+        {
+            // 全关之后条宽会归零、窗口被夹成一根发丝。回滚必须"整份按配置重同步"，
+            // 不能只把手里这个框勾回去 —— 与任务栏那边踩过的是同一个坑。
+            _config.FloatHiddenFields = old;
+
+            _suppress = true;
+            foreach (object child in FloatFieldGrid.Children)
+            {
+                if (child is CheckBox { Tag: string k } b)
+                    b.IsChecked = FloatFields.IsVisible(_config, k);
+            }
+            _suppress = false;
+
+            Hint("至少要保留一个字段");
+            UpdateFloatFieldEnabled();
+            return;
+        }
+
+        ConfigStore.SaveCurrent();
+
+        // 窗口没开就什么都不用刷 —— 它创建时会从配置里读到这份 hidden。
+        _ctx.GetFloat()?.ReloadFields();
+        UpdateFloatFieldEnabled();
+
+        Hint($"悬浮窗字段已更新：{FloatFields.VisibleCount(_config)}/{FloatFields.Keys.Length} 显示");
+    }
+
+    /// <summary>只剩一个可见字段时置灰最后那项（同任务栏）。</summary>
+    private void UpdateFloatFieldEnabled()
+    {
+        int visible = 0;
+        CheckBox? only = null;
+
+        foreach (object child in FloatFieldGrid.Children)
+        {
+            if (child is CheckBox { IsChecked: true } box)
+            {
+                visible++;
+                only = box;
+            }
+        }
+
+        _suppress = true;
+        foreach (object child in FloatFieldGrid.Children)
         {
             if (child is CheckBox box) box.IsEnabled = !(visible <= 1 && ReferenceEquals(box, only));
         }

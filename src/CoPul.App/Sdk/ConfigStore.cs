@@ -71,6 +71,17 @@ public sealed class AppConfig
     public bool FloatVertical { get; set; }
 
     /// <summary>
+    /// 悬浮窗里被**用户关掉**的字段（M4.14）。key 见 <see cref="FloatFields.Keys"/>。
+    ///
+    /// <para>
+    /// 与 <see cref="TaskbarHiddenFields"/> 各存一份：两处显示的内容与宽度规则都不同，
+    /// 共用一个列表会出现"关掉任务栏的硬盘温度，悬浮窗的 FPS 也跟着没了"这种莫名其妙。
+    /// 同样存"关掉的"：以后加字段默认可见，不需要迁移老配置。
+    /// </para>
+    /// </summary>
+    public string[] FloatHiddenFields { get; set; } = Array.Empty<string>();
+
+    /// <summary>
     /// 任务栏模式的文字取色策略（7.5）：<c>Auto</c> / <c>Light</c> / <c>Dark</c>。
     /// Auto 读 <c>SystemUsesLightTheme</c> 自动决定，另两个是用户手动锁定 ——
     /// Win11 任务栏是半透明的，实际明暗取决于壁纸，注册表读数未必与眼睛看到的一致。

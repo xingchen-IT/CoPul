@@ -253,6 +253,7 @@ public partial class App : Application
                     break;
                 case FullScreenAutoSwitch.View.Float:
                     FloatWindow f = EnsureFloat();
+                    if (e.Args.Contains("--no-relayout-on-show")) f.RelayoutOnShow = false;
                     f.Show();
                     f.Activate();
                     break;
@@ -666,6 +667,20 @@ public partial class App : Application
             if (ArgValue(e.Args, "--float-border") is string borderMode)
                 f.BorderMode = borderMode;
 
+            // --no-relayout-on-show：关掉"每次显示都强制重排"，A/B 对照用（M4.14）
+            if (e.Args.Contains("--no-relayout-on-show")) f.RelayoutOnShow = false;
+
+            // --float-drag-probe keep|release：进入/退出"拖动外观"，验粉色描边与松手还原（M4.14）
+            if (ArgValue(e.Args, "--float-drag-probe") is { } dragProbe) f.DragProbe = dragProbe;
+
+            // --float-field-probe ram,vram：首帧后翻字段开关，验条子跟着收窄/收矮（M4.14）
+            if (ArgValue(e.Args, "--float-field-probe") is { } fieldProbe) f.FieldProbe = fieldProbe;
+
+            // 上面这两个探针同样不许落盘：它们会真的改字段开关，而 ReloadFields 那条路
+            // 末尾要 SavePlacement（写 config.json）。实测踩到过 —— 跑一次 --float-field-probe
+            // 就把用户的字段永久关掉了，之后每次验收量到的都是"上次探针留下的尺寸"。
+            if (f.DragProbe is not null || f.FieldProbe is not null) f.PersistToConfig = false;
+
             // --float-snap-probe x,y：摆到 (x,y) 再跑吸附，结果写进 shots 的 sidecar 文件
             string? snapProbe = ArgValue(e.Args, "--float-snap-probe");
             if (snapProbe is not null)
@@ -872,6 +887,54 @@ public partial class App : Application
             return;
         }
 
+        // 自测：--switch-view float|main|tray --switch-after <毫秒>（M4.14）
+        //
+        // 为什么要"延迟切视图"这个开关：用户报的是「从大窗模式第一次直接进竖向悬浮窗，
+        // 宽度不对，改一下设置又好了」。直接 --float 启动走的是另一条代码路
+        // （窗口在 Show 之前就按配置排好了），**根本不经过"先主窗后悬浮窗"这个顺序**，
+        // 只拍前者等于什么都没验。这里让程序照常从主窗起来，若干毫秒后再切，
+        // 配合 --shot --wait 更长的等待，拍到的就是用户那条路径。
+        if (ArgValue(e.Args, "--switch-view") is { } switchView)
+        {
+            // 每一项：`<view>@<毫秒>` 或 `layout:row|column@<毫秒>`。
+            // 分号分隔成一条时间线 —— "首进竖向宽度不对" 这种只在**特定顺序**下犯的毛病，
+            // 一次启动只能排一条序列，没有这个就只能在真机上碰运气复现。
+            foreach (string raw in switchView.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                string[] at = raw.Split('@');
+                if (at.Length != 2 || !int.TryParse(at[1], out int fireMs) || fireMs < 0) continue;
+
+                string what = at[0].Trim();
+                var step = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(fireMs) };
+                step.Tick += (_, _) =>
+                {
+                    step.Stop();
+
+                    if (what.StartsWith("layout:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 走窗口自己的 setter，与设置页那个单选按钮同一条路
+                        FloatWindow lf = EnsureFloat();
+                        if (e.Args.Contains("--no-relayout-on-show")) lf.RelayoutOnShow = false;
+                        lf.IsVertical = what.EndsWith("column", StringComparison.OrdinalIgnoreCase);
+                    }
+                    else if (what.StartsWith("field:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 字段开关（M4.14）：走菜单那条路，用来验"隐藏期间改了布局，
+                        // 再 Show 时宽度跟不跟得上"
+                        FloatWindow ff = EnsureFloat();
+                        if (e.Args.Contains("--no-relayout-on-show")) ff.RelayoutOnShow = false;
+                        ff.PersistToConfig = false;   // 同理：别把探针改的字段写进用户配置
+                        ff.ToggleFieldForProbe(what.Substring("field:".Length));
+                    }
+                    else if (Enum.TryParse(what, ignoreCase: true, out FullScreenAutoSwitch.View v))
+                    {
+                        ShowView(v, "switch-view-probe", userInitiated: true);
+                    }
+                };
+                step.Start();
+            }
+        }
+
         // 无头验收用：--shot <png 路径> [--wait 毫秒]
         // M1 没有自动化 UI 测试，用它把真实窗口渲染成图片，肉眼核对布局与数值。
         //
@@ -1022,6 +1085,19 @@ public partial class App : Application
                     }
 
                     SavePng(target, shot!);
+
+                    // RTB 这条以前不留 sidecar，导致"宽度对不对"只能靠数像素。
+                    // 尺寸 DIP / 物理像素 / 缩放档 / 探针结论一起写出去 ——
+                    // DIP 对不上才是布局问题，DIP 一致而像素不同那是缩放，两回事。
+                    if (target is FloatWindow rfw)
+                        File.WriteAllText(shot + ".info.txt",
+                            $"size : {target.ActualWidth:F2}×{target.ActualHeight:F2} DIP{Environment.NewLine}" +
+                            $"px   : {pixelWidthOf(rfw)}×{pixelHeightOf(rfw)} px{Environment.NewLine}" +
+                            $"hwnd : {rfw.HwndDiag}{Environment.NewLine}" +
+                            $"scale: {rfw.ScaleDiag}" +
+                            (rfw.PlacementDiag.Length == 0
+                                ? string.Empty
+                                : Environment.NewLine + "place: " + rfw.PlacementDiag));
                 }
             }
             catch (Exception ex)
@@ -1540,6 +1616,12 @@ public partial class App : Application
     /// 按当前 DPI 把窗口内容渲染成 PNG。用 <c>RenderTargetBitmap</c> 而不是屏幕截图，
     /// 这样不依赖窗口是否在最前，也不会被远程桌面/锁屏影响。
     /// </summary>
+    private static int pixelWidthOf(Window w)
+        => (int)Math.Ceiling(w.ActualWidth * VisualTreeHelper.GetDpi(w).DpiScaleX);
+
+    private static int pixelHeightOf(Window w)
+        => (int)Math.Ceiling(w.ActualHeight * VisualTreeHelper.GetDpi(w).DpiScaleY);
+
     private static void SavePng(Window window, string path)
     {
         // 先强制走一次布局与渲染失效：刚改过绑定（比如 --run-state-probe 换灯的形状）

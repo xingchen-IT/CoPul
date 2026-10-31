@@ -67,6 +67,18 @@
     <SolidColorBrush x:Key="BrushGlassEdgeDark"       Color="#1FFFFFFF" />  <!-- 白 12% -->
     <SolidColorBrush x:Key="BrushGlassEdgeDarkHover"  Color="#24FFFFFF" />  <!-- 白 14% -->
 
+    <!--
+        拖动中的描边（M4.14）：粉色。
+
+        为什么单开一个颜色而不是继续用"提亮一档"：按住拖动时窗口一直在动，
+        整圈提亮只表达"我被抓住了"，看起来像镶了一条白边（用户原话"不好看"）。
+        粉色是**只在拖动期间出现**的状态色，手一松就消失，语义清楚：
+        "现在这东西跟着你的手走"。深浅两版都取不透明粉 —— 半透明的粉在深色玻璃上
+        会灰掉、在浅色玻璃上会洗白，两头都不像粉。
+    -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDrag"      Color="#E8489B" />  <!-- 浅色底：稍沉的粉 -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDragDark"  Color="#FF7FB8" />  <!-- 深色底：提亮的粉 -->
+
     <!-- 文字 -->
     <SolidColorBrush x:Key="BrushTextOnGlass"          Color="#1B2027" />
     <SolidColorBrush x:Key="BrushTextSecondaryLight"   Color="#5C6672" />
