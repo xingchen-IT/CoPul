@@ -985,6 +985,26 @@ public partial class App : Application
                 }
                 else
                 {
+                    // --shot-scroll：截屏前先滚动内容区，用来拍一屏放不下的下半部分区块。
+                    // 必须在渲染之前滚并强制布局，否则 RTB 画到的还是旧偏移。
+                    if (target is MainWindow mw
+                        && double.TryParse(ArgValue(e.Args, "--shot-scroll"), out double shotScroll)
+                        && shotScroll > 0)
+                    {
+                        mw.ScrollContent(shotScroll);
+                        File.WriteAllText(shot + ".scroll.txt", $"scroll={shotScroll}");
+                    }
+
+                    // --run-state-probe：强制顶部状态灯三态。本机没提权，正常跑起来永远是
+                    // 「降级运行」，另外两种形状（实心圆 / 空心圆环）平时拍不到。
+                    if (target is MainWindow mwState
+                        && ArgValue(e.Args, "--run-state-probe") is { } rsProbe
+                        && Enum.TryParse<RunState>(rsProbe, true, out var forcedRunState))
+                    {
+                        mwState.State.ForceRunState(forcedRunState);
+                        File.WriteAllText(shot + ".state.txt", forcedRunState.ToString());
+                    }
+
                     SavePng(target, shot!);
                 }
             }
@@ -1506,6 +1526,10 @@ public partial class App : Application
     /// </summary>
     private static void SavePng(Window window, string path)
     {
+        // 先强制走一次布局与渲染失效：刚改过绑定（比如 --run-state-probe 换灯的形状）
+        // 只标了脏，没重新排版的话 RTB 画出来的还是改之前的样子。
+        window.UpdateLayout();
+
         var dpi = VisualTreeHelper.GetDpi(window);
 
         int pixelWidth = (int)Math.Ceiling(window.ActualWidth * dpi.DpiScaleX);

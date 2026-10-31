@@ -481,6 +481,18 @@ public sealed class DashboardState : INotifyPropertyChanged
         _ => "BrushTextTertiary"
     });
 
+    /// <summary>
+    /// 状态灯的形状键（R-05：形状也要区分，不能只靠颜色）。
+    /// 给 XAML 的 DataTrigger 用，刻意不与 <see cref="RunStateText"/> 复用 ——
+    /// 文案随时会改，形状不能跟着文案一起静默失效。
+    /// </summary>
+    public string RunStateShapeKey => _runState switch
+    {
+        RunState.Running => "running",
+        RunState.Degraded => "degraded",
+        _ => "starting"
+    };
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private string _infoNote = "";
@@ -507,6 +519,13 @@ public sealed class DashboardState : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusBrush)));
     }
 
+    /// <summary>
+    /// 自测用（<c>--run-state-probe starting|running|degraded</c>）：强制顶部状态灯的三态。
+    /// 只为验收 R-05 的三种形状 —— 本机没提权，正常跑起来永远是「降级运行」，
+    /// 另外两种形状平时根本拍不到，而"形状也要区分"恰恰是要眼睛看的。
+    /// </summary>
+    public void ForceRunState(RunState state) => SetRunState(state);
+
     /// <summary>三态切换。只在值变化时通知——InfoReady 可能重复触发，没必要每帧刷灯。</summary>
     private void SetRunState(RunState state)
     {
@@ -514,6 +533,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         _runState = state;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateBrush)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RunStateShapeKey)));
     }
 
     /// <summary>裁掉句尾标点：原因串可能自带"，"或"。"，写进副标题后会出现 "…··， ·"。</summary>

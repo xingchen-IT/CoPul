@@ -7,6 +7,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <!-- Styles 内部已合并 Palette，这里只引一个即可 -->
                 <ResourceDictionary Source="Themes/Styles.xaml" />
+                <!-- 图标几何独立一份：R-04 的 10 枚 + R-05 的状态形状，与样式互不引用 -->
+                <ResourceDictionary Source="Themes/Icons.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

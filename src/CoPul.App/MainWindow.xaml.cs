@@ -387,4 +387,17 @@ public partial class MainWindow : Window
 
         TrayRequested();
     }
+
+    /// <summary>
+    /// 自测用（<c>--shot --shot-scroll 700</c>）：把内容区滚到指定偏移再截屏。
+    /// 窗口一屏放不下九个区块，硬盘/进程的标题在最下面，不滚动就永远拍不到 ——
+    /// 而 <see cref="RenderTargetBitmap"/> 只画可视区，滚动是唯一办法（不能靠改窗口高度，
+    /// 那会连带改变换行与列宽，拍出来的不是真实布局）。
+    /// </summary>
+    internal void ScrollContent(double offset)
+    {
+        ContentScroll.UpdateLayout();
+        ContentScroll.ScrollToVerticalOffset(offset);
+        ContentScroll.UpdateLayout();
+    }
 }

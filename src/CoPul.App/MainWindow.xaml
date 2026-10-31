@@ -30,16 +30,25 @@
                     <TextBlock Text="芯脉 · 实时资源监控" Style="{StaticResource TextBrandSub}" />
 
                     <!--
-                        运行状态灯。两层圆：外圈 10px 同色 22% 透明度当光晕（不闪、不动，
-                        10.3 禁霓虹感），内芯 6px 实色。
+                        运行状态灯（R-05）。M4.9 之前是一个纯色圆点，正常/降级只靠颜色区分，
+                        对色盲用户等于没有区分 —— 现在改成「形状 + 颜色」双编码：
+                        初始化 = 空心圆环、运行中 = 实心圆、降级运行 = 三角（内嵌感叹号缺口）。
+                        光晕与内芯共用同一份几何（放大 1.67 倍，对应原来 10px 晕 / 6px 芯），
+                        所以三角态的晕也是三角，不会套着一个圆底。
                         ToolTip 绑 StatusText——降级原因可能一长串，塞进标题栏会挤掉品牌名，
                         悬停看详情是这里唯一不牺牲布局的做法。
                     -->
                     <Grid Width="10" Height="10" Margin="14,0,0,0" VerticalAlignment="Center"
                           ToolTip="{Binding StatusText}">
-                        <Ellipse Fill="{Binding RunStateBrush}" Opacity="0.22" />
-                        <Ellipse Width="6" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding RunStateBrush}" />
+                        <Path Width="6" Height="6" Fill="{Binding RunStateBrush}" Opacity="0.22"
+                              Style="{StaticResource RunStateShape}"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <ScaleTransform ScaleX="1.67" ScaleY="1.67" />
+                            </Path.RenderTransform>
+                        </Path>
+                        <Path Width="6" Height="6" Fill="{Binding RunStateBrush}"
+                              Style="{StaticResource RunStateShape}" />
                     </Grid>
                     <TextBlock Text="{Binding RunStateText}" Style="{StaticResource TextRunState}"
                                Foreground="{Binding RunStateBrush}" Margin="7,0,0,0"
@@ -62,7 +71,7 @@
             </Grid>
 
             <!-- 内容区 -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12,4,12,12">
+            <ScrollViewer x:Name="ContentScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12,4,12,12">
                 <StackPanel>
 
                     <!-- CPU 区块 -->
@@ -73,6 +82,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="cpu"
                                             Content="{Binding CpuBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconCpu}" Stroke="{StaticResource AccentCpu}" />
                                     <TextBlock Text="CPU" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentCpu}" />
                                     <TextBlock Text="{Binding CpuModel}" Style="{StaticResource TextBlockModel}" />
@@ -104,6 +115,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="gpu"
                                             Content="{Binding GpuBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconGpu}" Stroke="{StaticResource AccentGpu}" />
                                     <TextBlock Text="GPU" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentGpu}" />
                                     <TextBlock Text="{Binding GpuModel}" Style="{StaticResource TextBlockModel}" />
@@ -160,6 +173,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="fps"
                                             Content="{Binding FpsBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconFps}" Stroke="{StaticResource AccentFps}" />
                                     <TextBlock Text="FPS" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentFps}" />
                                     <TextBlock Text="{Binding FpsSubtitle}" Style="{StaticResource TextBlockModel}" />
@@ -221,6 +236,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="trend"
                                             Content="{Binding TrendBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconTrend}" Stroke="{StaticResource AccentCpu}" />
                                     <TextBlock Text="趋势" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentCpu}" />
                                     <TextBlock Text="{Binding TrendSubtitle}" Style="{StaticResource TextBlockModel}" />
@@ -251,6 +268,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="temp"
                                             Content="{Binding TempBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconTemp}" Stroke="{StaticResource AccentPower}" />
                                     <TextBlock Text="温度" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentPower}" />
                                     <TextBlock Text="{Binding TempSubtitle}" Style="{StaticResource TextBlockModel}" />
@@ -278,6 +297,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="mem"
                                             Content="{Binding MemBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconRam}" Stroke="{StaticResource AccentRam}" />
                                     <TextBlock Text="内存" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentRam}" />
                                     <TextBlock Text="{Binding MemHeadline}" Style="{StaticResource TextBlockModel}" />
@@ -304,6 +325,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="net"
                                             Content="{Binding NetBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconNet}" Stroke="{StaticResource AccentNet}" />
                                     <TextBlock Text="网络" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentNet}" />
                                     <TextBlock Text="{Binding NetAdapter}" Style="{StaticResource TextBlockModel}" />
@@ -330,6 +353,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="disk"
                                             Content="{Binding DiskBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconDisk}" Stroke="{StaticResource AccentDisk}" />
                                     <TextBlock Text="硬盘" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentDisk}" />
                                 </StackPanel>
@@ -416,6 +441,8 @@
                                     <Button Style="{StaticResource FoldButton}" Tag="proc"
                                             Content="{Binding ProcBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
+                                    <Path Style="{StaticResource BlockIcon}"
+                                          Data="{StaticResource IconProc}" Stroke="{StaticResource AccentFps}" />
                                     <TextBlock Text="进程" Style="{StaticResource TextBlockTitle}"
                                                Foreground="{StaticResource AccentFps}" />
                                 </StackPanel>
