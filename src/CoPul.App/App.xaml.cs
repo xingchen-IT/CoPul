@@ -680,6 +680,15 @@ public partial class App : Application
             // --float-field-probe ram,vram：首帧后翻字段开关，验条子跟着收窄/收矮（M4.14）
             if (ArgValue(e.Args, "--float-field-probe") is { } fieldProbe) f.FieldProbe = fieldProbe;
 
+            // --no-frame-guard：关掉"发现框架被算回来就纠正"，A/B 用（M4.16）
+            if (e.Args.Contains("--no-frame-guard")) f.FrameGuard = false;
+
+            // --no-nccalc：不吃掉 DWM 那条 8px 框架，自测白框真身用（M4.16）
+            if (e.Args.Contains("--no-nccalc")) f.EatFrame = false;
+
+            // --float-move-focus-probe move,defocus,drag：复现"挪过位置后点别处冒白框"（M4.16）
+            if (ArgValue(e.Args, "--float-move-focus-probe") is { } mfProbe) f.MoveFocusProbe = mfProbe;
+
             // 上面这两个探针同样不许落盘：它们会真的改字段开关，而 ReloadFields 那条路
             // 末尾要 SavePlacement（写 config.json）。实测踩到过 —— 跑一次 --float-field-probe
             // 就把用户的字段永久关掉了，之后每次验收量到的都是"上次探针留下的尺寸"。

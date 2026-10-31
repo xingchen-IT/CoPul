@@ -148,6 +148,21 @@ public partial class FloatWindow : Window
         // 少了这一句，窗口底会变成纯黑，Acrylic 看起来完全没生效。
         Loaded += (_, _) => WindowGlass.MakeClientTransparent(this);
 
+        // 框架守门（M4.16）：DWM 偶尔会把 WS_THICKFRAME 那 8px 重新算回客户区几何，
+        // 表现为窗口四周多一圈（浅色主题下就是白框）。四条时机都看一眼，
+        // 发现不一致就补一次"框架已变"，让它重新问一次 WM_NCCALCSIZE。
+        LocationChanged += (_, _) => GuardFrame();
+        SizeChanged += (_, _) => GuardFrame();
+        Activated += (_, _) => GuardFrame();
+        Deactivated += (_, _) => GuardFrame();
+        DpiChanged += (_, _) => GuardFrame();
+
+        // 兜底巡检：上面五个时机之外的漏网的（系统 DPI 变了而窗口尺寸恰好没变之类）。
+        // 一秒一次、只比两次矩形，窗口看不见时连这两次都省了。
+        var frameWatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        frameWatch.Tick += (_, _) => { if (IsVisible) GuardFrame(); };
+        frameWatch.Start();
+
         // 定位必须等首帧渲染完：SizeToContent 的窗口在 Loaded 阶段宽度还没定型，
         // 实测此时 GetWindowRect 量到的是 94px（最终 381 DIP × 1.5 = 571px）。
         // 拿这个宽度去算「60% 可见」的夹紧范围会算出完全错误的结果。
@@ -231,6 +246,7 @@ public partial class FloatWindow : Window
 
             // 自测放在最后：走到这里尺寸已定型，命中测试量到的才是真实布局
             if (DragProbe is { } dragMode) RunDragProbe(dragMode);
+            if (MoveFocusProbe is { } mfSpec) RunMoveFocusProbe(mfSpec);
             if (FieldProbe is { } fieldKeys) RunFieldProbe(fieldKeys);
             if (MenuProbe) ProbeMenuAndHitTest();
         };
@@ -362,6 +378,12 @@ public partial class FloatWindow : Window
     /// 菜单落点由元素位置算，只靠看代码判断不了，必须实拍。
     /// </summary>
     public bool MenuProbe { get; set; }
+
+    /// <summary>
+    /// 自测：<c>--float-move-focus-probe move,defocus,drag</c>（M4.16）。
+    /// 复现"挪过位置后点别处冒白框"，见 <see cref="RunMoveFocusProbe"/>。
+    /// </summary>
+    public string? MoveFocusProbe { get; set; }
 
     /// <summary>
     /// 自测：<c>--float-drag-probe keep|release</c>（M4.14）。
@@ -1072,12 +1094,62 @@ public partial class FloatWindow : Window
         }
     }
 
+    /// <summary><c>WM_NCCALCSIZE</c> 命中次数。自测用：0 就说明那条框架从来没被吃掉。</summary>
+    private int _ncCalcHits;
+
+    /// <summary>框架守门补过的次数。自测 sidecar 会输出，平时应当是 0。</summary>
+    private int _frameGuardHits;
+
+    /// <summary>自测：<c>--no-frame-guard</c> 关掉守门，A/B 用。</summary>
+    public bool FrameGuard { get; set; } = true;
+
+    /// <summary>
+    /// 检查"客户区有没有被 DWM 又切掉一圈"，切了就补一次框架变更通知。
+    ///
+    /// <para>
+    /// <c>WS_THICKFRAME</c> 是拿系统阴影的代价：它同时让 DWM 认为这个窗口有 8px 框架。
+    /// 平时靠 <see cref="NcCalcSizeHook"/> 返回 0 把客户区铺满整个窗口吃掉它，
+    /// 但这条消息不是每次重绘都来 —— 一旦某次 DWM 用了带框架的几何，窗口四周就多一圈
+    /// （浅色主题下是白的），而窗口位置/尺寸/激活状态的变化都会触发重新计算，
+    /// 所以在这四个时机各看一眼最省事。
+    /// </para>
+    ///
+    /// <para>
+    /// 只在真的不一致时才动：通知用的是 <c>SWP_NOMOVE|NOSIZE|NOZORDER|NOACTIVATE</c>，
+    /// 不改几何也不会重排，但没必要每秒发一次。
+    /// </para>
+    /// </summary>
+    private void GuardFrame()
+    {
+        if (!FrameGuard || !EatFrame || !SystemShadow || !_hwndReady) return;
+
+        IntPtr hwnd = Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT wr)) return;
+        if (!Win32Window.TryGetClientRect(hwnd, out int cw, out int ch)) return;
+
+        int ww = wr.Right - wr.Left, wh = wr.Bottom - wr.Top;
+        if (cw == ww && ch == wh) return;      // 正常：客户区铺满窗口
+
+        _frameGuardHits++;
+        Monitors.NotifyFrameChanged(hwnd);
+    }
+
+    /// <summary>
+    /// 自测：<c>--no-nccalc</c> 关掉"把客户区铺满整个窗口"。关掉后 <c>WS_THICKFRAME</c>
+    /// 带来的 8px 框架会整圈露出来（150% 下 12 物理像素），用于确认白框的真身。
+    /// </summary>
+    public bool EatFrame { get; set; } = true;
+
     private IntPtr NcCalcSizeHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         // wParam=TRUE 表示"客户区要重新算"。返回 0 = 整个窗口都是客户区，
         // 于是 WS_THICKFRAME 带来的 8px 边框不可见，但 DWM 仍按"有边框窗口"给它画阴影。
-        if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero)
+        // EatFrame=false 是给自测用的反例开关：不吃框架，DWM 那条 8px 就会露出来，
+        // 用来确认用户看到的白框到底是不是它。
+        if (msg == WM_NCCALCSIZE && wParam != IntPtr.Zero && EatFrame)
         {
+            _ncCalcHits++;          // 自测用：这条消息到底来过几次
             handled = true;
             return IntPtr.Zero;
         }
@@ -1541,6 +1613,93 @@ public partial class FloatWindow : Window
         PlacementDiag = $"drag-probe: mode={mode} during={during} " +
                         $"after={Name(Shell.BorderBrush)} idle={Name(_edgeIdle)} " +
                         $"hover={Name(_edgeHover)}";
+    }
+
+    /// <summary>窗口矩形与客户区的单边差值（物理像素）。0 = 框架已被吃掉。</summary>
+    private static string FrameGap(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "n/a";
+        if (!Monitors.TryGetRect(hwnd, out Win32Window.RECT wr)) return "n/a";
+        if (!Win32Window.TryGetClientRect(hwnd, out int cw, out int ch)) return "n/a";
+        int ww = wr.Right - wr.Left, wh = wr.Bottom - wr.Top;
+        return $"{(ww - cw) / 2}/{(wh - ch) / 2}";
+    }
+
+    /// <summary>
+    /// 自测：<c>--float-move-focus-probe move,defocus,drag</c>。
+    ///
+    /// <para>
+    /// 复现"把窗口挪过位置、再去点别的窗口，边上就冒出一圈白"。三个开关随便组合：
+    /// <c>move</c> 搬一次位置、<c>drag</c> 走一遍拖动收尾、<c>defocus</c> 把焦点让给桌面。
+    /// 抓屏之外还要看描边的**画刷值** —— 白框到底是我们画的还是 DWM 画的，
+    /// 光看截图分不出来，得看 <c>Shell.BorderBrush</c> 变没变。
+    /// </para>
+    /// </summary>
+    private void RunMoveFocusProbe(string spec)
+    {
+        static string Name(Brush b) => b is SolidColorBrush sc ? sc.Color.ToString() : b?.ToString() ?? "null";
+
+        var opts = spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                       .Select(s => s.ToLowerInvariant()).ToHashSet();
+        IntPtr hwnd = Handle;
+        string before = Name(Shell.BorderBrush);
+
+        if (opts.Contains("drag"))
+        {
+            BeginDragVisual();
+            EndDragVisual();
+        }
+
+        if (opts.Contains("move") && hwnd != IntPtr.Zero && Monitors.TryGetRect(hwnd, out Win32Window.RECT r0))
+            Monitors.MoveWindowTo(hwnd, r0.Left + 60, r0.Top + 40);
+
+        if (opts.Contains("defocus")) Win32Window.MoveFocusToDesktop();
+
+        // 主动通知"框架变了"：真实拖动/跨屏/失焦重绘都会让 DWM 重算非客户区，
+        // 用这一招把那条路径拉进来，看 8px 框架会不会露出来。
+        if (opts.Contains("frame") && hwnd != IntPtr.Zero) Monitors.NotifyFrameChanged(hwnd);
+
+        // 等一拍再读：失焦后的重绘不同步，立刻读到的还是旧状态
+        var settle = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        settle.Tick += (_, _) =>
+        {
+            settle.Stop();
+            IntPtr fg = Win32Window.ForegroundWindow;
+            string rect = hwnd != IntPtr.Zero && Monitors.TryGetRect(hwnd, out Win32Window.RECT r1)
+                ? $"{r1.Left},{r1.Top} {r1.Right - r1.Left}x{r1.Bottom - r1.Top}"
+                : "n/a";
+
+            // 客户区 vs 窗口矩形：差值就是 DWM 那条 8px 框架露出来的宽度（150% 下 12px）
+            string frame = "n/a";
+            if (hwnd != IntPtr.Zero && Win32Window.TryGetClientRect(hwnd, out int cw, out int ch)
+                && Monitors.TryGetRect(hwnd, out Win32Window.RECT r2))
+            {
+                int ww = r2.Right - r2.Left, wh = r2.Bottom - r2.Top;
+                frame = $"window={ww}x{wh} client={cw}x{ch} gapLR={(ww - cw) / 2} gapTB={(wh - ch) / 2}";
+            }
+
+            // 自证守门有效：先把框架放出来（gap 应为 8/12px），再让守门收回去（应回 0）
+            if (opts.Contains("framebreak") && hwnd != IntPtr.Zero)
+            {
+                EatFrame = false;
+                Monitors.NotifyFrameChanged(hwnd);
+                UpdateLayout();
+                string broken = FrameGap(hwnd);
+                EatFrame = true;
+                GuardFrame();
+                Monitors.NotifyFrameChanged(hwnd);
+                UpdateLayout();
+                frame += $" | break={broken} -> guard={FrameGap(hwnd)} hits={_frameGuardHits}";
+            }
+
+            PlacementDiag = $"move-focus: spec={spec}{Environment.NewLine}" +
+                            $"  border before={before} after={Name(Shell.BorderBrush)}{Environment.NewLine}" +
+                            $"  idle={Name(_edgeIdle)} normal={Name(_edgeNormal)} hover={Name(_edgeHover)}{Environment.NewLine}" +
+                            $"  active={IsActive} fgIsSelf={fg == hwnd} rect={rect}{Environment.NewLine}" +
+                            $"  ncCalcHits={_ncCalcHits} guardHits={_frameGuardHits} {frame}{Environment.NewLine}" +
+                            $"  dmwBorder={DwmBorderDiag}";
+        };
+        settle.Start();
     }
 
     /// <summary>

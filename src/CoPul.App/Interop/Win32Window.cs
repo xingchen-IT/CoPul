@@ -49,6 +49,49 @@ internal static class Win32Window
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT pt);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetShellWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
+
+    /// <summary>
+    /// 客户区矩形（物理像素，左上角恒为 0,0）。
+    ///
+    /// <para>
+    /// 和 <see cref="Monitors.TryGetRect"/>（窗口矩形）一减就能看出 DWM 那条框架有没有被
+    /// <c>WM_NCCALCSIZE</c> 吃掉：差值 0 = 客户区铺满窗口；差值 8（150% 下 12）就是
+    /// <c>WS_THICKFRAME</c> 的框架露出来了，表现为窗口四周一圈白。
+    /// </para>
+    /// </summary>
+    public static bool TryGetClientRect(IntPtr hwnd, out int widthPx, out int heightPx)
+    {
+        widthPx = heightPx = 0;
+        if (hwnd == IntPtr.Zero || !GetClientRect(hwnd, out RECT r)) return false;
+        widthPx = r.Right - r.Left;
+        heightPx = r.Bottom - r.Top;
+        return true;
+    }
+
+    /// <summary>当前前台窗口。自测里用它确认"失焦"这一步真的生效了。</summary>
+    public static IntPtr ForegroundWindow => GetForegroundWindow();
+
+    /// <summary>
+    /// 把焦点让给桌面（Shell 窗口），等价于用户"点了别的地方"。
+    ///
+    /// <para>
+    /// 用户报的"移动过之后点别的页面就出现白框"必须能复现才谈得上修，
+    /// 而 <c>SendInput</c> 在本机进不了输入队列，只能用这招制造真实的失焦。
+    /// </para>
+    /// </summary>
+    public static bool MoveFocusToDesktop() => SetForegroundWindow(GetShellWindow());
+
     /// <summary>
     /// 取光标位置（屏幕物理像素）。
     ///
