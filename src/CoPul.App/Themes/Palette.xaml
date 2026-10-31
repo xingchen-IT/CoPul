@@ -68,6 +68,23 @@
     <SolidColorBrush x:Key="BrushGlassEdgeDarkHover"  Color="#24FFFFFF" />  <!-- 白 14% -->
 
     <!--
+        边框档位「淡」与「无」（M4.15）。
+
+        背景：上面四档里最淡的常态描边也是白 12%，而深色玻璃底只有 25 luma ——
+        实测在深色桌面上这圈描边亮度 50、条内 16，**亮出 3 倍**，用户就是这么看到"白边"的。
+        「极透」档更糟：那一档几乎没有底色，描边直接叠在桌面上（实测 +34，比别的档更跳）。
+
+        「淡」取 5%：仍能勾出四边（深色底上约 +12 luma），但不再是一条能单独看见的线。
+        「无」是完全透明而不是 BorderThickness=0 —— 厚度改了会让窗口宽度少 2 DIP，
+        而且拖动那圈粉色也画不出来了（拖动必须看得见"被抓住了"）。
+    -->
+    <SolidColorBrush x:Key="BrushGlassEdgeFaint"      Color="#0D000000" />  <!-- 黑 5% -->
+    <SolidColorBrush x:Key="BrushGlassEdgeDarkFaint"  Color="#0DFFFFFF" />  <!-- 白 5% -->
+
+    <!-- 「无」档：全透明，深浅通用。悬停 / 拖动仍然给描边，否则窗口彻底没有边界反馈。 -->
+    <SolidColorBrush x:Key="BrushGlassEdgeNone"       Color="#00000000" />
+
+    <!--
         拖动中的描边（M4.14）：粉色。
 
         为什么单开一个颜色而不是继续用"提亮一档"：按住拖动时窗口一直在动，

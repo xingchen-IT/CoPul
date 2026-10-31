@@ -71,6 +71,17 @@ public sealed class AppConfig
     public bool FloatVertical { get; set; }
 
     /// <summary>
+    /// 悬浮窗常态描边的档位（M4.15）：<c>none</c> / <c>faint</c> / <c>normal</c>。
+    ///
+    /// <para>
+    /// 会用到它是因为"描边要多亮"没有唯一正确答案：深色玻璃上要勾出边界就得叠白，
+    /// 而叠白在深色桌面上就是一圈显眼的白边（实测亮度 50 vs 条内 16）。
+    /// 与其替用户决定，不如让他自己挑。
+    /// </para>
+    /// </summary>
+    public string FloatEdgeMode { get; set; } = "normal";
+
+    /// <summary>
     /// 悬浮窗里被**用户关掉**的字段（M4.14）。key 见 <see cref="FloatFields.Keys"/>。
     ///
     /// <para>

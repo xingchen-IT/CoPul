@@ -636,6 +636,7 @@ public partial class App : Application
             bool glassOverride = e.Args.Contains("--glass-dark")
                                  || ArgValue(e.Args, "--glass-level") is not null
                                  || ArgValue(e.Args, "--float-scale") is not null
+                                 || ArgValue(e.Args, "--float-edge") is not null
                                  || e.Args.Contains("--float-vertical")
                                  || e.Args.Contains("--float-row");
             if (glassOverride) f.PersistToConfig = false;
@@ -658,6 +659,9 @@ public partial class App : Application
             // --float-row：强制横向。配置里可能存着 vertical=true，验收横向时不能靠"删配置"
             if (e.Args.Contains("--float-vertical")) f.IsVertical = true;
             else if (e.Args.Contains("--float-row")) f.IsVertical = false;
+
+            // --float-edge none|faint|normal：静止描边档位（M4.15），配合 --shot-screen 量亮度
+            if (ArgValue(e.Args, "--float-edge") is { } edgeMode) f.EdgeMode = edgeMode;
 
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;

@@ -124,6 +124,7 @@ public partial class FloatWindow : Window
         _locked = config.FloatLocked;
         _scalePercent = NormalizeScale(config.FloatScale);
         _vertical = config.FloatVertical;
+        _edgeMode = NormalizeEdgeMode(config.FloatEdgeMode);
 
         // 缩放必须在 Show 之前落定：窗口尺寸会决定 SizeToContent 算出的宽度，
         // 而定位（ContentRendered）依赖最终尺寸。晚一步改就会出现"先按 100% 摆好，
@@ -1336,8 +1337,66 @@ public partial class FloatWindow : Window
             shell);
 
         // 极透档几乎没有底色，淡描边会完全看不见边界，窗口像"文字直接浮在桌面上"。
-        // 这一档借用悬停档的描边作为常驻值，用户至少能找到窗口的四条边。
-        _edgeIdle = blurOnly ? _edgeHover : _edgeNormal;
+        // 这一档借用悬停档的描边作为常驻值，用户至少能找到窗口的四条边 ——
+        // 但这只在 normal 档成立，「淡」/「无」是用户主动选的，不能被这里改回去。
+        ApplyEdge();
+    }
+
+    /// <summary>
+    /// 常态描边的档位（M4.15）：<c>none</c>（透明）/ <c>faint</c>（5%）/ <c>normal</c>（12%）。
+    ///
+    /// <para>
+    /// 只管**静止时**那一圈；悬停与拖动仍各自给反馈（否则选了「无」就彻底没有边界，
+    /// 鼠标进窗口、拖动窗口都毫无回应）。这是刻意的：三个状态要能分开看，
+    /// "静止看不见"不该顺带把"被抓住了"也一起抹掉。
+    /// </para>
+    /// </summary>
+    public string EdgeMode
+    {
+        get => _edgeMode;
+        set
+        {
+            string v = NormalizeEdgeMode(value);
+            if (_edgeMode == v) return;
+            _edgeMode = v;
+            ApplyEdge();
+            SyncMenuChecks();
+            PersistAppearance();
+        }
+    }
+
+    private string _edgeMode = "normal";
+
+    /// <summary>把任意输入夹到三档之一，认不出来按 normal（与缩放档同一套取舍）。</summary>
+    private static string NormalizeEdgeMode(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "none" => "none",
+        "faint" => "faint",
+        _ => "normal",
+    };
+
+    /// <summary>按「主题 × 档位」取常态描边的画刷。</summary>
+    private static Brush EdgeBrushFor(bool light, string mode) => mode switch
+    {
+        "none" => Palette.Brush("BrushGlassEdgeNone"),
+        "faint" => Palette.Brush(light ? "BrushGlassEdgeFaint" : "BrushGlassEdgeDarkFaint"),
+        _ => Palette.Brush(light ? "BrushGlassEdge" : "BrushGlassEdgeDark"),
+    };
+
+    /// <summary>
+    /// 把当前档位刷到描边上。抽成方法是因为三个入口都要走它：
+    /// 换主题、换浓度档（极透档会临时提亮）、用户在菜单/设置页里改档位。
+    /// </summary>
+    private void ApplyEdge()
+    {
+        bool light = _theme == GlassTheme.Light;
+        _edgeNormal = EdgeBrushFor(light, _edgeMode);
+
+        // 极透档借用悬停档提亮 —— 但只在 normal 档这么做。
+        // 「淡」和「无」本来就是为了不要那圈白，再提亮一次等于把用户的选择改回去。
+        (_, _, bool blurOnly) = (light ? LightSteps : DarkSteps)[_level];
+        _edgeIdle = (_glass && blurOnly && _edgeMode == "normal") ? _edgeHover : _edgeNormal;
+
         Shell.BorderBrush = _edgeIdle;
     }
 
@@ -1347,7 +1406,7 @@ public partial class FloatWindow : Window
 
         LabelBrush = Palette.Brush(light ? "BrushTextSecondaryLight" : "BrushTextSecondary");
 
-        _edgeNormal = Palette.Brush(light ? "BrushGlassEdge" : "BrushGlassEdgeDark");
+        _edgeNormal = EdgeBrushFor(light, _edgeMode);
         _edgeHover = Palette.Brush(light ? "BrushGlassEdgeHover" : "BrushGlassEdgeDarkHover");
         _edgeDrag = Palette.Brush(light ? "BrushGlassEdgeDrag" : "BrushGlassEdgeDragDark");
         Shell.BorderBrush = _edgeNormal;
@@ -1609,6 +1668,11 @@ public partial class FloatWindow : Window
             IsVertical = tag == "column";
     }
 
+    private void Edge_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string tag }) EdgeMode = tag;
+    }
+
     private void ToggleLock_Click(object sender, RoutedEventArgs e)
     {
         // IsCheckable 的菜单项点下去时 WPF 已经先把 IsChecked 翻过了，这里读到的就是新状态
@@ -1630,6 +1694,7 @@ public partial class FloatWindow : Window
         _config.FloatGlassEnabled = _glass;
         _config.FloatScale = _scalePercent;
         _config.FloatVertical = _vertical;
+        _config.FloatEdgeMode = _edgeMode;
         ConfigStore.SaveCurrent();
     }
 
@@ -1681,6 +1746,14 @@ public partial class FloatWindow : Window
                 if (child is MenuItem { Tag: string key } item)
                     item.IsChecked = FloatFields.IsVisible(_config, key);
             }
+        }
+
+        // 边框三档（M4.15）：同样从当前值反推
+        if (EdgeNoneMenu is not null)
+        {
+            EdgeNoneMenu.IsChecked = _edgeMode == "none";
+            EdgeFaintMenu.IsChecked = _edgeMode == "faint";
+            EdgeNormalMenu.IsChecked = _edgeMode == "normal";
         }
     }
 

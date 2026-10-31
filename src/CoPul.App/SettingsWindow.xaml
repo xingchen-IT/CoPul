@@ -369,6 +369,28 @@
                                                  GroupName="scale" Content="150%" Tag="150"
                                                  Checked="Scale_Checked" />
                                 </StackPanel>
+
+                                <!--
+                                    边框（M4.15）：静止时那圈描边的浓度。
+                                    深色玻璃上"明显"那档在深色桌面上会显出一圈白边
+                                    （实测亮度 50 vs 条内 16），所以给用户自己挑，而不是替他决定。
+                                -->
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="边框" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <RadioButton x:Name="EdgeNone" Style="{StaticResource Segment}"
+                                                 GroupName="edge" Content="无" Tag="none"
+                                                 Checked="Edge_Checked"
+                                                 ToolTip="静止时不描边；悬停和拖动时仍会显示" />
+                                    <RadioButton x:Name="EdgeFaint" Style="{StaticResource Segment}"
+                                                 GroupName="edge" Content="淡" Tag="faint"
+                                                 Checked="Edge_Checked"
+                                                 ToolTip="5%：能勾出四边，但不单独成线" />
+                                    <RadioButton x:Name="EdgeNormal" Style="{StaticResource Segment}"
+                                                 GroupName="edge" Content="明显" Tag="normal"
+                                                 Checked="Edge_Checked"
+                                                 ToolTip="12%：边界最清楚，深色桌面上会显白边" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 

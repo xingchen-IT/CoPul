@@ -236,6 +236,14 @@ public partial class SettingsWindow : Window
         // 而用户看到的是窗口真实的样子，设置页得跟它一致。
         (IsFloatVertical() ? LayoutColumn : LayoutRow).IsChecked = true;
 
+        // 边框（M4.15）：与排列同一套取舍，以当前窗口为准
+        switch (CurrentEdgeMode())
+        {
+            case "none": EdgeNone.IsChecked = true; break;
+            case "faint": EdgeFaint.IsChecked = true; break;
+            default: EdgeNormal.IsChecked = true; break;
+        }
+
         switch (_config.TaskbarInk)
         {
             case "Light": InkLight.IsChecked = true; break;
@@ -760,6 +768,38 @@ public partial class SettingsWindow : Window
 
     /// <summary>当前悬浮窗是否竖向排列；窗口没开着就看配置。</summary>
     private bool IsFloatVertical() => _ctx.GetFloat()?.IsVertical ?? _config.FloatVertical;
+
+    /// <summary>当前边框档位；窗口没开着就看配置（与 <see cref="IsFloatVertical"/> 同一套取舍）。</summary>
+    private string CurrentEdgeMode() => _ctx.GetFloat()?.EdgeMode ?? _config.FloatEdgeMode;
+
+    /// <summary>
+    /// 边框（M4.15）：静止时描边的浓度。与排列同一套写法 ——
+    /// 悬浮窗开着就直接改，没开就只落盘。
+    /// </summary>
+    private void Edge_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+
+        FloatWindow? f = _ctx.GetFloat();
+        if (f is not null)
+        {
+            f.EdgeMode = tag;
+            _config.FloatEdgeMode = f.EdgeMode;
+        }
+        else
+        {
+            _config.FloatEdgeMode = tag;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(tag switch
+        {
+            "none" => "边框已关闭（悬停与拖动时仍会显示）",
+            "faint" => "边框改为「淡」",
+            _ => "边框改为「明显」",
+        });
+    }
 
     // ---- 任务栏条 ----
 

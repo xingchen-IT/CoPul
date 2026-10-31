@@ -140,6 +140,24 @@
                     按 FloatFields.Keys 在构造函数里生成，加字段时这里一行不用动，
                     也就不会出现"菜单顺序与表顺序错位"这种编译不报错的毛病。
                 -->
+                <!--
+                    边框（M4.15）：静止时那圈描边要多亮。
+                    「无」= 完全透明（悬停 / 拖动仍给反馈，否则窗口彻底没有边界感）；
+                    「淡」= 5%；「明显」= 12%（深色玻璃上就是有人觉得"白"的那一档）。
+                    深色桌面上「明显」那圈实测亮度 50、条内 16 —— 差 3 倍，看着就是一条白线。
+                -->
+                <MenuItem Header="边框">
+                    <MenuItem x:Name="EdgeNoneMenu" Header="无" IsCheckable="True"
+                              Click="Edge_Click" Tag="none"
+                              ToolTip="静止时不描边；鼠标移上去或拖动时仍会显示" />
+                    <MenuItem x:Name="EdgeFaintMenu" Header="淡" IsCheckable="True"
+                              Click="Edge_Click" Tag="faint"
+                              ToolTip="5% 浓度：能勾出四边，但不单独成线" />
+                    <MenuItem x:Name="EdgeNormalMenu" Header="明显" IsCheckable="True" IsChecked="True"
+                              Click="Edge_Click" Tag="normal"
+                              ToolTip="12% 浓度：边界最清楚，深色桌面上会显出一圈白边" />
+                </MenuItem>
+
                 <MenuItem x:Name="FieldMenu" Header="显示字段"
                           ToolTip="关闭的字段不占位，条会跟着收缩；只剩一个时不可关闭" />
                 <MenuItem Header="设置…" IsEnabled="False"
