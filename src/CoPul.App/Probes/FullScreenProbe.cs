@@ -18,8 +18,8 @@ namespace CoPul.App.Probes;
 /// </para>
 ///
 /// <para>
-/// <b>为什么伪造路径要用虚拟时钟。</b>8.4 的两个防抖门限是 800ms（进入）与 500ms（退出），
-/// 轮询 500ms。真跑一遍墙钟要 1.3 秒以上，四条链路就是好几秒，而且探针里一旦写
+/// <b>为什么伪造路径要用虚拟时钟。</b>防抖门限是 1s 级（M4.23 起 0.5s~3s 可调），
+/// 轮询 500ms。真跑一遍墙钟要好几秒，四条链路就是十几秒，而且探针里一旦写
 /// <c>Thread.Sleep</c> 就卡住 UI 线程。给状态机注入一个可推进的 <c>Clock</c> 之后，
 /// 整条链路能在一帧内推完 —— 而且门限判定走的还是同一个 <c>Poll()</code> 实现，
 /// 验的是生产逻辑，不是"另写一份近似判定"自欺欺人。
@@ -254,12 +254,18 @@ internal static class FullScreenProbe
             clock += 500;
         }
 
+        // 步数按当前档位算（M4.23）：门限不再固定 800/500，写死三步的话
+        // 2s/3s 档下走到最后一步门限都没跨过去，链路会假失败。
+        int need = a.HoldMs / 500 + 1;
+
         Tick(FakeDesktop, "t+0    起点（任务栏）");
         Tick(FakeFull, "t+500  全屏#1（开始计时）");
-        Tick(FakeFull, "t+1000 全屏#2（已 500ms，未到 800）");
-        Tick(FakeFull, "t+1500 全屏#3（已 1000ms → 触发）");
-        Tick(FakeDesktop, "t+2000 退全屏#1（开始计时）");
-        Tick(FakeDesktop, "t+2500 退全屏#2（已 500ms → 触发）");
+        for (int k = 2; k <= need; k++)
+            Tick(FakeFull, $"全屏#{k}（已 {500 * (k - 1)}ms{(k == need ? " → 触发" : "，未到门限")}）");
+
+        Tick(FakeDesktop, "退全屏#1（开始计时）");
+        for (int k = 2; k <= need; k++)
+            Tick(FakeDesktop, $"退全屏#{k}（已 {500 * (k - 1)}ms{(k == need ? " → 触发" : "，未到门限")}）");
 
         foreach (string r in rows) sb.AppendLine(r);
         sb.AppendLine($"  动作序列 : {(aCalls.Count == 0 ? "(无)" : string.Join(" / ", aCalls))}");
@@ -270,7 +276,7 @@ internal static class FullScreenProbe
         bool aEnd = a.CurrentView == FullScreenAutoSwitch.View.Taskbar;
         sb.AppendLine($"  判定 : {(aEnter && aExit && aEnd ? "通过" : "失败")}" +
                       $"（进入={aEnter} 回落={aExit} 终态Taskbar={aEnd}）");
-        sb.AppendLine($"  期望 : t+1500 进入悬浮(auto)、t+2500 回落任务栏、动作恰好 2 次");
+        sb.AppendLine($"  期望 : 门限 {a.HoldMs}ms 跨过后进入悬浮(auto)、再跨过后回落任务栏、动作恰好 2 次");
         sb.AppendLine();
 
         // ---- 链路 B：manual 悬浮窗退出全屏必须保持悬浮（8.2 的核心）----
@@ -296,10 +302,11 @@ internal static class FullScreenProbe
         }
 
         TickB(FakeFull, "t+0    全屏#1（开始计时）");
-        TickB(FakeFull, "t+500  全屏#2（未到 800）");
-        TickB(FakeFull, "t+1000 全屏#3（已 1000ms → 触发）");
-        TickB(FakeDesktop, "t+1500 退全屏#1（开始计时）");
-        TickB(FakeDesktop, "t+2000 退全屏#2（已 500ms → 触发）");
+        for (int k = 2; k <= need; k++)
+            TickB(FakeFull, $"全屏#{k}（已 {500 * (k - 1)}ms{(k == need ? " → 跨过门限" : "，未到门限")}）");
+        TickB(FakeDesktop, "退全屏#1（开始计时）");
+        for (int k = 2; k <= need; k++)
+            TickB(FakeDesktop, $"退全屏#{k}（已 {500 * (k - 1)}ms{(k == need ? " → 跨过门限" : "，未到门限")}）");
 
         sb.AppendLine($"  动作序列 : {(bCalls.Count == 0 ? "(无)" : string.Join(" / ", bCalls))}");
         sb.AppendLine($"  判定 : {(bCalls.Count == 0 ? "通过（8.2 manual 不回落）" : "失败（manual 被回落成任务栏）")}");
@@ -364,7 +371,7 @@ internal static class FullScreenProbe
             ExitToTaskbar = () => eCalls.Add("ExitToTaskbar()"),
         };
 
-        // 正常进入全屏：切悬浮(auto)。同样要走满 800ms 防抖。
+        // 正常进入全屏：切悬浮(auto)。同样要走满防抖门限（当前档位，默认 1s）。
         e.Poll(FakeFull); clock += 500;
         e.Poll(FakeFull); clock += 500;
         e.Poll(FakeFull); clock += 500;

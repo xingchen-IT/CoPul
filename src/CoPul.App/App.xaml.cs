@@ -327,12 +327,12 @@ public partial class App : Application
                     auto.Enabled = on;
                     auto.SyncTimer();
                 },
-                SetFullScreenHold = (enterMs, exitMs) =>
+                SetFullScreenHold = holdMs =>
                 {
                     // 防抖档位改了就立即生效：状态机下一轮判定按新门限走。
                     // 已经攒着的"连续全屏时长"不重置 —— 用户是在观察中调档位，
                     // 清掉计时反而会让"刚把门限从 2s 调到 0.5s"这一下不立刻切过去。
-                    auto?.SetHold(enterMs, exitMs);
+                    auto?.SetHold(holdMs);
                 },
                 GetHotkey = () => hotkey?.Applied,
                 SetHotkey = gesture =>
@@ -875,20 +875,16 @@ public partial class App : Application
         {
             auto = new FullScreenAutoSwitch { CurrentView = view };
 
-            // --fs-hold <enter>,<exit>：命令行覆盖防抖档位（取证用，不落盘）。
-            // 只写一个数字 = 两个都设成它。
-            string? holdArg = ArgValue(e.Args, "--fs-hold");
-            int enterHold = ConfigStore.Current.FullScreenEnterHoldMs;
-            int exitHold = ConfigStore.Current.FullScreenExitHoldMs;
-            if (holdArg is not null)
+            // --fs-hold <ms>：命令行覆盖防抖档位（取证用，不落盘）。
+            int holdMs = ConfigStore.Current.FullScreenHoldMs;
+            if (ArgValue(e.Args, "--fs-hold") is { } holdArg
+                && int.TryParse(holdArg.Split(',')[0].Trim(), out int parsedHold))
             {
-                string[] parts = holdArg.Split(',', StringSplitOptions.TrimEntries);
-                if (parts.Length > 0 && int.TryParse(parts[0], out int e1)) { enterHold = e1; exitHold = e1; }
-                if (parts.Length > 1 && int.TryParse(parts[1], out int e2)) exitHold = e2;
+                holdMs = parsedHold;
             }
 
             auto.ApplyConfig(ConfigStore.Current.FullScreenAutoSwitch && !e.Args.Contains("--no-fullscreen-switch"),
-                             enterHold, exitHold);
+                             holdMs);
 
             // --no-fs-candidate：关掉"前台是自己时改判上次的全屏窗口"（M4.22 的 A/B 对照）。
             // 关掉就是修之前的旧行为 —— 点一下悬浮窗就会被判成非全屏并回落任务栏。

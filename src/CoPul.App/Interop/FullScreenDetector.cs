@@ -70,7 +70,7 @@ public readonly record struct FullScreenInfo(
 /// </para>
 ///
 /// <para>
-/// <b>本类只做检测，不做任何策略。</b>防抖（进入 ≥800ms / 退出 ≥500ms）与时序都在
+/// <b>本类只做检测，不做任何策略。</b>防抖（门限 0.5s~3s 可调）与时序都在
 /// <see cref="CoPul.App.Sdk.FullScreenAutoSwitch"/>；"该不该真的切"由 App 判定
 /// （还要看当前处在哪个模式、<c>floatOrigin</c> 是 manual 还是 auto）。
 /// </para>
@@ -183,7 +183,7 @@ internal static class FullScreenDetector
     /// <b>为什么需要替补（M4.22 的真 bug）。</b>判定的主体一直是 <c>GetForegroundWindow()</c>，
     /// 隐含前提是"前台就是用户正在用的那个应用"。但全屏自动切到悬浮窗之后，用户点一下
     /// 悬浮窗，前台立刻变成 CoPul 自己的窗口 —— 于是走 <c>veto:self</c> 判成"不是全屏"，
-    /// 500ms 后状态机就把视图回落任务栏；用户再点回游戏，800ms 后又切回悬浮窗。
+    /// 门限一过状态机就把视图回落任务栏；用户再点回游戏，门限一过又切回悬浮窗。
     /// 表现就是"点一下回条、再点一下回悬浮窗"的来回抖。
     /// </para>
     ///

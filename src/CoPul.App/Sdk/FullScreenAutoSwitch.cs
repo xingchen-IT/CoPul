@@ -7,7 +7,7 @@ namespace CoPul.App.Sdk;
 ///
 /// <para>
 /// <b>为什么单独立一个类而不是写在 App 里。</b>这套逻辑有三样东西必须一起对：
-/// 800/500ms 两个防抖门限、<c>floatOrigin ∈ {manual, auto}</c> 的来源标记、
+/// 防抖门限（M4.23 起是一个可调档位，进入与退出共用）、<c>floatOrigin ∈ {manual, auto}</c> 的来源标记、
 /// 以及"当前处在哪个模式"。三样里任何一样写错，表现出来都是同一句话——
 /// 「我明明手动选了悬浮窗，打完游戏它自己变回任务栏了」。把它收在一个可独立驱动的
 /// 类里，就能用探针把状态迁移一条条跑出来，而不是靠人肉点游戏验证。
@@ -20,10 +20,10 @@ namespace CoPul.App.Sdk;
 /// </para>
 ///
 /// <para>
-/// <b>防抖为什么用时间戳而不是数 tick。</b>判定轮询是 500ms（8.4），而门限是 800ms/500ms，
+/// <b>防抖为什么用时间戳而不是数 tick。</b>判定轮询是 500ms（8.4），而门限是 0.5s~3s 可调，
 /// 两者不是整数倍关系。数 tick 的话"进入 ≥800ms"要么是 1 tick（500ms，不够）要么是
 /// 2 tick（1000ms，远超）；而且轮询间隔将来若调整，门限会跟着悄悄变。用"首次观察到该状态的
-/// 时刻"做差就与轮询频率无关，门限永远是 800/500ms 本身。
+/// 时刻"做差就与轮询频率无关，门限永远是档位本身。
 /// </para>
 /// </summary>
 internal sealed class FullScreenAutoSwitch
@@ -48,47 +48,42 @@ internal sealed class FullScreenAutoSwitch
     /// <summary>判定轮询间隔。8.4 定 500ms。</summary>
     public static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>进入全屏须持续满足的时间（8.4 防抖）的默认值。</summary>
-    public static readonly TimeSpan DefaultEnterHold = TimeSpan.FromMilliseconds(800);
-
-    /// <summary>退出全屏须持续满足的时间（8.4 防抖）的默认值。</summary>
-    public static readonly TimeSpan DefaultExitHold = TimeSpan.FromMilliseconds(500);
+    /// <summary>
+    /// 防抖门限的默认值（M4.23 起进入与退出**共用**一个档位，见 <see cref="HoldMs"/>）。
+    /// 8.4 原定进入 800 / 退出 500 两个数，合成一档后取 1000：
+    /// 退出那一侧比原来稳一倍（挡得住 1s 内的 Alt+Tab），进入那一侧只慢 200ms。
+    /// </summary>
+    public static readonly TimeSpan DefaultHold = TimeSpan.FromMilliseconds(1000);
 
     /// <summary>
     /// 可选档位（ms）。UI 与探针共用同一份数字，避免"设置页有 2s、探针认不出来"这种分叉。
-    /// 两档都含 1s/2s/3s：门限越长越不容易被瞬时状态（切屏、弹窗、点一下悬浮窗）带偏，
-    /// 代价是切换反应变慢，所以交给用户按自己的使用习惯挑。
+    /// 门限越长越不容易被瞬时状态（切屏、弹窗、点一下悬浮窗）带偏，代价是切换反应变慢 ——
+    /// 这个取舍只有用户自己知道，所以只给一个档位让他挑，不拆成两个数去为难他。
     /// </summary>
-    public static readonly int[] EnterHoldChoices = { 500, 800, 1000, 2000, 3000 };
-
-    /// <summary>退出档位。默认 500ms 已在列。</summary>
-    public static readonly int[] ExitHoldChoices = { 500, 1000, 2000, 3000 };
-
-    /// <summary>实际生效的进入门限（ms）。改档位走 <see cref="SetHold"/>。</summary>
-    public int EnterHoldMs { get; private set; } = (int)DefaultEnterHold.TotalMilliseconds;
-
-    /// <summary>实际生效的退出门限（ms）。</summary>
-    public int ExitHoldMs { get; private set; } = (int)DefaultExitHold.TotalMilliseconds;
+    public static readonly int[] HoldChoices = { 500, 1000, 2000, 3000 };
 
     /// <summary>
-    /// 取最接近的合法值（与 <c>FloatWindow.NormalizeScale</c> 同一套取舍：不拒绝非法输入，
+    /// 实际生效的门限（ms），进入与退出都用这一个值。改档位走 <see cref="SetHold"/>。
+    /// </summary>
+    public int HoldMs { get; private set; } = (int)DefaultHold.TotalMilliseconds;
+
+    /// <summary>
+    /// 取最接近的合法档位（与 <c>FloatWindow.NormalizeScale</c> 同一套取舍：不拒绝非法输入，
     /// 只校正）。手改配置写了 1500 也能用，不至于退回默认把用户的意图抹掉。
     /// </summary>
-    public static int NormalizeHold(int ms, bool enter)
+    public static int NormalizeHold(int ms)
     {
-        int[] choices = enter ? EnterHoldChoices : ExitHoldChoices;
-        int best = choices[0];
-        foreach (int c in choices)
+        int best = HoldChoices[0];
+        foreach (int c in HoldChoices)
             if (Math.Abs(c - ms) < Math.Abs(best - ms)) best = c;
         return best;
     }
 
     /// <summary>改档位。**立即生效**（下一轮判定就按新门限走），不需要重启。</summary>
-    public void SetHold(int enterMs, int exitMs)
+    public void SetHold(int ms)
     {
-        EnterHoldMs = NormalizeHold(enterMs, true);
-        ExitHoldMs = NormalizeHold(exitMs, false);
-        Log($"hold: enter={EnterHoldMs}ms exit={ExitHoldMs}ms");
+        HoldMs = NormalizeHold(ms);
+        Log($"hold: {HoldMs}ms（进入与退出同一档）");
     }
 
     private readonly DispatcherTimer _timer;
@@ -260,8 +255,8 @@ internal sealed class FullScreenAutoSwitch
     /// 时间源。默认 <c>Environment.TickCount64</c>（单调、不受改系统时间影响）。
     ///
     /// <para>
-    /// 抽成可替换的委托是**为了探针能跑虚拟时间**：8.4 的两个门限是 800ms / 500ms，
-    /// 而轮询间隔 500ms。真跑一遍要墙钟等 1.3 秒以上，探针里既难受又慢，一旦想连跑
+    /// 抽成可替换的委托是**为了探针能跑虚拟时间**：门限是 1s（8.4 原定进入 800 / 退出 500，
+    /// M4.23 起合成一个可调档位），而轮询间隔 500ms。真跑一遍要墙钟等 2 秒以上，探针里既难受又慢，一旦想连跑
     /// 十几条迁移就是十几秒。用虚拟时钟可以在一帧内把整条链路推完，且门限判定走的是
     /// 同一个 <see cref="Poll"/> 代码 —— 验的是生产逻辑，不是另一套近似实现。
     /// </para>
@@ -282,7 +277,7 @@ internal sealed class FullScreenAutoSwitch
             _nonFullSince = 0;
             if (_fullSince == 0) _fullSince = now;
 
-            if (!_isFull && now - _fullSince >= EnterHoldMs)
+            if (!_isFull && now - _fullSince >= HoldMs)
             {
                 _isFull = true;
                 ApplyFullScreen(info);
@@ -293,7 +288,7 @@ internal sealed class FullScreenAutoSwitch
             _fullSince = 0;
             if (_nonFullSince == 0) _nonFullSince = now;
 
-            if (_isFull && now - _nonFullSince >= ExitHoldMs)
+            if (_isFull && now - _nonFullSince >= HoldMs)
             {
                 _isFull = false;
                 ApplyExitFullScreen(info);
@@ -380,10 +375,10 @@ internal sealed class FullScreenAutoSwitch
         SyncTimer();
     }
 
-    /// <summary>启动时一次性应用：开关 + 两个防抖档位。</summary>
-    public void ApplyConfig(bool enabled, int enterMs, int exitMs)
+    /// <summary>启动时一次性应用：开关 + 防抖档位。</summary>
+    public void ApplyConfig(bool enabled, int holdMs)
     {
-        SetHold(enterMs, exitMs);
+        SetHold(holdMs);
         ApplyConfig(enabled);
     }
 }

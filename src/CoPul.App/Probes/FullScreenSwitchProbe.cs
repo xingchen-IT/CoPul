@@ -62,7 +62,7 @@ internal static class FullScreenSwitchProbe
     {
         var sb = new StringBuilder();
         sb.AppendLine($"time  : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"step  : {StepMs}ms/步");
+        sb.AppendLine($"step  : {StepMs}ms/步（判定用虚拟时钟 +500ms/步，与生产轮询同频）");
         sb.AppendLine($"trace : {Interop.Trace.Path}");
         sb.AppendLine();
         sb.AppendLine("说明：EnterAutoFloat / ExitToTaskbar 是**生产接线**（真的 Show/Hide 窗口），");
@@ -70,17 +70,25 @@ internal static class FullScreenSwitchProbe
         sb.AppendLine();
 
         // 每轮喂一个伪造结果，并把真实的窗口可见性记下来。
-        // 序列特意按生产的 500ms 轮询展开（虚拟时钟每步 +500ms），
-        // 让 800ms / 500ms 两个防抖门限真的被跨过去。
+        // 序列特意按生产的 500ms 轮询展开（虚拟时钟每步 +500ms）。
+        //
+        // 步数**按当前档位算**（M4.23）：门限不再固定 800/500，写成死的三步四步
+        // 会在 2s/3s 档下直接失败（走到最后一步门限还没跨过去）。
+        // 进入触发在第 m 个"全屏"步：500*(m-1) ≥ HoldMs ⇒ m = ceil(HoldMs/500) + 1。
+        int hold = auto.HoldMs;
+        int need = hold / 500 + 1;   // ceil 的整数写法：500 的倍数恰好也够（>= 门限）
+
         var steps = new List<(string Label, Interop.FullScreenInfo Info)>
         {
-            ("起点（任务栏）", FakeDesktop),
+            ($"起点（任务栏）档位={hold}ms", FakeDesktop),
             ("全屏#1（开始计时）", FakeFull),
-            ("全屏#2（500ms，未到 800）", FakeFull),
-            ("全屏#3（1000ms → 应真切悬浮窗）", FakeFull),
-            ("退全屏#1（开始计时）", FakeDesktop),
-            ("退全屏#2（500ms → 应真回任务栏）", FakeDesktop),
         };
+        for (int k = 2; k <= need; k++)
+            steps.Add(($"全屏#{k}（{500 * (k - 1)}ms{(k == need ? " → 应真切悬浮窗" : "，未到门限")}）", FakeFull));
+
+        steps.Add(("退全屏#1（开始计时）", FakeDesktop));
+        for (int k = 2; k <= need; k++)
+            steps.Add(($"退全屏#{k}（{500 * (k - 1)}ms{(k == need ? " → 应真回任务栏" : "，未到门限")}）", FakeDesktop));
 
         long clock = 1000;
         auto.Clock = () => clock;

@@ -664,49 +664,30 @@
 
                                 <!--
                                     防抖档位（M4.23）：判定主体是前台窗口，切屏、弹窗、Alt+Tab 那一瞬间
-                                    都可能短暂"像全屏"。门限越长越稳，代价是切换反应变慢 —— 这个取舍
-                                    只有用户自己知道（打游戏 vs 频繁切屏），所以做成档位而不是替他定死。
+                                    都可能短暂"像全屏"。档位越长越稳，代价是切换反应变慢 —— 这个取舍
+                                    只有"快 vs 稳"一句话，所以只给一个数，不拆成"进入/退出"两个去为难用户。
                                 -->
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <TextBlock Text="进入确认" Style="{StaticResource RowLabel}"
+                                    <TextBlock Text="切换确认" Style="{StaticResource RowLabel}"
                                                VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="FsEnter500" Style="{StaticResource Segment}"
-                                                 GroupName="fsEnter" Content="0.5s" Tag="500"
-                                                 Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsEnter800" Style="{StaticResource Segment}"
-                                                 GroupName="fsEnter" Content="0.8s" Tag="800"
+                                    <RadioButton x:Name="FsHold500" Style="{StaticResource Segment}"
+                                                 GroupName="fsHold" Content="0.5s" Tag="500"
                                                  Checked="FsHold_Checked"
-                                                 ToolTip="默认（需求 8.4 定值）" />
-                                    <RadioButton x:Name="FsEnter1000" Style="{StaticResource Segment}"
-                                                 GroupName="fsEnter" Content="1s" Tag="1000"
-                                                 Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsEnter2000" Style="{StaticResource Segment}"
-                                                 GroupName="fsEnter" Content="2s" Tag="2000"
-                                                 Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsEnter3000" Style="{StaticResource Segment}"
-                                                 GroupName="fsEnter" Content="3s" Tag="3000"
-                                                 Checked="FsHold_Checked" />
-                                </StackPanel>
-
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <TextBlock Text="退出确认" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="FsExit500" Style="{StaticResource Segment}"
-                                                 GroupName="fsExit" Content="0.5s" Tag="500"
+                                                 ToolTip="反应最快，但切屏/弹窗容易被误判" />
+                                    <RadioButton x:Name="FsHold1000" Style="{StaticResource Segment}"
+                                                 GroupName="fsHold" Content="1s" Tag="1000"
                                                  Checked="FsHold_Checked"
-                                                 ToolTip="默认（需求 8.4 定值）" />
-                                    <RadioButton x:Name="FsExit1000" Style="{StaticResource Segment}"
-                                                 GroupName="fsExit" Content="1s" Tag="1000"
+                                                 ToolTip="默认：挡得住 1 秒内的切出又回来" />
+                                    <RadioButton x:Name="FsHold2000" Style="{StaticResource Segment}"
+                                                 GroupName="fsHold" Content="2s" Tag="2000"
                                                  Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsExit2000" Style="{StaticResource Segment}"
-                                                 GroupName="fsExit" Content="2s" Tag="2000"
-                                                 Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsExit3000" Style="{StaticResource Segment}"
-                                                 GroupName="fsExit" Content="3s" Tag="3000"
-                                                 Checked="FsHold_Checked" />
+                                    <RadioButton x:Name="FsHold3000" Style="{StaticResource Segment}"
+                                                 GroupName="fsHold" Content="3s" Tag="3000"
+                                                 Checked="FsHold_Checked"
+                                                 ToolTip="最稳，但进游戏后要等 3 秒才切到悬浮窗" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="须连续满足这么久才切换：进入=进游戏后多久切到悬浮窗，退出=退出全屏后多久回任务栏条。调长可挡住切屏/弹窗造成的误判，切回来也会慢一点。" />
+                                           Text="须连续全屏/非全屏这么久才切换：越长越不容易被切屏、弹窗带偏，代价是切换反应也慢一点。" />
                             </StackPanel>
                         </Border>
 
