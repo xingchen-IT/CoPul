@@ -634,11 +634,15 @@ public partial class App : Application
             // 这些参数是在改外观，如果照常落盘，跑一次验收就会把用户的配置改成"深色第 1 档"。
             bool glassOverride = e.Args.Contains("--glass-dark")
                                  || ArgValue(e.Args, "--glass-level") is not null
-                                 || ArgValue(e.Args, "--float-scale") is not null;
+                                 || ArgValue(e.Args, "--float-scale") is not null
+                                 || e.Args.Contains("--float-vertical");
             if (glassOverride) f.PersistToConfig = false;
 
             // --float-persist-probe：故意要写盘，用来验"改设置 → 存 config.json"这条链路
             if (e.Args.Contains("--float-persist-probe")) f.PersistProbe = true;
+
+            // --float-menu-probe：首帧后直接弹右键菜单，配合整屏抓屏验"竖向（旋转）下菜单弹在哪"
+            if (e.Args.Contains("--float-menu-probe")) f.MenuProbe = true;
 
             if (e.Args.Contains("--glass-dark")) f.Theme = FloatWindow.GlassTheme.Dark;
             if (int.TryParse(ArgValue(e.Args, "--accent-flags"), out int flags)) WindowGlass.AccentFlagsOverride = flags;
@@ -647,6 +651,9 @@ public partial class App : Application
 
             // --float-scale 125：验收三档缩放用（100 / 125 / 150，越界会夹到最近档）
             if (int.TryParse(ArgValue(e.Args, "--float-scale"), out int sc)) f.ScalePercent = sc;
+
+            // --float-vertical：竖向排列（M4.10），验收用；不落盘（见上面的 glassOverride）
+            if (e.Args.Contains("--float-vertical")) f.IsVertical = true;
 
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;

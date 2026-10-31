@@ -61,6 +61,16 @@ public sealed class AppConfig
     public int FloatScale { get; set; } = 100;
 
     /// <summary>
+    /// 悬浮窗排列方向（M4.10）：<c>false</c> = 横向单行长条（6.1 默认），<c>true</c> = 竖向。
+    ///
+    /// <para>
+    /// 存 bool 不存字符串：这里只有两个方向、不会再有第三种（横向已经是"一行放不下就换行"
+    /// 之外的唯一合理形态），再多一个枚举值只会让配置里多一个没人认得的字符串。
+    /// </para>
+    /// </summary>
+    public bool FloatVertical { get; set; }
+
+    /// <summary>
     /// 任务栏模式的文字取色策略（7.5）：<c>Auto</c> / <c>Light</c> / <c>Dark</c>。
     /// Auto 读 <c>SystemUsesLightTheme</c> 自动决定，另两个是用户手动锁定 ——
     /// Win11 任务栏是半透明的，实际明暗取决于壁纸，注册表读数未必与眼睛看到的一致。

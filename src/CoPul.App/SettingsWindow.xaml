@@ -345,6 +345,18 @@
                                 </Grid>
 
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <TextBlock Text="排列" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <RadioButton x:Name="LayoutRow" Style="{StaticResource Segment}"
+                                                 GroupName="layout" Content="横向" Tag="row"
+                                                 Checked="Layout_Checked" />
+                                    <RadioButton x:Name="LayoutColumn" Style="{StaticResource Segment}"
+                                                 GroupName="layout" Content="竖向" Tag="column"
+                                                 Checked="Layout_Checked"
+                                                 ToolTip="整条顺时针旋转 90°，文字随之竖排" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                     <TextBlock Text="界面缩放" Style="{StaticResource RowLabel}"
                                                VerticalAlignment="Center" Margin="0,0,12,0" />
                                     <RadioButton x:Name="Scale100" Style="{StaticResource Segment}"

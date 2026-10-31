@@ -203,6 +203,10 @@ public partial class SettingsWindow : Window
             default: Scale100.IsChecked = true; break;
         }
 
+        // 排列（M4.10）：以**当前窗口**为准而不是以配置为准 —— 配置可能被手改过，
+        // 而用户看到的是窗口真实的样子，设置页得跟它一致。
+        (IsFloatVertical() ? LayoutColumn : LayoutRow).IsChecked = true;
+
         switch (_config.TaskbarInk)
         {
             case "Light": InkLight.IsChecked = true; break;
@@ -357,6 +361,10 @@ public partial class SettingsWindow : Window
                 case "scale":
                     if (int.TryParse(value, out int pct))
                         (pct >= 150 ? Scale150 : pct >= 125 ? Scale125 : Scale100).IsChecked = true;
+                    break;
+
+                case "layout":
+                    (value == "v" || value == "column" ? LayoutColumn : LayoutRow).IsChecked = true;
                     break;
 
                 case "ink":
@@ -612,6 +620,35 @@ public partial class SettingsWindow : Window
 
         Hint($"悬浮窗缩放 {percent}%（下次显示时生效）");
     }
+
+    /// <summary>
+    /// 排列（M4.10）：横向 / 竖向。与缩放同一套写法 —— 悬浮窗开着就直接改，
+    /// 没开就只落盘，下次显示时按配置生效。
+    /// </summary>
+    private void Layout_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+
+        bool vertical = tag == "column";
+
+        FloatWindow? f = _ctx.GetFloat();
+        if (f is not null)
+        {
+            f.IsVertical = vertical;
+            _config.FloatVertical = f.IsVertical;
+        }
+        else
+        {
+            _config.FloatVertical = vertical;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(vertical ? "悬浮窗改为竖向排列" : "悬浮窗改为横向排列");
+    }
+
+    /// <summary>当前悬浮窗是否竖向排列；窗口没开着就看配置。</summary>
+    private bool IsFloatVertical() => _ctx.GetFloat()?.IsVertical ?? _config.FloatVertical;
 
     // ---- 任务栏条 ----
 
