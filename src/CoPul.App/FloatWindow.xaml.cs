@@ -153,8 +153,10 @@ public partial class FloatWindow : Window
         // 发现不一致就补一次"框架已变"，让它重新问一次 WM_NCCALCSIZE。
         LocationChanged += (_, _) => GuardFrame();
         SizeChanged += (_, _) => GuardFrame();
-        Activated += (_, _) => GuardFrame();
-        Deactivated += (_, _) => GuardFrame();
+        // 激活状态变化一律 force：WM_NCACTIVATE 会把非客户区画回来，而这条路径
+        // **不改客户区几何**（实测 gap 恒为 0），光靠 gap 判断永远发现不了，必须无条件补一次。
+        Activated += (_, _) => GuardFrame(force: true);
+        Deactivated += (_, _) => GuardFrame(force: true);
         DpiChanged += (_, _) => GuardFrame();
 
         // 兜底巡检：上面五个时机之外的漏网的（系统 DPI 变了而窗口尺寸恰好没变之类）。
@@ -1009,6 +1011,10 @@ public partial class FloatWindow : Window
     private const int GWL_STYLE = -16;
     private const int WS_THICKFRAME = 0x00040000;
     private const int WM_NCCALCSIZE = 0x0083;
+    private const int WM_NCACTIVATE = 0x0086;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
+    private static extern IntPtr DefWindowProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
@@ -1097,6 +1103,14 @@ public partial class FloatWindow : Window
     /// <summary><c>WM_NCCALCSIZE</c> 命中次数。自测用：0 就说明那条框架从来没被吃掉。</summary>
     private int _ncCalcHits;
 
+    /// <summary><c>WM_NCACTIVATE</c> 命中次数。自测用：失焦到底有没有走到那条重绘路径。</summary>
+    private int _ncActivateHits;
+
+    /// <summary>
+    /// 自测：<c>--no-ncactivate-guard</c> 关掉"失焦时不重画非客户区"，A/B 用（M4.17）。
+    /// </summary>
+    public bool NcActivateGuard { get; set; } = true;
+
     /// <summary>框架守门补过的次数。自测 sidecar 会输出，平时应当是 0。</summary>
     private int _frameGuardHits;
 
@@ -1119,7 +1133,7 @@ public partial class FloatWindow : Window
     /// 不改几何也不会重排，但没必要每秒发一次。
     /// </para>
     /// </summary>
-    private void GuardFrame()
+    private void GuardFrame(bool force = false)
     {
         if (!FrameGuard || !EatFrame || !SystemShadow || !_hwndReady) return;
 
@@ -1129,7 +1143,7 @@ public partial class FloatWindow : Window
         if (!Win32Window.TryGetClientRect(hwnd, out int cw, out int ch)) return;
 
         int ww = wr.Right - wr.Left, wh = wr.Bottom - wr.Top;
-        if (cw == ww && ch == wh) return;      // 正常：客户区铺满窗口
+        if (cw == ww && ch == wh && !force) return;      // 正常：客户区铺满窗口
 
         _frameGuardHits++;
         Monitors.NotifyFrameChanged(hwnd);
@@ -1152,6 +1166,17 @@ public partial class FloatWindow : Window
             _ncCalcHits++;          // 自测用：这条消息到底来过几次
             handled = true;
             return IntPtr.Zero;
+        }
+
+        // WM_NCACTIVATE（M4.17）：窗口**失焦**时 DefWindowProc 会顺手重画一遍非客户区，
+        // 那条被 WM_NCCALCSIZE 吃掉的框架就在这时被画回来 —— 浅色主题下是白的，
+        // 正好对上"移动完点桌面/点别的应用/开着设置页就冒白框"（三者共同点都是失焦）。
+        // 把 lParam 传 -1 让 DefWindowProc 跳过非客户区重绘（WPF WindowChrome 同款做法）。
+        if (msg == WM_NCACTIVATE && NcActivateGuard && EatFrame)
+        {
+            _ncActivateHits++;
+            handled = true;
+            return DefWindowProc(hwnd, msg, wParam, (IntPtr)(-1));
         }
         return IntPtr.Zero;
     }
@@ -1696,7 +1721,7 @@ public partial class FloatWindow : Window
                             $"  border before={before} after={Name(Shell.BorderBrush)}{Environment.NewLine}" +
                             $"  idle={Name(_edgeIdle)} normal={Name(_edgeNormal)} hover={Name(_edgeHover)}{Environment.NewLine}" +
                             $"  active={IsActive} fgIsSelf={fg == hwnd} rect={rect}{Environment.NewLine}" +
-                            $"  ncCalcHits={_ncCalcHits} guardHits={_frameGuardHits} {frame}{Environment.NewLine}" +
+                            $"  ncCalcHits={_ncCalcHits} ncActivateHits={_ncActivateHits} guardHits={_frameGuardHits} {frame}{Environment.NewLine}" +
                             $"  dmwBorder={DwmBorderDiag}";
         };
         settle.Start();

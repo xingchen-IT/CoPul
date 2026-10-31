@@ -683,6 +683,9 @@ public partial class App : Application
             // --no-frame-guard：关掉"发现框架被算回来就纠正"，A/B 用（M4.16）
             if (e.Args.Contains("--no-frame-guard")) f.FrameGuard = false;
 
+            // --no-ncactivate-guard：失焦时允许 DefWindowProc 重画非客户区（A/B，M4.17）
+            if (e.Args.Contains("--no-ncactivate-guard")) f.NcActivateGuard = false;
+
             // --no-nccalc：不吃掉 DWM 那条 8px 框架，自测白框真身用（M4.16）
             if (e.Args.Contains("--no-nccalc")) f.EatFrame = false;
 
