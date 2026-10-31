@@ -637,6 +637,7 @@ public partial class App : Application
                                  || ArgValue(e.Args, "--glass-level") is not null
                                  || ArgValue(e.Args, "--float-scale") is not null
                                  || ArgValue(e.Args, "--float-edge") is not null
+                                 || ArgValue(e.Args, "--float-text") is not null
                                  || e.Args.Contains("--float-vertical")
                                  || e.Args.Contains("--float-row");
             if (glassOverride) f.PersistToConfig = false;
@@ -665,6 +666,19 @@ public partial class App : Application
 
             // --no-shadow：关掉 DWM 系统阴影（6.4），用于排查阴影/边框异常
             if (e.Args.Contains("--no-shadow")) f.SystemShadow = false;
+
+            // --float-text #RRGGBB|auto：悬浮窗文字颜色（M4.19），配合 --shot 量实际前景色
+            if (ArgValue(e.Args, "--float-text") is { } textColor) f.TextColor = textColor;
+
+            // --float-text-flat 1：连阈值色一起盖掉（整条一个颜色），A/B 用
+            if (ArgValue(e.Args, "--float-text-flat") is { } flat)
+                f.TextKeepThreshold = !(flat == "1" || flat.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+            // --float-force-level warn|danger：强制全部格子进阈值态（M4.19），
+            // 用来验"自定义文字色下阈值色是否仍然压过它"。本机平时一项都超不了阈值。
+            if (ArgValue(e.Args, "--float-force-level") is { } forceLevel
+                && Enum.TryParse<Level>(forceLevel, ignoreCase: true, out var fl))
+                DashboardState.ForceLevel = fl;
 
             // --float-border none|default|#RRGGBB：DWM 那条 1px 窗口边框（M4.13）。
             // 默认 none —— 拖动时浅色主题会整圈亮成白边；default 放回系统色，纯色用于判定归属。
@@ -1060,7 +1074,8 @@ public partial class App : Application
                                     $"glass: {fw.GlassMode}{Environment.NewLine}" +
                                     $"border: {fw.DwmBorderDiag}{Environment.NewLine}" +
                                     $"size : {target.ActualWidth:F0}×{target.ActualHeight:F0} DIP{Environment.NewLine}" +
-                                    $"scale: {fw.ScaleDiag}" +
+                                    $"scale: {fw.ScaleDiag}{Environment.NewLine}" +
+                                    $"{fw.TextDiag}" +
                                     (fw.PlacementDiag.Length == 0
                                         ? string.Empty
                                         : Environment.NewLine + "place: " + fw.PlacementDiag));
@@ -1111,7 +1126,8 @@ public partial class App : Application
                             $"px   : {pixelWidthOf(rfw)}×{pixelHeightOf(rfw)} px{Environment.NewLine}" +
                             $"hwnd : {rfw.HwndDiag}{Environment.NewLine}" +
                             $"scale: {rfw.ScaleDiag}{Environment.NewLine}" +
-                            $"cells: {rfw.FieldsDiag} cellGap={rfw.CellGap.Right:F1}" +
+                            $"cells: {rfw.FieldsDiag} cellGap={rfw.CellGap.Right:F1}{Environment.NewLine}" +
+                            $"{rfw.TextDiag}" +
                             (rfw.PlacementDiag.Length == 0
                                 ? string.Empty
                                 : Environment.NewLine + "place: " + rfw.PlacementDiag));

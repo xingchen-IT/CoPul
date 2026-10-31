@@ -82,6 +82,27 @@ public sealed class AppConfig
     public string FloatEdgeMode { get; set; } = "normal";
 
     /// <summary>
+    /// 悬浮窗文字颜色（M4.19）：<c>#RRGGBB</c>，空串 = 「自动」（跟随玻璃主题）。
+    ///
+    /// <para>
+    /// 只管悬浮窗，不动任务栏条：任务栏那边的底色是系统的任务栏，深浅不由我们决定，
+    /// 用同一个自定义色大概率读不出来，而它自己的「文字取色」已经能三档切换。
+    /// </para>
+    /// </summary>
+    public string FloatTextColor { get; set; } = FloatInk.Auto;
+
+    /// <summary>
+    /// 自定义文字色时，数值到了阈值是否仍然变黄 / 变红（M4.19）。默认**开**。
+    ///
+    /// <para>
+    /// 单色会盖掉"这个数字现在不正常"这层信息 —— 温度 85°C 和 40°C 都是同一个颜色，
+    /// 悬浮窗本来就是扫一眼看的，颜色是唯一不用读数的提示。所以默认保留阈值色，
+    /// 真要"整条一个颜色"由用户自己关。
+    /// </para>
+    /// </summary>
+    public bool FloatTextKeepThreshold { get; set; } = true;
+
+    /// <summary>
     /// 悬浮窗里被**用户关掉**的字段（M4.14）。key 见 <see cref="FloatFields.Keys"/>。
     ///
     /// <para>

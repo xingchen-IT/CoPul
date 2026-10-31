@@ -57,6 +57,14 @@ public sealed class MetricCell : INotifyPropertyChanged
     public Brush BarBrush => ValueBrush;
 
     /// <summary>
+    /// 当前阈值等级（M4.19）。公开它只为一个判断：自定义文字色时，**要不要放行阈值色**。
+    /// 悬浮窗那边的取舍是"默认保留黄 / 红"（见 <c>DashboardState</c> 的取色 helper），
+    /// 不看等级就只能二选一。只读 —— 等级由 <see cref="Apply"/> 决定，
+    /// 外部改了会出现"值是红的、字是绿的"。
+    /// </summary>
+    public Level Level => _level;
+
+    /// <summary>
     /// 浅色玻璃底上的同源色（悬浮窗用）。色相不变、明度压暗一档，
     /// 否则 <c>#5B8FF9</c> 这类亮色叠在白雾上对比度不足，13px 粗体也会发虚。
     /// </summary>

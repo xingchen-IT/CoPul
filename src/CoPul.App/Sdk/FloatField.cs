@@ -24,6 +24,9 @@ public sealed class FloatField : INotifyPropertyChanged
     private string? _line3;
     private Brush _lightBrush = Brushes.Gray;
     private Brush _darkBrush = Brushes.Gray;
+
+    /// <summary>悬浮窗的自定义主值色（M4.19）。null = 跟随语义色 / 阈值色。</summary>
+    private Brush? _overrideBrush;
     private bool _onLight = true;
 
     /// <summary>第二视图主题；null = 跟随 <see cref="OnLight"/>。</summary>
@@ -87,8 +90,14 @@ public sealed class FloatField : INotifyPropertyChanged
     /// <summary>
     /// 主值颜色，跟着阈值走（与 <see cref="MetricCell.ValueBrush"/> 同源）：
     /// 浅色玻璃上取压暗版，深色玻璃上取原色。两套都常驻，切换主题只是换索引。
+    ///
+    /// <para>
+    /// <see cref="OverrideBrush"/> 是<b>悬浮窗专属</b>的自定义色，优先于这两套；
+    /// <see cref="TopBrushAlt"/>（任务栏）不读它 —— 任务栏的底色由系统任务栏决定，
+    /// 套用悬浮窗的自定义色只会读不出来（M4.19）。
+    /// </para>
     /// </summary>
-    public Brush TopBrush => _onLight ? _lightBrush : _darkBrush;
+    public Brush TopBrush => OverrideBrush ?? (_onLight ? _lightBrush : _darkBrush);
 
     /// <summary>
     /// 第二个视图的明暗主题（任务栏模式用）。
@@ -160,4 +169,35 @@ public sealed class FloatField : INotifyPropertyChanged
 
         if (changed) PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
+
+    /// <summary>
+    /// 悬浮窗专用的自定义文字色（M4.19）。<c>null</c> = 不覆盖（用 <see cref="Set"/> 传进来那套）。
+    ///
+    /// <para>
+    /// 为什么要和 <see cref="Set"/> 那两套分开：这两套（浅底 / 深底）同时被
+    /// <see cref="TopBrushAlt"/> 用着 —— 任务栏条与悬浮窗共用同一个 <c>FloatField</c>，
+    /// 把自定义色写进去等于把任务栏也一起染了，而那边根本不该跟着改。
+    /// </para>
+    /// </summary>
+    public Brush? OverrideBrush
+    {
+        get => _overrideBrush;
+        set
+        {
+            if (ReferenceEquals(_overrideBrush, value)) return;
+            _overrideBrush = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TopBrush)));
+        }
+    }
+
+    /// <summary>
+    /// 只换覆盖画刷、不动文字（M4.19）。用户在设置页改文字色时要**立刻**看到效果，
+    /// 而采集是 0.5 秒一拍 —— 等下一拍才变会被当成"改了没反应"。
+    ///
+    /// <para>
+    /// 传 <c>null</c> 表示"回到语义色 / 阈值色"，画刷本身不动，
+    /// 所以任务栏那一路（<see cref="TopBrushAlt"/>）完全不受影响。
+    /// </para>
+    /// </summary>
+    public void SetOverride(Brush? brush) => OverrideBrush = brush;
 }

@@ -111,6 +111,12 @@ public partial class SettingsWindow : Window
     /// <summary>代码内部改控件状态时的重入锁（比如拒绝关闭最后一个字段后把勾恢复）。</summary>
     private bool _suppress;
 
+    /// <summary>探针改文字色之前的原值。非空 = 改过，退出时要还原。</summary>
+    private string? _probeTextColorBackup;
+
+    /// <summary>探针改阈值开关之前的原值。</summary>
+    private bool? _probeThrBackup;
+
     internal SettingsWindow(SettingsContext ctx)
     {
         _ctx = ctx;
@@ -120,6 +126,7 @@ public partial class SettingsWindow : Window
 
         InitFieldGrid();
         InitFloatFieldGrid();
+        InitTextSwatches();
         LoadFromConfig();
         LoadDiag();
 
@@ -199,6 +206,49 @@ public partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// 文字颜色的色板（M4.19）：「自动」+ <see cref="FloatInk.Presets"/>。
+    ///
+    /// <para>
+    /// 按表生成而不是在 XAML 里写九个方块：加一个预设色只改 <c>FloatInk</c> 一处，
+    /// 设置页与悬浮窗认的是同一张表（同 <see cref="FloatFields"/> 那套取舍）。
+    /// </para>
+    /// </summary>
+    private void InitTextSwatches()
+    {
+        Style style = (Style)FindResource("Swatch");
+
+        var auto = new RadioButton
+        {
+            Style = style,
+            GroupName = "textcolor",
+            Content = "自动",
+            Tag = FloatInk.Auto,
+            Background = (Brush)FindResource("BrushPanel"),
+            // 这一格要写两个字，32 的固定宽会把第二个字挤到框外（实测只露出半个"自"）
+            BorderBrush = (Brush)FindResource("BrushTextTertiary"),   // 比卡片底色亮一档，否则它就是一个看不出的深块
+            Width = double.NaN,
+            Padding = new Thickness(9, 3, 9, 3),   // 固定宽去掉后，左右留点空，"自动"才不贴着边框
+            ToolTip = "跟随玻璃主题：浅色玻璃用深字、深色玻璃用浅字",
+        };
+        auto.Checked += TextSwatch_Checked;
+        TextSwatches.Children.Add(auto);
+
+        foreach ((string label, string hex) in FloatInk.Presets)
+        {
+            var chip = new RadioButton
+            {
+                Style = style,
+                GroupName = "textcolor",
+                Tag = hex,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)),
+                ToolTip = hex,
+            };
+            chip.Checked += TextSwatch_Checked;
+            TextSwatches.Children.Add(chip);
+        }
+    }
+
     private void LoadFromConfig()
     {
         _suppress = true;
@@ -243,6 +293,10 @@ public partial class SettingsWindow : Window
             case "faint": EdgeFaint.IsChecked = true; break;
             default: EdgeNormal.IsChecked = true; break;
         }
+
+        // 文字颜色（M4.19）：同理以当前窗口为准
+        SyncTextColor(CurrentTextColor());
+        TextThresholdSwitch.IsChecked = CurrentTextKeepThreshold();
 
         switch (_config.TaskbarInk)
         {
@@ -477,6 +531,35 @@ public partial class SettingsWindow : Window
 
                 case "diag":
                     ShowDiagTab();
+                    break;
+
+                case "textcolor":
+                    // 文字颜色（M4.19）：<c>textcolor:#FF7FB8</c> / <c>textcolor:auto</c>
+                    BeginTextProbeBackup();
+                    ApplyTextColor(FloatInk.Normalize(value));
+                    break;
+
+                case "textthr":
+                    // 阈值色开关：<c>textthr:0</c> = 整条一个颜色
+                    BeginTextProbeBackup();
+                    TextThresholdSwitch.IsChecked = value != "0";
+                    break;
+
+                case "textcolors":
+                    // 色板全表打印（截图里这块常被截断，靠肉眼数不准）
+                    foreach (object child in TextSwatches.Children)
+                    {
+                        if (child is not RadioButton chip) continue;
+                        System.Console.WriteLine($"textswatch: [{chip.Tag}] '{chip.Content}' " +
+                                                 $"checked={chip.IsChecked} bg={chip.Background}");
+                    }
+                    System.Console.WriteLine($"textcolor: cfg={_config.FloatTextColor} " +
+                                             $"hexBox='{TextHexBox.Text}' thr={TextThresholdSwitch.IsChecked} " +
+                                             $"window={_ctx.GetFloat()?.TextColor ?? "(未开)"}");
+                    System.Console.WriteLine($"textpreview: darkMain={PreviewValueDark.Foreground} " +
+                                             $"darkSub={PreviewLabelDark.Foreground} " +
+                                             $"lightMain={PreviewValueLight.Foreground} " +
+                                             $"lightSub={PreviewLabelLight.Foreground}");
                     break;
 
                 case "scroll":
@@ -811,6 +894,161 @@ public partial class SettingsWindow : Window
             "faint" => "边框改为「淡」",
             _ => "边框改为「明显」",
         });
+    }
+
+    // ---- 悬浮窗文字颜色（M4.19）----
+
+    /// <summary>当前生效的文字色；窗口没开着就看配置（与 <see cref="IsFloatVertical"/> 同一套取舍）。</summary>
+    private string CurrentTextColor() => _ctx.GetFloat()?.TextColor ?? _config.FloatTextColor;
+
+    private bool CurrentTextKeepThreshold()
+        => _ctx.GetFloat()?.TextKeepThreshold ?? _config.FloatTextKeepThreshold;
+
+    /// <summary>
+    /// 把色板 / 输入框 / 预览三处对齐到 <paramref name="hex"/>。
+    ///
+    /// <para>
+    /// 自定义色（不在预设表里）时<b>一个都不选</b>：色板表示"预设"，
+    /// 硬把最接近的那格勾上会让用户以为"我选的就是这个色"。
+    /// 代码可以把一整组 RadioButton 都置 false —— 只有鼠标点击才不允许取消。
+    /// </para>
+    /// </summary>
+    private void SyncTextColor(string? hex)
+    {
+        string normalized = FloatInk.Normalize(hex);
+
+        _suppress = true;
+        foreach (object child in TextSwatches.Children)
+        {
+            if (child is RadioButton { Tag: string tag } chip)
+                chip.IsChecked = string.Equals(tag, normalized, StringComparison.OrdinalIgnoreCase);
+        }
+        _suppress = false;
+
+        if (TextHexBox.Text != normalized) TextHexBox.Text = normalized;
+        UpdateTextPreview(normalized);
+    }
+
+    /// <summary>
+    /// 探针改文字色 / 阈值开关之前的备份（与 <c>FloatWindow.ProbeToggle</c> 同一套）。
+    ///
+    /// <para>
+    /// 为什么必须还原：这里改的是共享的那份 <see cref="AppConfig"/>，
+    /// 而主窗口关闭时也会整份落盘 —— 跑一次 <c>textcolor:#FF7FB8</c> 就会把用户的
+    /// 悬浮窗文字永久改成粉色，之后每次"默认长什么样"的验收量到的都是上次探针留的色。
+    /// 挂 <see cref="Application.Exit"/> 是因为它比任何窗口的 <c>Closing</c> 都晚，
+    /// 能盖掉"窗口关闭时顺手写盘"那一次。
+    /// </para>
+    /// </summary>
+    private void BeginTextProbeBackup()
+    {
+        if (_probeTextColorBackup is not null) return;
+
+        _probeTextColorBackup = _config.FloatTextColor;
+        _probeThrBackup = _config.FloatTextKeepThreshold;
+        Application.Current.Exit += (_, _) => RestoreTextProbe();
+    }
+
+    private void RestoreTextProbe()
+    {
+        if (_probeTextColorBackup is null) return;
+
+        _config.FloatTextColor = _probeTextColorBackup;
+        _config.FloatTextKeepThreshold = _probeThrBackup ?? true;
+        _probeTextColorBackup = null;
+        ConfigStore.SaveCurrent();
+    }
+
+    /// <summary>
+    /// 预览：深底 / 浅底各一条，主值 + 次值两段一起看。
+    ///
+    /// <para>
+    /// 「自动」时两块用**各自的**主题色（深底浅字、浅底深字），
+    /// 这正是默认行为；自定义后两块都用所选色 —— 于是"这个色在我的条上读不读得出来"
+    /// 在设置页就能看出来，不用回到悬浮窗去试。
+    /// </para>
+    /// </summary>
+    private void UpdateTextPreview(string? hex)
+    {
+        SolidColorBrush? custom = FloatInk.ToBrush(hex);
+
+        PreviewValueDark.Foreground = custom ?? (Brush)FindResource("BrushTextPrimary");
+        PreviewLabelDark.Foreground = custom is null
+            ? (Brush)FindResource("BrushTextSecondary")
+            : FloatInk.ToSubBrush(custom);
+
+        PreviewValueLight.Foreground = custom ?? (Brush)FindResource("BrushTextOnGlass");
+        PreviewLabelLight.Foreground = custom is null
+            ? (Brush)FindResource("BrushTextSecondaryLight")
+            : FloatInk.ToSubBrush(custom);
+    }
+
+    private void TextSwatch_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string hex }) return;
+        ApplyTextColor(hex);
+    }
+
+    private void ApplyTextHex_Click(object sender, RoutedEventArgs e) => ApplyTextHex();
+
+    private void TextHexBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ApplyTextHex();
+    }
+
+    private void ApplyTextHex()
+    {
+        string text = TextHexBox.Text.Trim();
+
+        // 认不出来就明说，不要静默退回「自动」—— 用户会以为"我填的颜色生效了"。
+        if (text.Length > 0 && !FloatInk.TryParse(text, out _))
+        {
+            Hint($"颜色写法不对：{text}（要 #RRGGBB，例如 #FF7FB8）");
+            return;
+        }
+
+        ApplyTextColor(FloatInk.Normalize(text));
+    }
+
+    /// <summary>改悬浮窗文字色。窗口开着就直接改，没开就只落盘（与缩放 / 边框同一套写法）。</summary>
+    private void ApplyTextColor(string hex)
+    {
+        FloatWindow? f = _ctx.GetFloat();
+        if (f is not null)
+        {
+            f.TextColor = hex;
+            _config.FloatTextColor = f.TextColor;
+        }
+        else
+        {
+            _config.FloatTextColor = hex;
+            ConfigStore.SaveCurrent();
+        }
+
+        SyncTextColor(_config.FloatTextColor);
+        Hint(FloatInk.IsAuto(hex) ? "文字颜色改回「自动」（跟随玻璃主题）" : $"悬浮窗文字颜色 {hex}");
+    }
+
+    private void TextThreshold_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        bool on = TextThresholdSwitch.IsChecked == true;
+
+        FloatWindow? f = _ctx.GetFloat();
+        if (f is not null)
+        {
+            f.TextKeepThreshold = on;
+            _config.FloatTextKeepThreshold = on;
+        }
+        else
+        {
+            _config.FloatTextKeepThreshold = on;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(on ? "超阈值的数值仍会变黄 / 红" : "整条悬浮窗统一用所选颜色（不再有告警色）");
     }
 
     // ---- 任务栏条 ----

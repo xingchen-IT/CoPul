@@ -380,6 +380,62 @@ public sealed class DashboardState : INotifyPropertyChanged
         FloatPwr.OnLight = light;
     }
 
+    // =================================================================
+    // 悬浮窗文字颜色（M4.19）
+    // =================================================================
+
+    /// <summary>用户选的主值色；<c>null</c> = 跟随玻璃主题（语义色 / 阈值色那套）。</summary>
+    private SolidColorBrush? _floatTextBrush;
+
+    /// <summary>自定义色下是否仍放行阈值色。默认开，见 <see cref="AppConfig.FloatTextKeepThreshold"/>。</summary>
+    private bool _floatKeepThreshold = true;
+
+    /// <summary>
+    /// 悬浮窗文字色改了。立即重刷一次画刷，不等下一拍采集 ——
+    /// 设置页是"点完就要看到"的，0.5 秒的延迟会被当成没生效。
+    /// </summary>
+    /// <param name="brush">自定义主值色；<c>null</c> = 跟随主题。</param>
+    /// <param name="keepThreshold">自定义色下是否仍让超阈值的格子变黄 / 变红。</param>
+    public void SetFloatText(SolidColorBrush? brush, bool keepThreshold)
+    {
+        _floatTextBrush = brush;
+        _floatKeepThreshold = keepThreshold;
+        PushFloatText();
+    }
+
+    /// <summary>把当前取色规则重算一遍并刷到九格上（只动画刷，文字不动）。</summary>
+    private void PushFloatText()
+    {
+        Repaint(FloatFps, FpsValue);
+        Repaint(FloatCpu, CpuLoad);
+        Repaint(FloatGpu, GpuLoad);
+        Repaint(FloatRam, MemLoad);
+        Repaint(FloatVram, GpuMem);
+        Repaint(FloatNet, NetLatency);
+        Repaint(FloatIo, NetUp);
+        Repaint(FloatLat, NetLatency);
+        Repaint(FloatDisk, CpuTemp);
+        Repaint(FloatPwr, CpuPower);
+    }
+
+    private void Repaint(FloatField field, MetricCell cell) => field.SetOverride(FloatOverride(cell));
+
+    /// <summary>
+    /// 悬浮窗一格主值的覆盖色：<c>null</c> = 不覆盖（沿用 <see cref="Set"/> 传进来的语义色）。
+    ///
+    /// <para>
+    /// 阈值色压过自定义色是刻意的：CPU 92% 的时候仍要变红 —— 悬浮窗是扫一眼看的，
+    /// 颜色是唯一不用读数的提示，把整条刷成一个颜色等于把告警一起刷掉。
+    /// 非要"纯色不要告警"的用户可以关掉 <see cref="AppConfig.FloatTextKeepThreshold"/>。
+    /// 不可用（<c>Muted</c>）不算阈值：那一格是 <c>—</c>，本来就没有"超没超"。
+    /// </para>
+    /// </summary>
+    private Brush? FloatOverride(MetricCell cell)
+    {
+        if (_floatTextBrush is null) return null;
+        return _floatKeepThreshold && cell.Level is Level.Warn or Level.Danger ? null : _floatTextBrush;
+    }
+
     public ObservableCollection<DiskRow> Disks { get; } = new();
 
     /// <summary>进程表行。行对象复用，只改字段。</summary>
@@ -930,15 +986,32 @@ public sealed class DashboardState : INotifyPropertyChanged
     private static string TryText(MetricSnapshot snap, MetricId id, Func<double, string> fmt)
         => snap.TryGet(id, out var s) && s.IsUsable ? fmt(s.Value) : Fmt.Dash;
 
+    /// <summary>
+    /// 自测：强制所有走过 <see cref="SetCell"/> 的格子用这个等级。
+    ///
+    /// <para>
+    /// 为了验"阈值色 vs 自定义文字色"谁优先 —— 本机平时一项都超不了阈值，
+    /// 那条分支永远走不到，改成什么样都看不出来。<c>Muted</c>（无数据）不强制：
+    /// `—` 不是"正常值变红了"，那样验出来的颜色没有意义。
+    /// </para>
+    /// </summary>
+    internal static Level? ForceLevel;
+
     private static void SetCell(MetricCell cell, MetricSnapshot snap, MetricId id,                                Func<double, string> fmt,
                                 Func<double, Level>? severity = null,
                                 bool withBar = false)
     {
         if (snap.TryGet(id, out var s) && s.IsUsable)
-            cell.Apply(fmt(s.Value), severity?.Invoke(s.Value) ?? Level.Normal,
-                       bar: withBar ? s.Value : null);
+        {
+            Level level = severity?.Invoke(s.Value) ?? Level.Normal;
+            if (ForceLevel is { } forced && level != Level.Muted) level = forced;
+
+            cell.Apply(fmt(s.Value), level, bar: withBar ? s.Value : null);
+        }
         else
+        {
             cell.Unavailable();
+        }
     }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)

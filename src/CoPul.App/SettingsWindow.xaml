@@ -238,6 +238,50 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!--
+            色板方块（M4.19）。用 RadioButton + Tag 存 #RRGGBB，与「缩放 / 取色」同一套：
+            选中态交给 WPF 互斥，代码只在 Checked 里读 Tag。
+            选中标记画成外圈描边而不是方块内的勾 —— 深色色块里放一个勾几乎看不见。
+        -->
+        <Style x:Key="Swatch" TargetType="RadioButton">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="ToolTipService.ShowDuration" Value="8000" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <Border x:Name="Ring" CornerRadius="5" Padding="2"
+                                    BorderBrush="Transparent" BorderThickness="2">
+                                <Grid>
+                                    <Border x:Name="Chip" CornerRadius="3"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" />
+                                    <!-- 「自动」那一格要写个字，否则它就是个来历不明的灰块 -->
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      TextBlock.FontSize="11"
+                                                      TextBlock.Foreground="{StaticResource BrushTextSecondary}" />
+                                </Grid>
+                            </Border>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush"
+                                        Value="{StaticResource BrushTextTertiary}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush"
+                                        Value="{StaticResource AccentGpu}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border BorderBrush="{StaticResource BrushStroke}" BorderThickness="1"
@@ -391,6 +435,74 @@
                                                  Checked="Edge_Checked"
                                                  ToolTip="12%：边界最清楚，深色桌面上会显白边" />
                                 </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!--
+                            文字颜色（M4.19）。
+                            主值 13px 粗 + 次值 10px 两段用一个色（次值降浓度到 78%），
+                            所以预览必须**两段一起看**：只看大数字会以为小字也够清楚。
+                            深底 / 浅底都给一块是因为悬浮窗的底色有七档 × 深浅两套 ——
+                            同一个色在浅玻璃上清楚，在深色玻璃上可能就沉下去了。
+                        -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="悬浮窗文字颜色" Style="{StaticResource SectionTitle}" />
+
+                                <WrapPanel x:Name="TextSwatches" Margin="0,10,0,0" />
+
+                                <Grid Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="自定义" Style="{StaticResource RowLabel}"
+                                               Margin="0,0,12,0" />
+                                    <TextBox x:Name="TextHexBox" Grid.Column="1" Style="{StaticResource Input}"
+                                             MaxLength="7" KeyDown="TextHexBox_KeyDown" />
+                                    <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="应用"
+                                            Margin="8,0,0,0" Click="ApplyTextHex_Click" />
+                                </Grid>
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Height="40" CornerRadius="5" Background="#0F1216"
+                                            BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock x:Name="PreviewValueDark" Text="60 FPS" FontSize="13"
+                                                       FontWeight="SemiBold" FontFamily="{StaticResource FontNumeric}"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock x:Name="PreviewLabelDark" Text="31.6G" FontSize="10"
+                                                       FontFamily="{StaticResource FontNumeric}"
+                                                       HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Height="40" CornerRadius="5" Background="#F2F4F7"
+                                            BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock x:Name="PreviewValueLight" Text="60 FPS" FontSize="13"
+                                                       FontWeight="SemiBold" FontFamily="{StaticResource FontNumeric}"
+                                                       HorizontalAlignment="Center" />
+                                            <TextBlock x:Name="PreviewLabelLight" Text="31.6G" FontSize="10"
+                                                       FontFamily="{StaticResource FontNumeric}"
+                                                       HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <CheckBox x:Name="TextThresholdSwitch" Style="{StaticResource FieldCheck}"
+                                          Content="数值超阈值时仍变黄 / 红" Margin="0,12,0,0"
+                                          Checked="TextThreshold_Toggled" Unchecked="TextThreshold_Toggled" />
+
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="默认跟随玻璃主题（浅底深字、深底浅字）。自定义后主值用所选色、次值用同色降浓度；超阈值的格子默认仍变黄 / 红，取消勾选才是整条一个颜色。只作用于悬浮窗，任务栏条有自己的「文字取色」。" />
                             </StackPanel>
                         </Border>
 

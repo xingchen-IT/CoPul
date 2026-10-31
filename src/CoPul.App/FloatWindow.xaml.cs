@@ -125,6 +125,8 @@ public partial class FloatWindow : Window
         _scalePercent = NormalizeScale(config.FloatScale);
         _vertical = config.FloatVertical;
         _edgeMode = NormalizeEdgeMode(config.FloatEdgeMode);
+        _textColor = FloatInk.Normalize(config.FloatTextColor);
+        _textKeepThreshold = config.FloatTextKeepThreshold;
 
         // 缩放必须在 Show 之前落定：窗口尺寸会决定 SizeToContent 算出的宽度，
         // 而定位（ContentRendered）依赖最终尺寸。晚一步改就会出现"先按 100% 摆好，
@@ -470,6 +472,92 @@ public partial class FloatWindow : Window
     {
         get => (Brush)GetValue(LabelBrushProperty);
         set => SetValue(LabelBrushProperty, value);
+    }
+
+    // =================================================================
+    // 文字颜色（M4.19）
+    // =================================================================
+
+    /// <summary>
+    /// 悬浮窗文字颜色：<c>#RRGGBB</c>，空串 = 「自动」（跟随玻璃主题）。
+    ///
+    /// <para>
+    /// 一个值管两段字：主值用所选色，次值用同色降浓度（78%）——
+    /// 原来两段的深浅关系（<c>#1B2027</c> / <c>#5C6672</c>）不能被抹平，
+    /// 全同色会让 34px 高的条看起来糊成一片。
+    /// </para>
+    ///
+    /// <para>
+    /// 只影响悬浮窗：任务栏条读的是 <see cref="Sdk.FloatField.TopBrushAlt"/>，
+    /// 那边底色由系统任务栏决定，套同一个自定义色大概率读不出来。
+    /// </para>
+    /// </summary>
+    public string TextColor
+    {
+        get => _textColor;
+        set
+        {
+            string v = FloatInk.Normalize(value);
+            if (_textColor == v) return;
+            _textColor = v;
+            ApplyTextTheme(_theme == GlassTheme.Light);
+            PersistAppearance();
+        }
+    }
+
+    /// <summary>
+    /// 自定义文字色下，数值超阈值是否仍然变黄 / 变红。默认开 ——
+    /// 见 <see cref="AppConfig.FloatTextKeepThreshold"/> 的说明。
+    /// </summary>
+    public bool TextKeepThreshold
+    {
+        get => _textKeepThreshold;
+        set
+        {
+            if (_textKeepThreshold == value) return;
+            _textKeepThreshold = value;
+            ApplyTextTheme(_theme == GlassTheme.Light);
+            PersistAppearance();
+        }
+    }
+
+    private string _textColor = FloatInk.Auto;
+    private bool _textKeepThreshold = true;
+
+    /// <summary>用户选的主值画刷；跟随主题时为 <c>null</c>。</summary>
+    private SolidColorBrush? _textBrush;
+
+    /// <summary>
+    /// 自测 sidecar 用的文字色诊断串。
+    ///
+    /// <para>
+    /// 判据必须是**运行值**而不是配置项：配置写了 <c>#FFFFFF</c> 而画刷没换上时，
+    /// 两处看起来都对，只有"格子上实际是什么颜色"能证明这条链路通了。
+    /// 所以这里连 <see cref="LabelBrush"/> 一起打，并顺手取一格实测的 Foreground。
+    /// </para>
+    /// </summary>
+    public string TextDiag
+    {
+        get
+        {
+            string cfg = FloatInk.IsAuto(_textColor) ? "auto" : _textColor;
+            string main = Name(_textBrush);
+            string label = Name(LabelBrush as SolidColorBrush);
+            string live = Name(LiveValueBrush());
+            return $"text: cfg={cfg} keepThreshold={_textKeepThreshold} main={main} label={label} live={live}";
+
+            static string Name(SolidColorBrush? b) => b is null ? "null" : b.Color.ToString();
+        }
+    }
+
+    /// <summary>取 FPS 那一格数值的实际前景色。"改了到底有没有落到元素上"的判据。</summary>
+    private SolidColorBrush? LiveValueBrush()
+    {
+        foreach (object? child in LogicalTreeHelper.GetChildren(RowFps))
+        {
+            if (child is TextBlock { Foreground: SolidColorBrush b }) return b;
+        }
+        return null;
     }
 
     // =================================================================
@@ -1521,9 +1609,20 @@ public partial class FloatWindow : Window
 
     private void ApplyTextTheme(bool light)
     {
-        if (DataContext is DashboardState state) state.SetFloatTheme(light);
+        // 用户选的色深浅通用：条的底色有七档 × 深浅两套，替他"自动提亮"等于猜，
+        // 猜错了更难解释。设置页给了深底 / 浅底两块预览，让用户自己看。
+        _textBrush = FloatInk.ToBrush(_textColor);
 
-        LabelBrush = Palette.Brush(light ? "BrushTextSecondaryLight" : "BrushTextSecondary");
+        if (DataContext is DashboardState state)
+        {
+            state.SetFloatTheme(light);
+            state.SetFloatText(_textBrush, _textKeepThreshold);
+        }
+
+        // 次值：自定义时取同色降浓度（保留"主值更重"这一层），跟随主题时仍走原来那套
+        LabelBrush = _textBrush is null
+            ? Palette.Brush(light ? "BrushTextSecondaryLight" : "BrushTextSecondary")
+            : FloatInk.ToSubBrush(_textBrush);
 
         _edgeNormal = EdgeBrushFor(light, _edgeMode);
         _edgeHover = Palette.Brush(light ? "BrushGlassEdgeHover" : "BrushGlassEdgeDarkHover");
@@ -1926,6 +2025,8 @@ public partial class FloatWindow : Window
         _config.FloatScale = _scalePercent;
         _config.FloatVertical = _vertical;
         _config.FloatEdgeMode = _edgeMode;
+        _config.FloatTextColor = _textColor;
+        _config.FloatTextKeepThreshold = _textKeepThreshold;
         ConfigStore.SaveCurrent();
     }
 
