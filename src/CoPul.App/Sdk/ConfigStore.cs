@@ -176,6 +176,9 @@ public sealed class AppConfig
     /// <summary>纵向比例，0–1。</summary>
     public double FloatRatioY { get; set; } = double.NaN;
 
+    /// <summary>
+    /// 配置结构版本。1 = M4.17 及以前；2 = M4.18 起（悬浮窗九字段，新增三项默认关闭）。
+    /// </summary>
     public int ConfigVersion { get; set; } = 1;
 
     /// <summary>读配置时遇到的异常（读不出来就用默认值，不弹窗、不阻断启动）。诊断用。</summary>
@@ -199,7 +202,7 @@ public static class ConfigStore
     /// 表现为"刚调好的浓度，关掉大窗口又变回去了"。
     /// </para>
     /// </summary>
-    public static AppConfig Current => _current ??= LoadFromDisk();
+    public static AppConfig Current => _current ??= SeedFields(LoadFromDisk());
 
     private static AppConfig? _current;
 
@@ -214,6 +217,30 @@ public static class ConfigStore
     /// <summary>配置文件的完整路径。<c>%APPDATA%\CoPul\config.json</c>。</summary>
     public static string Path => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), FolderName, FileName);
+
+    /// <summary>
+    /// M4.18 新增字段的播种：把 <see cref="FloatFields.DefaultHidden"/> 里那几项写进
+    /// <c>FloatHiddenFields</c>，只做一次（<c>ConfigVersion</c> 顶到 2 之后不再动）。
+    ///
+    /// <para>
+    /// 为什么要"默认关"：老用户升级上来如果三项全开，横向条从 381 直接长到 509 DIP、
+    /// 竖向从 272 长到 400 多 —— 那是没打招呼就把界面改了。想要哪条自己勾开。
+    /// </para>
+    /// </summary>
+    private static AppConfig SeedFields(AppConfig config)
+    {
+        if (config.ConfigVersion >= 2) return config;
+
+        var hidden = new List<string>(config.FloatHiddenFields ?? Array.Empty<string>());
+        foreach (string key in FloatFields.DefaultHidden)
+        {
+            if (!hidden.Contains(key, StringComparer.OrdinalIgnoreCase)) hidden.Add(key);
+        }
+
+        config.FloatHiddenFields = hidden.ToArray();
+        config.ConfigVersion = 2;
+        return config;
+    }
 
     /// <summary>从磁盘读一次。外部请用 <see cref="Current"/>，不要绕过缓存。</summary>
     private static AppConfig LoadFromDisk()

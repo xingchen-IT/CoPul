@@ -1110,7 +1110,8 @@ public partial class App : Application
                             $"size : {target.ActualWidth:F2}×{target.ActualHeight:F2} DIP{Environment.NewLine}" +
                             $"px   : {pixelWidthOf(rfw)}×{pixelHeightOf(rfw)} px{Environment.NewLine}" +
                             $"hwnd : {rfw.HwndDiag}{Environment.NewLine}" +
-                            $"scale: {rfw.ScaleDiag}" +
+                            $"scale: {rfw.ScaleDiag}{Environment.NewLine}" +
+                            $"cells: {rfw.FieldsDiag} cellGap={rfw.CellGap.Right:F1}" +
                             (rfw.PlacementDiag.Length == 0
                                 ? string.Empty
                                 : Environment.NewLine + "place: " + rfw.PlacementDiag));

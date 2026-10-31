@@ -632,6 +632,9 @@ public partial class FloatWindow : Window
         }
 
         foreach (FloatField f in AllFields) f.ApplyScale(s);
+
+        // 间距是"按档位算出来的绝对值"，缩放变了得重排一次末位间距
+        ApplyFieldVisibility();
     }
 
     /// <summary>
@@ -689,11 +692,12 @@ public partial class FloatWindow : Window
                + 2 * Shell.BorderThickness.Left;
     }
 
-    /// <summary>六个字段，按 6.3 的显示顺序。缓存一份，避免每次缩放都分配数组。</summary>
+    /// <summary>九个字段，按显示顺序。缓存一份，避免每次缩放都分配数组。</summary>
     private FloatField[] AllFields => new[]
     {
         _state.FloatFps, _state.FloatCpu, _state.FloatGpu,
         _state.FloatRam, _state.FloatVram, _state.FloatNet,
+        _state.FloatDisk, _state.FloatIo, _state.FloatPwr,
     };
 
     // =================================================================
@@ -713,16 +717,34 @@ public partial class FloatWindow : Window
         ("ram", RowRam, ColRam),
         ("vram", RowVram, ColVram),
         ("net", RowNet, ColNet),
+        ("disk", RowDisk, ColDisk),
+        ("io", RowIo, ColIo),
+        ("pwr", RowPwr, ColPwr),
     };
 
     /// <summary>按配置把「显示字段」落到两套面板上。构造函数里调一次，之后每次切换再调。</summary>
     private void ApplyFieldVisibility()
     {
-        foreach ((string key, StackPanel row, StackPanel col) in FieldCells())
+        // 先找出"最后一个可见格"：横条的右间距只加在格子之间，
+        // 末位那格不能带 —— 否则关掉后面几项时条子右边多出一截空白，宽度凭空变大。
+        // （竖向那套每格都带下间距，含末位，是既有行为，不动。）
+        var cells = FieldCells();
+        int lastVisible = -1;
+        for (int i = 0; i < cells.Length; i++)
         {
-            Visibility v = FloatFields.IsVisible(_config, key) ? Visibility.Visible : Visibility.Collapsed;
+            if (FloatFields.IsVisible(_config, cells[i].Key)) lastVisible = i;
+        }
+
+        for (int i = 0; i < cells.Length; i++)
+        {
+            (string key, StackPanel row, StackPanel col) = cells[i];
+            bool show = FloatFields.IsVisible(_config, key);
+            Visibility v = show ? Visibility.Visible : Visibility.Collapsed;
             if (row.Visibility != v) row.Visibility = v;
             if (col.Visibility != v) col.Visibility = v;
+
+            Thickness gap = i == lastVisible ? new Thickness(0) : CellGap;
+            if (!row.Margin.Equals(gap)) row.Margin = gap;
         }
     }
 
@@ -1640,6 +1662,22 @@ public partial class FloatWindow : Window
                         $"hover={Name(_edgeHover)}";
     }
 
+    /// <summary>自测：每格的可见性与右间距，用来查"条子为什么宽了 8 DIP"这类问题。</summary>
+    public string FieldsDiag
+    {
+        get
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach ((string key, StackPanel row, StackPanel col) in FieldCells())
+            {
+                sb.Append(' ').Append(key).Append(row.Visibility == Visibility.Visible ? "+" : "-")
+                  .Append("/r").Append(row.Margin.Right.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))
+                  .Append("/w").Append(row.Width.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            return sb.ToString().TrimStart();
+        }
+    }
+
     /// <summary>窗口矩形与客户区的单边差值（物理像素）。0 = 框架已被吃掉。</summary>
     private static string FrameGap(IntPtr hwnd)
     {
@@ -1794,6 +1832,15 @@ public partial class FloatWindow : Window
         PlacementDiag = $"menu-probe: isOpen={open} hit={hit?.GetType().Name ?? "null"} " +
                         $"win={ActualWidth:F0}x{ActualHeight:F0} shell={Shell.ActualWidth:F0}x{Shell.ActualHeight:F0} " +
                         $"origin=({origin.X:F0},{origin.Y:F0})";
+
+        if (FieldMenu is not null)
+        {
+            foreach (object child in FieldMenu.Items)
+            {
+                if (child is MenuItem { Tag: string k } mi)
+                    System.Console.WriteLine($"menufield: [{k}] {mi.Header} checked={mi.IsChecked} enabled={mi.IsEnabled}");
+            }
+        }
 
         if (Shell.ContextMenu is { IsOpen: true } m) m.IsOpen = false;
     }

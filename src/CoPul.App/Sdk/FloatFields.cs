@@ -4,10 +4,15 @@ namespace CoPul.App.Sdk;
 /// 悬浮窗的六个字段（M4.14：字段可独立开关）。
 ///
 /// <para>
-/// 与 <see cref="TrayFields"/> 同构，但**分成两套**：悬浮窗只显示六项（没有硬盘温度、
-/// 局域网速率、整机功耗），而且它的宽度规则与任务栏条完全不同 —— 任务栏是九格里挤，
+/// 与 <see cref="TrayFields"/> 同构，但**分成两套**：宽度规则完全不同 —— 任务栏是九格里挤，
 /// 悬浮窗是宽高都由内容撑着。两处的"关掉之后怎么收缩"不是同一回事，
 /// 合成一张表只会让两边互相迁就。
+///
+/// <para>
+/// M4.18 起补齐到与任务栏同样的九项（多出硬盘温度 / 上传下载 / 整机功耗），
+/// 但**顺序不与任务栏对齐**：新三项一律追加在末尾。老用户已经记住"第六个是网络延迟"，
+/// 把它挪到第八位等于白记一次。
+/// </para>
 /// </para>
 ///
 /// <para>
@@ -20,13 +25,22 @@ public static class FloatFields
     /// <summary>字段 key，与 <see cref="AppConfig.FloatHiddenFields"/> 里的值对应。</summary>
     public static readonly string[] Keys =
     {
-        "fps", "cpu", "gpu", "ram", "vram", "net",
+        "fps", "cpu", "gpu", "ram", "vram", "net", "disk", "io", "pwr",
     };
 
     /// <summary>菜单与设置页里显示的名字。</summary>
     public static readonly string[] Labels =
     {
-        "FPS", "CPU", "GPU", "内存", "显存", "网络延迟",
+        "FPS", "CPU", "GPU", "内存", "显存", "网络延迟", "硬盘温度", "上传 / 下载", "整机功耗",
+    };
+
+    /// <summary>
+    /// M4.18 后加的三项默认**关闭**。老用户升级上来条子不该突然变长 ——
+    /// 想要哪条自己勾开，勾了才占位置。由 <see cref="ConfigStore"/> 在首次加载时播种。
+    /// </summary>
+    public static readonly string[] DefaultHidden =
+    {
+        "disk", "io", "pwr",
     };
 
     /// <summary>该字段当前是否显示（即用户没有关掉它）。</summary>

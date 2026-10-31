@@ -397,6 +397,18 @@ public partial class SettingsWindow : Window
                     }
                     break;
 
+                case "floatfields":
+                    // 自测：把「悬浮窗字段」整张表打印出来（顺序 / 勾选 / 是否置灰）——
+                    // 设置页卡片在截图里常被底部截断，靠肉眼数不准。
+                    foreach (object child in FloatFieldGrid.Children)
+                    {
+                        if (child is not CheckBox box) continue;
+                        System.Console.WriteLine(
+                            $"floatfield: [{box.Tag}] {box.Content} checked={box.IsChecked} enabled={box.IsEnabled}");
+                    }
+                    System.Console.WriteLine($"floatfield-count: {FloatFieldGrid.Children.Count}");
+                    break;
+
                 case "ping":
                     PingBox.Text = value;
                     ApplyPing();
