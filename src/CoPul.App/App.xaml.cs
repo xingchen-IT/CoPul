@@ -48,6 +48,21 @@ public partial class App : Application
         InstallCrashLog();
         _uiThreadId = GetCurrentThreadId();
 
+        // ---- App 级主题（大窗口 + 设置页，2026-11-01）----
+        // 必须**先于任何窗口创建**应用：窗口的资源查找发生在构造/首帧阶段，
+        // 主题字典没装进去的话，所有 DynamicResource 会一路回退到 Palette 的灰色兜底，
+        // 表现为"整个界面一片灰"，而且不会有任何异常提示。
+        //
+        // 自测开关 --app-theme white|dark：临时覆盖配置，不写盘（验收双主题用）。
+        if (ArgValue(e.Args, "--app-theme") is { } themeArg)
+        {
+            ThemeManager.Apply(ThemeManager.Parse(themeArg), persist: false);
+        }
+        else
+        {
+            ThemeManager.ApplyFromConfig();
+        }
+
         // G-04 的提权子进程入口：只做计划任务的注册/删除，做完立刻退。
         // 必须放在单实例检查之前 —— 主程序很可能正开着（用户就是从它的托盘菜单点的），
         // 子进程要是去抢互斥体会被当成"第二个实例"直接退掉，永远注册不上。
@@ -177,6 +192,8 @@ public partial class App : Application
 
         var window = new MainWindow();
         MainWindow = window;
+
+
 
         // 数据刷新档位（M4.24）：在采集线程 Start 之前设好，
         // 否则会先按默认 500ms 跑几拍再改 —— 用户看到的是"刚开机那两秒跳得快"。
@@ -523,6 +540,8 @@ public partial class App : Application
             settings.Closed += (_, _) => settings = null;
             settings.Show();
 
+
+
             // 必须 Activate：不激活就是一个后台窗口，DWM 对后台窗口的合成会降级/节流，
             // 实测表现为"窗口只画了一部分，左边还是桌面上别的画面"。用户点设置，
             // 本来也是要它到前面来。
@@ -532,6 +551,8 @@ public partial class App : Application
         }
 
         window.SettingsRequested = OpenSettings;
+
+
 
         // G-05：收到"又启动了一次"就显示大窗口。用户连点两次图标的意图就是"我要看到它"，
         // 而它可能正以任务栏条 / 悬浮窗的形态在屏幕上（甚至被全屏检测藏起来了）。

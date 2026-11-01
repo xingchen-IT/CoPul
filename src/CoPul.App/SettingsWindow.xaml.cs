@@ -267,6 +267,35 @@ public partial class SettingsWindow : Window
             : "点亮 = 显示，划掉 = 隐藏。关闭的字段不占位：横向条会变窄，竖向条会变矮。只剩一个字段时该项不可关闭。与任务栏条各自独立保存。";
     }
 
+    /// <summary>
+    /// 外观（App 级主题）切换（2026-11-01）。白色 / 深色两档，点一下立即生效。
+    ///
+    /// <para>
+    /// <b>为什么不需要重建窗口。</summary>颜色全部是 <c>DynamicResource</c>，替换主题字典后
+    /// WPF 会自己重新解析；非颜色的那部分（卡片投影）由 <see cref="ThemeManager.Changed"/>
+    /// 通知 App 去刷新（见 Sdk/CardShadow.cs）。
+    /// </para>
+    ///
+    /// <para>
+    /// 写盘交给 <see cref="ThemeManager.Apply"/>（它的 persist 参数），这里不重复存 —— 两处都写
+    /// 会出现"先存了一次、又被覆盖"，而且以后加主题档位时容易漏改一边。
+    /// </para>
+    /// </summary>
+    private void AppTheme_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+
+        AppTheme target = tag == "dark" ? AppTheme.Dark : AppTheme.White;
+
+        // 已经是这个主题就不做事：RadioButton 被 LoadFromConfig 设选中态时也会触发 Checked，
+        // 不复位闸门的话每次打开设置页都会白白写一次盘。
+        if (ThemeManager.Current == target) return;
+
+        ThemeManager.Apply(target);
+        Hint($"外观已切换为{ThemeManager.DisplayName(target)}（大窗口与设置页立即生效）");
+    }
+
     private void FieldView_Changed(object sender, RoutedEventArgs e)
     {
         if (!_loaded || _suppress) return;
@@ -428,6 +457,10 @@ public partial class SettingsWindow : Window
     private void LoadFromConfig()
     {
         _suppress = true;
+
+        // 外观（2026-11-01）：按**当前生效的主题**同步分段，不按配置 ——
+        // 配置可能与实际不符（比如用 --app-theme 临时覆盖启动），用户看到的是实际样子。
+        (ThemeManager.Current == AppTheme.Dark ? ThemeDark : ThemeWhite).IsChecked = true;
 
         // 三个视图各自独立开关（M4.29）：这里不再"选一个"，而是把真实可见性一次到位。
         // 走 SyncViewChips 而不是给某个 IsChecked 赋值 —— 否则另外两个会停在
@@ -610,6 +643,16 @@ public partial class SettingsWindow : Window
 
             switch (key)
             {
+                // 自测：theme:white / theme:dark —— 走**真实的分段选择**（设 IsChecked 触发 Checked 事件），
+                // 不是直接调 ThemeManager.Apply。前者验的是"用户点这一下"的整条链路
+                // （含 RadioButton 状态、写盘、CardShadow 重建），后者只验了一半。
+                case "theme":
+                    {
+                        RadioButton chip = value == "dark" ? ThemeDark : ThemeWhite;
+                        chip.IsChecked = true;
+                    }
+                    break;
+
                 case "field":
                 case "floatfield":
                     // 字段开关（M4.25 合并后只剩一条字段条）：先切到对应视图再翻。

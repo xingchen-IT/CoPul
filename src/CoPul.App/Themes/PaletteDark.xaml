@@ -1,0 +1,73 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        ===================================================================
+        深色主题（App 级：大窗口 + 设置页）。
+        ===================================================================
+
+        键名与 PaletteLight.xaml **完全同名**，运行时由 ThemeManager 整本替换。
+        漏一个键的后果是：切到白色主题后那个键回退到搜索不到 → 取到灰色（Palette.Brush 的兜底），
+        所以两本必须严格对称，改颜色时**两边一起改**。
+
+        这个文件里的键**不得被 FloatWindow / TaskbarWindow 依赖** ——
+        它们有自己的浅深玻璃与「跟随任务栏亮度」逻辑，与 App 主题无关。
+        （唯一的历史遗留是 BrushBg 被深色玻璃借用过，已在 PaletteShared 里换成 BrushGlassSolidDark。）
+        ===================================================================
+    -->
+
+    <!-- 标记键：ThemeManager 靠它定位"哪一本是主题字典"。不是给 XAML 用的。 -->
+    <sys:String x:Key="__theme">dark</sys:String>
+
+    <!--
+        背景与结构（M4.28 重排层级）。
+
+        v1 的问题是窗口底 #0F1216 与卡片底 #151B21 只差 6 个色阶 —— 九张卡连成一片，
+        看起来不是"九张卡"而是"一块带缝隙的黑板"。这里把差距拉到 11 个色阶：
+        窗口底压深、卡片提亮，卡片才真正浮起来，区块边界不用靠描边去撑。
+    -->
+    <SolidColorBrush x:Key="BrushBg"           Color="#0B0E13" />
+    <SolidColorBrush x:Key="BrushPanel"        Color="#161D26" />
+    <SolidColorBrush x:Key="BrushPanelHover"   Color="#1E262F" />
+    <SolidColorBrush x:Key="BrushStroke"       Color="#232C36" />
+    <SolidColorBrush x:Key="BrushTrack"        Color="#212932" />
+
+    <!-- 卡片内的分隔线：比 BrushTrack 再淡一档，表格表头下面那条用 -->
+    <SolidColorBrush x:Key="BrushDivider"      Color="#1C242D" />
+    <!-- 图表网格线：只用来暗示量程，不能抢折线。原来的 #232B33 在卡片上是一排亮横线 -->
+    <SolidColorBrush x:Key="BrushGrid"         Color="#1A222A" />
+
+    <!-- 表格隔行底：深色下比卡片再压深一点点，不能太明显否则一行一行在跳 -->
+    <SolidColorBrush x:Key="BrushRowAlt"       Color="#141B23" />
+
+    <!-- 滚动条滑块：常态只比轨道亮一档（不抢视线），悬停/拖动才提对比。
+         三档都是低饱和中性灰，与 10.3「禁止霓虹色」一致。 -->
+    <SolidColorBrush x:Key="BrushScrollThumb"      Color="#39434F" />
+    <SolidColorBrush x:Key="BrushScrollThumbHover" Color="#4C5764" />
+    <SolidColorBrush x:Key="BrushScrollThumbDrag"  Color="#5E6A79" />
+
+    <!-- 文字 -->
+    <SolidColorBrush x:Key="BrushTextPrimary"   Color="#E8ECF2" />
+    <SolidColorBrush x:Key="BrushTextSecondary" Color="#9AA4B2" />
+    <SolidColorBrush x:Key="BrushTextTertiary"  Color="#6B7480" />
+
+    <!-- 语义色 -->
+    <SolidColorBrush x:Key="AccentCpu"   Color="#5B8FF9" />
+    <SolidColorBrush x:Key="AccentGpu"   Color="#4FB3A6" />
+    <SolidColorBrush x:Key="AccentRam"   Color="#9B8AFB" />
+    <SolidColorBrush x:Key="AccentVram"  Color="#B98FE8" />
+    <SolidColorBrush x:Key="AccentNet"   Color="#E0A44A" />
+    <SolidColorBrush x:Key="AccentFps"   Color="#7FB37A" />
+    <SolidColorBrush x:Key="AccentDisk"  Color="#8C9BAA" />
+    <SolidColorBrush x:Key="AccentPower" Color="#D97E5A" />
+
+    <!-- 阈值色（覆盖语义色，优先级最高） -->
+    <SolidColorBrush x:Key="BrushWarn"   Color="#E0A44A" />
+    <SolidColorBrush x:Key="BrushDanger" Color="#D95C5C" />
+
+    <!-- 运行状态（顶部指示灯）。绿色只给「一切正常」，降级仍用 BrushWarn，
+         避免出现「黄灯也好看」的错觉：10.3 要求低饱和，这里不用霓虹绿。 -->
+    <SolidColorBrush x:Key="BrushOk"     Color="#63A96D" />
+
+</ResourceDictionary>

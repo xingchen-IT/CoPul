@@ -41,6 +41,20 @@ public sealed class AppConfig
     // 原来主题与浓度只活在 FloatWindow 的字段里，重启就回到「浅色 + 适中」，
     // 用户每次开机都要重新点一遍，等于没有这个功能。
 
+    /// <summary>
+    /// App 级主题（大窗口 + 设置页，2026-11-01）：<c>"White"</c> / <c>"Dark"</c>。
+    ///
+    /// <para>
+    /// <b>与 <see cref="FloatTheme"/> 是两回事</b>：这个管大窗口与设置页的纸面颜色，
+    /// 那个管悬浮窗玻璃的深浅。故意分开 —— 用户可能想让大窗口白底、但悬浮窗深色玻璃，
+    /// 合并成一个字段就做不到了。默认白色。
+    /// </para>
+    /// <para>
+    /// 同样存字符串而不是枚举：枚举序号插入新值会整体错位，字符串认不出来时能安全回退默认。
+    /// </para>
+    /// </summary>
+    public string AppTheme { get; set; } = "White";
+
     /// <summary>玻璃主题：<c>"Light"</c> / <c>"Dark"</c>。存字符串而不是枚举——
     /// 枚举序号会在插入新值时整体错位，字符串认不出来时还能安全回退默认值。</summary>
     public string FloatTheme { get; set; } = "Light";

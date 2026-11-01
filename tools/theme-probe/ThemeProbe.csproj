@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    主题切换的**最小技术验证**（不是产品代码，不进解决方案）。
+
+    验三件事，每件都是方案 A 的硬前提：
+      1. App.Resources 里整本替换调色板字典，DynamicResource 绑定的元素会立刻变色吗？
+      2. 已 Freeze 的画刷能不能放心塞进字典（WPF 内部会跨线程用）？
+         —— 项目里 Palette.Brush() 一直 Freeze，如果不能就不能直接复用那个缓存策略。
+      3. 替换字典是否有可观察的耗时（390 处 DynamicResource 的规模下）。
+
+    为什么单开工程而不是直接改产品代码：这三点任一不成立，方案 A 就得换路线，
+    先花几百行改 XAML 再发现不行，代价太大。
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ThemeProbe</AssemblyName>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>

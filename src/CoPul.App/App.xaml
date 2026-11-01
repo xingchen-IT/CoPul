@@ -5,7 +5,16 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <!-- Styles 内部已合并 Palette，这里只引一个即可 -->
+                <!--
+                    注意这里**没有**主题字典（PaletteDark / PaletteLight）。
+
+                    主题由 ThemeManager 在 App.OnStartup 最前面按配置插入到本集合的**第 0 位**，
+                    切主题就是替换那一本。Styles 内部只合并 PaletteShared（玻璃色 / 浅底语义色），
+                    那些不随主题变。
+
+                    为什么不等价于"在 App.xaml 里也引一本"：那样启动瞬间会先按写死的那本渲染一帧，
+                    再被用户的主题替换，白色主题启动时会闪一下深色。
+                -->
                 <ResourceDictionary Source="Themes/Styles.xaml" />
                 <!-- 图标几何独立一份：R-04 的 10 枚 + R-05 的状态形状，与样式互不引用 -->
                 <ResourceDictionary Source="Themes/Icons.xaml" />

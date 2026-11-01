@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CoPul 设置" Width="800" Height="700" MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
-        Background="{StaticResource BrushBg}" FontFamily="{StaticResource FontUi}"
+        Background="{DynamicResource BrushBg}" FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display">
 
@@ -28,14 +28,14 @@
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="SectionHint" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="11" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="Margin" Value="0,8,0,0" />
         </Style>
@@ -43,7 +43,7 @@
         <Style x:Key="RowLabel" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
@@ -57,7 +57,7 @@
             在一排里几乎看不出来，整组看起来像四个纯文字。
         -->
         <Style x:Key="Segment" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Cursor" Value="Arrow" />
@@ -71,12 +71,12 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BrushStroke}" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -100,7 +100,7 @@
             <Setter Property="Margin" Value="0,0,8,0" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
             <Setter Property="Cursor" Value="Arrow" />
             <Setter Property="ToolTipService.ShowDuration" Value="8000" />
             <Setter Property="Template">
@@ -111,22 +111,22 @@
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse x:Name="Dot" Width="6" Height="6" Margin="0,0,8,0"
                                          VerticalAlignment="Center" Fill="Transparent"
-                                         Stroke="{StaticResource BrushTextTertiary}" StrokeThickness="1" />
+                                         Stroke="{DynamicResource BrushTextTertiary}" StrokeThickness="1" />
                                 <ContentPresenter VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
                             </Trigger>
                             <!-- 后写的覆盖先写的：悬停态不能把"已显示"的样子压回灰字 -->
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BrushStroke}" />
-                                <Setter TargetName="Dot" Property="Fill" Value="{StaticResource AccentCpu}" />
-                                <Setter TargetName="Dot" Property="Stroke" Value="{StaticResource AccentCpu}" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
+                                <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource AccentCpu}" />
+                                <Setter TargetName="Dot" Property="Stroke" Value="{DynamicResource AccentCpu}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -138,7 +138,7 @@
         <!-- 开关。轨道 38x20、滑块 14，够在 100% 缩放下点到（10.4 最小可点 28x28，
              这里外层 Border 加了 4 的透明边距把热区撑到 28 高）。 -->
         <Style x:Key="Switch" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="Cursor" Value="Arrow" />
             <!-- 负左边距抵消模板里那 4px 透明热区：开关改成左对齐之后（M4.28），
                  不留这一手会让它比同一列的其它控件右移 4px -->
@@ -148,16 +148,16 @@
                     <ControlTemplate TargetType="ToggleButton">
                         <Border x:Name="Hit" Background="Transparent" Padding="4" CornerRadius="4">
                             <Border x:Name="Track" Width="38" Height="20" CornerRadius="10"
-                                    Background="{StaticResource BrushTrack}">
+                                    Background="{DynamicResource BrushTrack}">
                                 <Ellipse x:Name="Knob" Width="14" Height="14"
-                                         Fill="{StaticResource BrushTextSecondary}"
+                                         Fill="{DynamicResource BrushTextSecondary}"
                                          HorizontalAlignment="Left" Margin="3,0,0,0" />
                             </Border>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentGpu}" />
-                                <Setter TargetName="Knob" Property="Fill" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentGpu}" />
+                                <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource BrushTextPrimary}" />
                                 <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
                                 <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
                             </Trigger>
@@ -175,7 +175,7 @@
 
         <!-- 字段勾选。做成 16px 方块 + 勾，比 ToggleButton 更适合横排八项 -->
         <Style x:Key="FieldCheck" TargetType="CheckBox">
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Margin" Value="0,0,16,10" />
@@ -186,9 +186,9 @@
                         <StackPanel Orientation="Horizontal" Background="Transparent">
                             <Border x:Name="Box" Width="16" Height="16" CornerRadius="3"
                                     Background="Transparent"
-                                    BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                    BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
                                 <TextBlock x:Name="Tick" Text="✓" FontSize="11"
-                                           Foreground="{StaticResource BrushBg}"
+                                           Foreground="{DynamicResource BrushBg}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                            Visibility="Collapsed" />
                             </Border>
@@ -196,13 +196,13 @@
                         </StackPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentGpu}" />
-                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource AccentGpu}" />
+                                <Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentGpu}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentGpu}" />
                                 <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource BrushTextTertiary}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource BrushTextTertiary}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4" />
@@ -215,7 +215,7 @@
 
         <!-- 小按钮（应用 / 刷新 / 打开目录） -->
         <Style x:Key="MiniButton" TargetType="Button">
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="12,5" />
@@ -227,14 +227,14 @@
                              StepButton 那种 28px 宽的按钮会被内边距吃光内容区，
                              表现为"按钮里只有一个点"（第一版就这样）。 -->
                         <Border x:Name="Bd" Background="Transparent" CornerRadius="5"
-                                BorderBrush="{StaticResource BrushStroke}" BorderThickness="1"
+                                BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4" />
@@ -256,10 +256,10 @@
         </Style>
 
         <Style x:Key="Input" TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource BrushBg}" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
-            <Setter Property="CaretBrush" Value="{StaticResource BrushTextPrimary}" />
-            <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+            <Setter Property="Background" Value="{DynamicResource BrushBg}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource BrushTextPrimary}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="8,5" />
             <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
@@ -269,7 +269,7 @@
 
         <!-- 左侧导航项。选中时左侧一道 3px 强调条，比整块反白更克制（10.3） -->
         <Style x:Key="NavButton" TargetType="RadioButton">
-            <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Cursor" Value="Arrow" />
@@ -286,12 +286,12 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bar" Property="Background" Value="{StaticResource AccentGpu}" />
-                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter TargetName="Bar" Property="Background" Value="{DynamicResource AccentGpu}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -308,26 +308,26 @@
             <Setter Property="Margin" Value="0,0,6,6" />
             <Setter Property="Padding" Value="10,4,10,4" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
             <Setter Property="Cursor" Value="Arrow" />
             <Setter Property="ToolTipService.ShowDuration" Value="8000" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Border x:Name="Box" CornerRadius="5" Padding="{TemplateBinding Padding}"
-                                Background="{StaticResource BrushPanel}"
-                                BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                Background="{DynamicResource BrushPanel}"
+                                BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextBlock.Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Box" Property="BorderBrush"
-                                        Value="{StaticResource BrushTextTertiary}" />
+                                        Value="{DynamicResource BrushTextTertiary}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Box" Property="BorderBrush"
-                                        Value="{StaticResource AccentGpu}" />
+                                        Value="{DynamicResource AccentGpu}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -346,15 +346,15 @@
             <Setter Property="Margin" Value="0,0,6,6" />
             <Setter Property="Padding" Value="10,4,10,4" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
             <Setter Property="Cursor" Value="Arrow" />
             <Setter Property="ToolTipService.ShowDuration" Value="8000" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
                         <Border x:Name="Box" CornerRadius="5" Padding="{TemplateBinding Padding}"
-                                Background="{StaticResource BrushPanel}"
-                                BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                Background="{DynamicResource BrushPanel}"
+                                BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
                             <!--
                                 不用 ContentPresenter：熄灭态要给文字加删除线，而删除线挂在
                                 TextBlock 自己身上（TextBlock.TextDecorations 不是可继承属性）。
@@ -367,11 +367,11 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Box" Property="BorderBrush"
-                                        Value="{StaticResource BrushTextTertiary}" />
+                                        Value="{DynamicResource BrushTextTertiary}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="False">
                                 <Setter TargetName="Box" Property="Background" Value="Transparent" />
-                                <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+                                <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
                                 <Setter TargetName="Txt" Property="TextDecorations" Value="Strikethrough" />
                             </Trigger>
                             <!-- 只剩一个字段时置灰：让"不能再关"看得见，而不是点了没反应 -->
@@ -393,7 +393,7 @@
             <Setter Property="Height" Value="32" />
             <Setter Property="Margin" Value="0,0,8,8" />
             <Setter Property="Padding" Value="3" />
-            <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
             <Setter Property="Cursor" Value="Arrow" />
             <Setter Property="ToolTipService.ShowDuration" Value="8000" />
             <Setter Property="Template">
@@ -409,18 +409,18 @@
                                     <!-- 「自动」那一格要写个字，否则它就是个来历不明的灰块 -->
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                                       TextBlock.FontSize="11"
-                                                      TextBlock.Foreground="{StaticResource BrushTextSecondary}" />
+                                                      TextBlock.Foreground="{DynamicResource BrushTextSecondary}" />
                                 </Grid>
                             </Border>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Ring" Property="BorderBrush"
-                                        Value="{StaticResource BrushTextTertiary}" />
+                                        Value="{DynamicResource BrushTextTertiary}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Ring" Property="BorderBrush"
-                                        Value="{StaticResource AccentGpu}" />
+                                        Value="{DynamicResource AccentGpu}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -429,8 +429,8 @@
         </Style>
     </Window.Resources>
 
-    <Border BorderBrush="{StaticResource BrushStroke}" BorderThickness="1"
-            Background="{StaticResource BrushBg}" CornerRadius="8">
+    <Border BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1"
+            Background="{DynamicResource BrushBg}" CornerRadius="8">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="44" />
@@ -449,7 +449,7 @@
                         Margin="0,0,8,0" Click="Close_Click" />
                 <!-- 与主窗口一致的头部收边线 -->
                 <Border Height="1" VerticalAlignment="Bottom"
-                        Background="{StaticResource BrushDivider}" />
+                        Background="{DynamicResource BrushDivider}" />
             </Grid>
 
             <Grid Grid.Row="1">
@@ -463,8 +463,8 @@
                     下面拖着 400px 的空板 —— 一眼看过去像"还没做完的骨架"。
                     现在把版本号 Dock 到底部，上面只留导航，空白落在语义正确的位置。
                 -->
-                <Border Grid.Column="0" Background="{StaticResource BrushPanel}"
-                        BorderBrush="{StaticResource BrushStroke}" BorderThickness="0,1,1,0">
+                <Border Grid.Column="0" Background="{DynamicResource BrushPanel}"
+                        BorderBrush="{DynamicResource BrushStroke}" BorderThickness="0,1,1,0">
                     <DockPanel>
                         <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom"
                                    Style="{StaticResource SectionHint}"
@@ -484,6 +484,27 @@
                 <ScrollViewer x:Name="GeneralPage" Grid.Column="1" Padding="16,6,16,16"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
+
+                        <!--
+                            外观（2026-11-01 双主题）。放在最前面：它管的是整个界面的纸面颜色，
+                            属于"第一眼就该调"的东西，排在"显示哪个视图"之前。
+                            只影响大窗口与设置页 —— 悬浮窗玻璃深浅、任务栏条取色各有自己的逻辑。
+                        -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="外观" Style="{StaticResource SectionTitle}" />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <RadioButton x:Name="ThemeWhite" Style="{StaticResource Segment}"
+                                                 GroupName="apptheme" Content="白色" Tag="white"
+                                                 Checked="AppTheme_Changed" />
+                                    <RadioButton x:Name="ThemeDark" Style="{StaticResource Segment}"
+                                                 GroupName="apptheme" Content="深色" Tag="dark"
+                                                 Checked="AppTheme_Changed" />
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource SectionHint}"
+                                           Text="只影响大窗口和设置页。点一下立即生效，不用重启。悬浮窗玻璃深浅在下面「悬浮窗外观」里单独调，任务栏条则跟随任务栏实际亮度。" />
+                            </StackPanel>
+                        </Border>
 
                         <!-- 显示视图（M4.29：三个开关，不再是互斥三选一） -->
                         <Border Style="{StaticResource BlockCard}">
@@ -564,7 +585,7 @@
                                         <TextBlock x:Name="LevelText" Style="{StaticResource RowLabel}"
                                                    Width="56" TextAlignment="Center"
                                                    FontFamily="{StaticResource FontNumeric}"
-                                                   Foreground="{StaticResource BrushTextPrimary}" />
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
                                         <Button x:Name="LevelUp" Style="{StaticResource StepButton}"
                                                 Content="+" Click="LevelUp_Click" />
                                     </StackPanel>
@@ -681,8 +702,8 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
 
-                                    <Border Grid.Column="0" Height="40" CornerRadius="5" Background="{StaticResource BrushBg}"
-                                            BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                    <Border Grid.Column="0" Height="40" CornerRadius="5" Background="{DynamicResource BrushBg}"
+                                            BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock x:Name="PreviewValueDark" Text="60 FPS" FontSize="13"
                                                        FontWeight="SemiBold" FontFamily="{StaticResource FontNumeric}"
@@ -694,7 +715,7 @@
                                     </Border>
 
                                     <Border Grid.Column="2" Height="40" CornerRadius="5" Background="#F2F4F7"
-                                            BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
+                                            BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock x:Name="PreviewValueLight" Text="60 FPS" FontSize="13"
                                                        FontWeight="SemiBold" FontFamily="{StaticResource FontNumeric}"
@@ -979,14 +1000,14 @@
                         <ItemsControl x:Name="DiagList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{StaticResource BrushPanel}"
-                                            BorderBrush="{StaticResource BrushStroke}" BorderThickness="1"
+                                    <Border Background="{DynamicResource BrushPanel}"
+                                            BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1"
                                             CornerRadius="10" Padding="14,10" Margin="0,0,0,10">
                                         <StackPanel>
                                             <Grid>
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Text="{Binding Name}" FontSize="13"
-                                                               Foreground="{StaticResource BrushTextPrimary}" />
+                                                               Foreground="{DynamicResource BrushTextPrimary}" />
                                                     <Border Background="{Binding BadgeBg}" CornerRadius="3"
                                                             Padding="6,1" Margin="10,0,0,0"
                                                             VerticalAlignment="Center">
@@ -996,15 +1017,15 @@
                                                 </StackPanel>
                                                 <TextBlock Text="{Binding CostText}" FontSize="11"
                                                            FontFamily="{StaticResource FontMono}"
-                                                           Foreground="{StaticResource BrushTextTertiary}"
+                                                           Foreground="{DynamicResource BrushTextTertiary}"
                                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
                                             </Grid>
                                             <TextBlock Text="{Binding ReasonText}" FontSize="11"
-                                                       Foreground="{StaticResource BrushTextSecondary}"
+                                                       Foreground="{DynamicResource BrushTextSecondary}"
                                                        TextWrapping="Wrap" Margin="0,6,0,0"
                                                        Visibility="{Binding ReasonVisibility}" />
                                             <TextBlock Text="{Binding RemedyText}" FontSize="11"
-                                                       Foreground="{StaticResource BrushWarn}"
+                                                       Foreground="{DynamicResource BrushWarn}"
                                                        TextWrapping="Wrap" Margin="0,4,0,0"
                                                        Visibility="{Binding RemedyVisibility}" />
                                         </StackPanel>
@@ -1017,12 +1038,12 @@
             </Grid>
 
             <!-- 底栏 -->
-            <Border Grid.Row="2" Background="{StaticResource BrushPanel}"
-                    BorderBrush="{StaticResource BrushStroke}" BorderThickness="0,1,0,0">
+            <Border Grid.Row="2" Background="{DynamicResource BrushPanel}"
+                    BorderBrush="{DynamicResource BrushStroke}" BorderThickness="0,1,0,0">
                 <Grid Margin="14,0">
                     <TextBlock x:Name="FooterText" Style="{StaticResource RowLabel}"
                                FontSize="11" VerticalAlignment="Center"
-                               Foreground="{StaticResource BrushTextTertiary}"
+                               Foreground="{DynamicResource BrushTextTertiary}"
                                TextTrimming="CharacterEllipsis"
                                Text="就绪" />
                     <Button x:Name="OpenConfigButton" Style="{StaticResource MiniButton}" Content="打开配置目录"

@@ -2,58 +2,30 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
-        配色来自需求 10.3「低饱和、工业感，禁止霓虹色」。
-        大窗口（9 区块）走深色一档；浅色只用于 M2 悬浮窗的「浅色毛玻璃」，
-        因此浅色语义色统一用 `Light` 后缀命名，不与深色那组混用。
-        所有画刷都 Freeze 过，避免每帧刷新时产生额外开销。
+        ===================================================================
+        两套主题**共用**的资源（不随 App 主题切换而变）。
+        ===================================================================
+
+        为什么要把它们从原来的 Palette.xaml 里拆出来：
+
+        原来的 Palette.xaml 是一本**混合字典** —— 深色主体色与悬浮窗浅色玻璃专用色装在同一个文件里。
+        App 主题切换的做法是「整本替换主题字典」，如果玻璃那组也放在里面，
+        用户把 App 主题改成白色时，**悬浮窗的深色玻璃底会跟着变浅**（它引用了 BrushBg）。
+        玻璃的深浅由它自己的 FloatTheme 决定，跟大窗口用白用黑无关，必须物理隔离。
+
+        加载顺序：本文件先、主题文件后（主题文件可覆盖同名键）。
+        ===================================================================
     -->
+
+    <!-- ===================================================================
+         字体
+         =================================================================== -->
 
     <!--
-        背景与结构（M4.28 重排层级）。
-
-        v1 的问题是窗口底 #0F1216 与卡片底 #151B21 只差 6 个色阶 —— 九张卡连成一片，
-        看起来不是"九张卡"而是"一块带缝隙的黑板"。这里把差距拉到 11 个色阶：
-        窗口底压深、卡片提亮，卡片才真正浮起来，区块边界不用靠描边去撑。
+        字体**不放在这里**：Styles.xaml 自己已经定义了 FontUi / FontNumeric / FontMono，
+        两个字典都定义同一个键会造成"到底哪个生效"的困惑（后加载的覆盖前者）。
+        字体与主题无关，留在 Styles.xaml 一处即可。
     -->
-    <SolidColorBrush x:Key="BrushBg"           Color="#0B0E13" />
-    <SolidColorBrush x:Key="BrushPanel"        Color="#161D26" />
-    <SolidColorBrush x:Key="BrushPanelHover"   Color="#1E262F" />
-    <SolidColorBrush x:Key="BrushStroke"       Color="#232C36" />
-    <SolidColorBrush x:Key="BrushTrack"        Color="#212932" />
-
-    <!-- 卡片内的分隔线：比 BrushTrack 再淡一档，表格表头下面那条用 -->
-    <SolidColorBrush x:Key="BrushDivider"      Color="#1C242D" />
-    <!-- 图表网格线：只用来暗示量程，不能抢折线。原来的 #232B33 在卡片上是一排亮横线 -->
-    <SolidColorBrush x:Key="BrushGrid"         Color="#1A222A" />
-
-    <!-- 滚动条滑块：常态只比轨道亮一档（不抢视线），悬停/拖动才提对比。
-         三档都是低饱和中性灰，与 10.3「禁止霓虹色」一致。 -->
-    <SolidColorBrush x:Key="BrushScrollThumb"      Color="#39434F" />
-    <SolidColorBrush x:Key="BrushScrollThumbHover" Color="#4C5764" />
-    <SolidColorBrush x:Key="BrushScrollThumbDrag"  Color="#5E6A79" />
-
-    <!-- 文字 -->
-    <SolidColorBrush x:Key="BrushTextPrimary"   Color="#E8ECF2" />
-    <SolidColorBrush x:Key="BrushTextSecondary" Color="#9AA4B2" />
-    <SolidColorBrush x:Key="BrushTextTertiary"  Color="#6B7480" />
-
-    <!-- 语义色 -->
-    <SolidColorBrush x:Key="AccentCpu"   Color="#5B8FF9" />
-    <SolidColorBrush x:Key="AccentGpu"   Color="#4FB3A6" />
-    <SolidColorBrush x:Key="AccentRam"   Color="#9B8AFB" />
-    <SolidColorBrush x:Key="AccentVram"  Color="#B98FE8" />
-    <SolidColorBrush x:Key="AccentNet"   Color="#E0A44A" />
-    <SolidColorBrush x:Key="AccentFps"   Color="#7FB37A" />
-    <SolidColorBrush x:Key="AccentDisk"  Color="#8C9BAA" />
-    <SolidColorBrush x:Key="AccentPower" Color="#D97E5A" />
-
-    <!-- 阈值色（覆盖语义色，优先级最高） -->
-    <SolidColorBrush x:Key="BrushWarn"   Color="#E0A44A" />
-    <SolidColorBrush x:Key="BrushDanger" Color="#D95C5C" />
-
-    <!-- 运行状态（顶部指示灯）。绿色只给「一切正常」，降级仍用 BrushWarn，
-         避免出现「黄灯也好看」的错觉：10.3 要求低饱和，这里不用霓虹绿。 -->
-    <SolidColorBrush x:Key="BrushOk"     Color="#63A96D" />
 
     <!-- ===================================================================
          浅色毛玻璃（悬浮窗专用）
@@ -70,6 +42,17 @@
     <SolidColorBrush x:Key="BrushGlassSolid"      Color="#F2F4F7" />    <!-- 关掉毛玻璃时的不透明底（浅） -->
     <SolidColorBrush x:Key="BrushGlassEdge"       Color="#1F000000" />  <!-- 黑 12% -->
     <SolidColorBrush x:Key="BrushGlassEdgeHover"  Color="#3D000000" />  <!-- 黑 24% -->
+
+    <!--
+        深色玻璃关掉毛玻璃时的不透明底。
+
+        **为什么单独一个键而不复用 BrushBg**：原来 FloatWindow 的写法是
+        `light ? Brush("BrushGlassSolid") : Brush("BrushBg")` —— 深色玻璃借用了 App 的窗口底色。
+        引入 App 主题后 BrushBg 会随主题变（白色主题下变成 #F2F4F7），
+        于是「深色玻璃」在用户把大窗口切白色后，关掉毛玻璃会变成一块**浅灰**底，
+        与它自己的深色文字配色直接打架。这个值必须与 App 主题完全无关。
+    -->
+    <SolidColorBrush x:Key="BrushGlassSolidDark"  Color="#0F1216" />
 
     <!-- 深色玻璃的描边：奶白底上用黑、深色底上用白，各取"能在自己底上看见"的那一头。
          hover 那一档从 22% 收到 14%（M4.13）：深色玻璃底本来只有 25 luma，
@@ -107,11 +90,14 @@
     <SolidColorBrush x:Key="BrushGlassEdgeDrag"      Color="#E8489B" />  <!-- 浅色底：稍沉的粉 -->
     <SolidColorBrush x:Key="BrushGlassEdgeDragDark"  Color="#FF7FB8" />  <!-- 深色底：提亮的粉 -->
 
-    <!-- 文字 -->
+    <!-- 浅色玻璃上的文字 -->
     <SolidColorBrush x:Key="BrushTextOnGlass"          Color="#1B2027" />
     <SolidColorBrush x:Key="BrushTextSecondaryLight"   Color="#5C6672" />
 
-    <!-- 语义色（浅底版） -->
+    <!-- 语义色（浅底版）
+         这套值同时服务两处：悬浮窗浅色玻璃、以及**白色 App 主题**。
+         后者的对比度直接沿用这里已实测过的值（≥4.5:1），白色纸面比白雾更亮只会更清楚，
+         这样两处语义色也视觉统一，不必再凭空造 8 个颜色。 -->
     <SolidColorBrush x:Key="AccentCpuLight"   Color="#2F62C4" />
     <SolidColorBrush x:Key="AccentGpuLight"   Color="#197A6E" />
     <SolidColorBrush x:Key="AccentRamLight"   Color="#6350C8" />

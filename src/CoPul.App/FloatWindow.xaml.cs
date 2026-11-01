@@ -1841,7 +1841,11 @@ public partial class FloatWindow : Window
             // 这样"关玻璃"只是去掉模糊，不是把外观整个换掉。
             WindowGlass.Clear(this);
             GlassMode = "关闭";
-            Shell.Background = light ? Palette.Brush("BrushGlassSolid") : Palette.Brush("BrushBg");
+            // 深色玻璃的实底用 BrushGlassSolidDark 而**不是** BrushBg（2026-11-01 双主题）：
+            // BrushBg 现在属于 App 主题（大窗口/设置页），用户把大窗口切成白色后它会变成浅灰，
+            // 深色玻璃的底就跟着变浅，与它自己的浅色文字配色直接打架。
+            // 玻璃深浅只由 FloatTheme 决定，必须与 App 主题完全无关（见 PaletteShared 的说明）。
+            Shell.Background = light ? Palette.Brush("BrushGlassSolid") : Palette.Brush("BrushGlassSolidDark");
             _edgeIdle = _edgeNormal;   // 有实底了，描边回到常态那一档
             return;
         }

@@ -3,7 +3,13 @@
 
     <!-- 样式里大量引用调色板，必须在这里合并一次：StaticResource 只查自身与已合并的字典 -->
     <ResourceDictionary.MergedDictionaries>
-        <ResourceDictionary Source="Palette.xaml" />
+        <!--
+            只合并「两套主题共用」的那本（玻璃色 / 浅底语义色）。
+            主题本（PaletteDark / PaletteLight）**不在这里合并** ——
+            它由 ThemeManager 在启动时按用户配置装进 Application.Resources。
+            这样切换主题只需整本替换主题字典，Styles 里这些 Style 不用重建。
+        -->
+        <ResourceDictionary Source="PaletteShared.xaml" />
     </ResourceDictionary.MergedDictionaries>
 
     <!-- 字体：数字一律等宽（Tabular），否则 0.5s 刷新时数值会左右抖（需求 10.2） -->
@@ -15,14 +21,14 @@
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="TextBrandSub" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Margin" Value="8,0,0,0" />
     </Style>
@@ -38,14 +44,14 @@
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="TextBlockModel" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Margin" Value="10,0,0,0" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -54,20 +60,20 @@
     <Style x:Key="TextLabel" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
     </Style>
 
     <Style x:Key="TextBody" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="TextMono" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
@@ -75,14 +81,14 @@
     <Style x:Key="TextMonoRow" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="TextTileLabel" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="Margin" Value="0,0,0,5" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
@@ -91,7 +97,7 @@
         <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
         <Setter Property="FontSize" Value="25" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
         <Setter Property="LineHeight" Value="29" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
@@ -100,7 +106,7 @@
     <Style x:Key="TextTileUnit" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
         <Setter Property="Margin" Value="3,0,0,4" />
         <Setter Property="VerticalAlignment" Value="Bottom" />
     </Style>
@@ -108,7 +114,7 @@
     <Style x:Key="TextTileSub" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
         <Setter Property="Margin" Value="0,4,0,0" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
@@ -120,7 +126,7 @@
     <Style x:Key="TextCoreValue" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
         <Setter Property="FontSize" Value="11" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
         <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
     </Style>
 
@@ -130,7 +136,7 @@
         <Setter Property="Minimum" Value="0" />
         <Setter Property="Maximum" Value="100" />
         <Setter Property="Height" Value="3" />
-        <Setter Property="Background" Value="{StaticResource BrushTrack}" />
+        <Setter Property="Background" Value="{DynamicResource BrushTrack}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
@@ -148,11 +154,18 @@
     <!-- 区块容器。圆角 10 / 内边距 16,13,16,15：上下留白不对称是因为标题行本身有行高，
          视觉上 13+行高 与 15 是对齐的；间距 10 让九张卡有呼吸但不散 -->
     <Style x:Key="BlockCard" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource BrushPanel}" />
-        <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+        <Setter Property="Background" Value="{DynamicResource BrushPanel}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushStroke}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="10" />
         <Setter Property="Padding" Value="16,13,16,15" />
+        <!--
+            卡片间距 12（M4.28 原值）。
+
+            2026-11-01 曾为白色主题的投影临时加到 18，后来用户明确要求**白色界面不要阴影**，
+            投影整条路径已移除，间距也随之回到 12 —— 没有阴影就没有"缝里塞满灰"的问题，
+            保留 18 只会让九张卡显得散。
+        -->
         <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
 
@@ -162,7 +175,7 @@
         <Setter Property="Height" Value="28" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Arrow" />
@@ -174,8 +187,8 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -197,7 +210,7 @@
         <Setter Property="Height" Value="28" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextTertiary}" />
         <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Arrow" />
@@ -209,12 +222,12 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                         </Trigger>
                         <!-- 后写的覆盖先写的：悬停不能把"正在显示"压回灰字 -->
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter Property="Foreground" Value="{StaticResource AccentCpu}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentCpu}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -231,7 +244,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushDanger}" />
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource BrushDanger}" />
                             <Setter Property="Foreground" Value="#FFFFFF" />
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -247,7 +260,7 @@
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -262,8 +275,8 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushPanelHover}" />
-                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource BrushPanelHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -283,14 +296,14 @@
                 <ControlTemplate TargetType="Thumb">
                     <!-- Margin 只缩在内层 Border 上：滑块视觉宽 6，Thumb 本身仍占满 10，
                          命中区不跟着变窄 -->
-                    <Border x:Name="Bd" Background="{StaticResource BrushScrollThumb}"
+                    <Border x:Name="Bd" Background="{DynamicResource BrushScrollThumb}"
                             CornerRadius="3" Margin="2,0" />
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushScrollThumbHover}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushScrollThumbHover}" />
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushScrollThumbDrag}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushScrollThumbDrag}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -376,7 +389,7 @@
     <Style x:Key="FloatLabel" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="10" />
-        <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+        <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
         <Setter Property="LineHeight" Value="13" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />

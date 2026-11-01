@@ -151,6 +151,25 @@ internal static class Palette
     }
 
     /// <summary>
+    /// 清空画刷缓存。**换主题时必须调**。
+    ///
+    /// <para>
+    /// 缓存是按资源键存的，而两套主题的键名完全相同 —— 不清的话
+    /// <see cref="Brush"/> 会一直返回上一套主题的画刷实例，
+    /// 表现为"主题切了，但指标数值的颜色还是旧的"，而且因为不报错、只有颜色不对，
+    /// 很容易被当成"某个区块漏改 DynamicResource" 去查错方向。
+    /// </para>
+    ///
+    /// <para>
+    /// 调用方：<see cref="ThemeManager.Apply"/>。清完后不需要额外通知视图——
+    /// 画刷属性都是每次 get 现查的（<c>MetricCell.ValueBrush</c> 等），
+    /// 下一次 0.5s 刷新自然取到新色。唯一例外是字段初始化时赋值的静态画刷
+    /// （悬浮窗的 <c>_edgeNormal</c> 那组），那些属于悬浮窗自己的主题，不受 App 主题影响。
+    /// </para>
+    /// </summary>
+    public static void InvalidateCache() => Cache.Clear();
+
+    /// <summary>
     /// 取浅色底上的同源画刷。约定：资源键加 <c>Light</c> 后缀即为浅底版。
     /// 没定义的键回退原色——加新语义色时忘了补浅色版只会是观感偏淡，不会取到灰块。
     /// </summary>

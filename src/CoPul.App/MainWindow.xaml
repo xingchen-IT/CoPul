@@ -4,7 +4,7 @@
         xmlns:controls="clr-namespace:CoPul.App.Controls"
         Title="CoPul 芯脉" Width="820" MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize"
-        Background="{StaticResource BrushBg}" FontFamily="{StaticResource FontUi}"
+        Background="{DynamicResource BrushBg}" FontFamily="{StaticResource FontUi}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display">
 
@@ -14,7 +14,7 @@
                       CornerRadius="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 
-    <Border BorderBrush="{StaticResource BrushStroke}" BorderThickness="1" Background="{StaticResource BrushBg}"
+    <Border BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1" Background="{DynamicResource BrushBg}"
             CornerRadius="8">
         <Grid>
             <Grid.RowDefinitions>
@@ -74,7 +74,7 @@
                 <!-- 标题栏下沿一条分隔线（M4.28）：44px 的头部和内容区原来直接贴在一起，
                      下面第一张卡的顶边会跟标题文字凑成"两行并排"。 -->
                 <Border Height="1" VerticalAlignment="Bottom"
-                        Background="{StaticResource BrushDivider}" />
+                        Background="{DynamicResource BrushDivider}" />
             </Grid>
 
             <!-- 内容区 -->
@@ -90,9 +90,9 @@
                                             Content="{Binding CpuBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconCpu}" Stroke="{StaticResource AccentCpu}" />
+                                          Data="{StaticResource IconCpu}" Stroke="{DynamicResource AccentCpu}" />
                                     <TextBlock Text="CPU" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentCpu}" />
+                                               Foreground="{DynamicResource AccentCpu}" />
                                     <TextBlock Text="{Binding CpuModel}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource TextBody}" HorizontalAlignment="Right"
@@ -117,7 +117,7 @@
                                 -->
                                 <TextBlock Text="各核心占用率 %" Style="{StaticResource TextLabel}"
                                            Margin="0,12,0,6"
-                                           Foreground="{StaticResource BrushTextTertiary}" />
+                                           Foreground="{DynamicResource BrushTextTertiary}" />
                                 <ItemsControl ItemsSource="{Binding CoreCells}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
@@ -150,9 +150,9 @@
                                             Content="{Binding GpuBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconGpu}" Stroke="{StaticResource AccentGpu}" />
+                                          Data="{StaticResource IconGpu}" Stroke="{DynamicResource AccentGpu}" />
                                     <TextBlock Text="GPU" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentGpu}" />
+                                               Foreground="{DynamicResource AccentGpu}" />
                                     <TextBlock Text="{Binding GpuModel}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding GpuExtraText}" Style="{StaticResource TextBody}"
@@ -208,9 +208,9 @@
                                             Content="{Binding FpsBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconFps}" Stroke="{StaticResource AccentFps}" />
+                                          Data="{StaticResource IconFps}" Stroke="{DynamicResource AccentFps}" />
                                     <TextBlock Text="FPS" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentFps}" />
+                                               Foreground="{DynamicResource AccentFps}" />
                                     <TextBlock Text="{Binding FpsSubtitle}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                             </Grid>
@@ -234,11 +234,11 @@
                                             <TextBlock Text="{Binding FpsMin.Value}" Style="{StaticResource TextTileValue}"
                                                        Foreground="{Binding FpsMin.ValueBrush}" />
                                             <TextBlock Text="/" Style="{StaticResource TextTileValue}"
-                                                       Foreground="{StaticResource BrushTextTertiary}" />
+                                                       Foreground="{DynamicResource BrushTextTertiary}" />
                                             <TextBlock Text="{Binding FpsMax.Value}" Style="{StaticResource TextTileValue}"
                                                        Foreground="{Binding FpsMax.ValueBrush}" />
                                             <TextBlock Text="/" Style="{StaticResource TextTileValue}"
-                                                       Foreground="{StaticResource BrushTextTertiary}" />
+                                                       Foreground="{DynamicResource BrushTextTertiary}" />
                                             <TextBlock Text="{Binding FpsAvg.Value}" Style="{StaticResource TextTileValue}"
                                                        Foreground="{Binding FpsAvg.ValueBrush}" />
                                             <TextBlock Text="FPS" Style="{StaticResource TextTileUnit}" />
@@ -271,17 +271,17 @@
                                             Content="{Binding TrendBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconTrend}" Stroke="{StaticResource AccentCpu}" />
+                                          Data="{StaticResource IconTrend}" Stroke="{DynamicResource AccentCpu}" />
                                     <TextBlock Text="趋势" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentCpu}" />
+                                               Foreground="{DynamicResource AccentCpu}" />
                                     <TextBlock Text="{Binding TrendSubtitle}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                             VerticalAlignment="Center">
                                     <TextBlock Text="CPU" Style="{StaticResource TextBody}"
-                                               Foreground="{StaticResource AccentCpu}" Margin="0,0,12,0" />
+                                               Foreground="{DynamicResource AccentCpu}" Margin="0,0,12,0" />
                                     <TextBlock Text="GPU" Style="{StaticResource TextBody}"
-                                               Foreground="{StaticResource AccentGpu}" />
+                                               Foreground="{DynamicResource AccentGpu}" />
                                 </StackPanel>
                             </Grid>
 
@@ -303,17 +303,17 @@
                                             Content="{Binding TempBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconTemp}" Stroke="{StaticResource AccentPower}" />
+                                          Data="{StaticResource IconTemp}" Stroke="{DynamicResource AccentPower}" />
                                     <TextBlock Text="温度" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentPower}" />
+                                               Foreground="{DynamicResource AccentPower}" />
                                     <TextBlock Text="{Binding TempSubtitle}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                             VerticalAlignment="Center">
                                     <TextBlock Text="CPU" Style="{StaticResource TextBody}"
-                                               Foreground="{StaticResource AccentCpu}" Margin="0,0,12,0" />
+                                               Foreground="{DynamicResource AccentCpu}" Margin="0,0,12,0" />
                                     <TextBlock Text="GPU" Style="{StaticResource TextBody}"
-                                               Foreground="{StaticResource AccentGpu}" />
+                                               Foreground="{DynamicResource AccentGpu}" />
                                 </StackPanel>
                             </Grid>
 
@@ -332,9 +332,9 @@
                                             Content="{Binding MemBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconRam}" Stroke="{StaticResource AccentRam}" />
+                                          Data="{StaticResource IconRam}" Stroke="{DynamicResource AccentRam}" />
                                     <TextBlock Text="内存" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentRam}" />
+                                               Foreground="{DynamicResource AccentRam}" />
                                     <TextBlock Text="{Binding MemHeadline}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding MemDetail}" Style="{StaticResource TextBody}"
@@ -360,9 +360,9 @@
                                             Content="{Binding NetBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconNet}" Stroke="{StaticResource AccentNet}" />
+                                          Data="{StaticResource IconNet}" Stroke="{DynamicResource AccentNet}" />
                                     <TextBlock Text="网络" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentNet}" />
+                                               Foreground="{DynamicResource AccentNet}" />
                                     <TextBlock Text="{Binding NetAdapter}" Style="{StaticResource TextBlockModel}" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding NetTargetText}" Style="{StaticResource TextBody}"
@@ -388,9 +388,9 @@
                                             Content="{Binding DiskBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconDisk}" Stroke="{StaticResource AccentDisk}" />
+                                          Data="{StaticResource IconDisk}" Stroke="{DynamicResource AccentDisk}" />
                                     <TextBlock Text="硬盘" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentDisk}" />
+                                               Foreground="{DynamicResource AccentDisk}" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding DiskSummary}" Style="{StaticResource TextBody}"
                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
@@ -419,7 +419,7 @@
                                                HorizontalAlignment="Right" />
                                 </Grid>
 
-                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,4,0,0" />
+                                <Border Background="{DynamicResource BrushTrack}" Height="1" Margin="0,4,0,0" />
 
                                 <ItemsControl ItemsSource="{Binding Disks}">
                                     <ItemsControl.ItemTemplate>
@@ -436,7 +436,7 @@
                                                 <TextBlock Grid.Column="0" Text="{Binding Model}"
                                                            Style="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis"
-                                                           Foreground="{StaticResource BrushTextPrimary}" />
+                                                           Foreground="{DynamicResource BrushTextPrimary}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding Bus}"
                                                            Style="{StaticResource TextBody}" />
                                                 <TextBlock Grid.Column="2" Text="{Binding CapacityText}"
@@ -455,7 +455,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,10,0,8" />
+                                <Border Background="{DynamicResource BrushTrack}" Height="1" Margin="0,10,0,8" />
 
                                 <TextBlock Text="{Binding PartitionText}" Style="{StaticResource TextBody}"
                                            TextWrapping="Wrap" />
@@ -476,9 +476,9 @@
                                             Content="{Binding ProcBlock.Arrow}" Click="ToggleBlock_Click"
                                             ToolTip="折叠 / 展开" />
                                     <Path Style="{StaticResource BlockIcon}"
-                                          Data="{StaticResource IconProc}" Stroke="{StaticResource AccentFps}" />
+                                          Data="{StaticResource IconProc}" Stroke="{DynamicResource AccentFps}" />
                                     <TextBlock Text="进程" Style="{StaticResource TextBlockTitle}"
-                                               Foreground="{StaticResource AccentFps}" />
+                                               Foreground="{DynamicResource AccentFps}" />
                                 </StackPanel>
                                 <TextBlock Text="{Binding ProcSubtitle}" Style="{StaticResource TextBody}"
                                            HorizontalAlignment="Right" VerticalAlignment="Center" />
@@ -504,7 +504,7 @@
                                                HorizontalAlignment="Right" />
                                 </Grid>
 
-                                <Border Background="{StaticResource BrushTrack}" Height="1" Margin="0,4,0,0" />
+                                <Border Background="{DynamicResource BrushTrack}" Height="1" Margin="0,4,0,0" />
 
                                 <ItemsControl ItemsSource="{Binding Processes}">
                                     <ItemsControl.ItemTemplate>
@@ -520,11 +520,11 @@
                                                 <TextBlock Grid.Column="0" Text="{Binding Name}"
                                                            Style="{StaticResource TextBody}"
                                                            TextTrimming="CharacterEllipsis"
-                                                           Foreground="{StaticResource BrushTextPrimary}" />
+                                                           Foreground="{DynamicResource BrushTextPrimary}" />
                                                 <TextBlock Grid.Column="1" Text="{Binding PidText}"
                                                            Style="{StaticResource TextBody}"
                                                            HorizontalAlignment="Right"
-                                                           Foreground="{StaticResource BrushTextTertiary}" />
+                                                           Foreground="{DynamicResource BrushTextTertiary}" />
                                                 <TextBlock Grid.Column="2" Text="{Binding CpuText}"
                                                            Style="{StaticResource TextMonoRow}"
                                                            HorizontalAlignment="Right"
