@@ -14,8 +14,12 @@
                       CornerRadius="0" UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 
-    <Border BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1" Background="{DynamicResource BrushBg}"
-            CornerRadius="8">
+    <!--
+        x:Name="RootShell" 供毛玻璃模式用：开玻璃时这一层的底要换成半透明遮罩
+        （它是整窗的最后一层不透明底，不改它玻璃透不出来）。
+    -->
+    <Border x:Name="RootShell" BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1"
+            Background="{DynamicResource BrushBg}" CornerRadius="8">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="44" />

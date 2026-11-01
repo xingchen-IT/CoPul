@@ -55,6 +55,20 @@ public sealed class AppConfig
     /// </summary>
     public string AppTheme { get; set; } = "White";
 
+    // ---- 大窗口毛玻璃（2026-11-01）----
+    // 与悬浮窗的 FloatGlassLevel 是两套：那个管 34 DIP 长条，这个管 820×1019 的大窗口。
+    // 合并成一个会让"悬浮窗调透一点"顺手把大窗口也调透，而两者可用的浓度范围并不相同。
+
+    /// <summary>大窗口毛玻璃开关。默认**关** —— 第一次见面保持原来的纸面观感，
+    /// 让用户自己决定要不要玻璃（与悬浮窗默认开不同：那个生来就是玻璃条）。</summary>
+    public bool GlassEnabled { get; set; }
+
+    /// <summary>大窗口毛玻璃浓度 0–100（0 = 最透 17% 遮盖，100 = 最实 98%）。</summary>
+    public int GlassLevel { get; set; } = 60;
+
+    /// <summary>卡片是否也跟着半透。关掉时只有卡片缝与窗口边缘能看到玻璃。</summary>
+    public bool GlassCards { get; set; }
+
     /// <summary>玻璃主题：<c>"Light"</c> / <c>"Dark"</c>。存字符串而不是枚举——
     /// 枚举序号会在插入新值时整体错位，字符串认不出来时还能安全回退默认值。</summary>
     public string FloatTheme { get; set; } = "Light";

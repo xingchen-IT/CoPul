@@ -26,6 +26,19 @@ internal sealed class SettingsContext
     /// <summary>共享的配置实例。<b>不要</b>设置页自己 Load 一份（会互相覆盖，见 ConfigStore 注释）。</summary>
     public AppConfig Config { get; init; } = ConfigStore.Current;
 
+    /// <summary>
+    /// 大窗口毛玻璃的施加入口（2026-11-01）。
+    ///
+    /// <para>
+    /// 设置页**不该**自己调 WindowGlassLarge —— 那要拿 HWND，而设置页是另一个窗口。
+    /// 玻璃是主窗口的属性，所以由 App 把主窗口的三个方法传进来。
+    /// </para>
+    /// </summary>
+    public Action<bool, int, bool, bool>? ApplyMainGlass { get; init; }
+
+    /// <summary>主窗口当前的毛玻璃状态，打开设置页时用来同步开关与滑块。</summary>
+    public Func<(bool Enabled, int Level, bool Cards)>? GetMainGlass { get; init; }
+
     /// <summary>当前视图。切模式时用来避免"点当前模式"这种无意义切换。</summary>
     public Func<FullScreenAutoSwitch.View> CurrentView { get; init; }
         = () => FullScreenAutoSwitch.View.Main;
@@ -281,6 +294,130 @@ public partial class SettingsWindow : Window
     /// 会出现"先存了一次、又被覆盖"，而且以后加主题档位时容易漏改一边。
     /// </para>
     /// </summary>
+    // =================================================================
+    // 毛玻璃（2026-11-01）
+    // =================================================================
+
+    /// <summary>拖滑块时挡住回环：我们自己设 Slider.Value 会再触发一次 ValueChanged。</summary>
+    private bool _glassSyncing;
+
+    /// <summary>毛玻璃总开关。</summary>
+    private void Glass_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        PushGlass(persist: true);
+    }
+
+    /// <summary>
+    /// 浓度滑块。**拖动过程中就生效**（不是松手才生效）：
+    /// 玻璃浓度是"边调边看"的东西，松手才变会让用户来回拖十几次。
+    /// </summary>
+    private void GlassLevel_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_loaded || _suppress || _glassSyncing) return;
+
+        UpdateGlassLevelText();
+        PushGlass(persist: false);      // 拖动中不写盘，松手才写（见下）
+    }
+
+    /// <summary>滑块松开时才落盘 —— 拖动中间会产生几十次写盘。</summary>
+    protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_loaded && MainGlassSwitch.IsChecked == true) PersistGlass();
+    }
+
+    /// <summary>预设档位：一键跳到熟悉的浓度。</summary>
+    private void GlassPreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        if (sender is not Button { Tag: string tag } || !double.TryParse(tag, out double v)) return;
+
+        GlassLevelSlider.Value = v;
+        PushGlass(persist: true);
+        Hint($"毛玻璃浓度已设为 {v:F0}（实际遮盖约 {WindowGlassLarge.CoverageFor((int)v):P0}）");
+    }
+
+    /// <summary>卡片是否也跟着半透。</summary>
+    private void GlassCards_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+        PushGlass(persist: true);
+    }
+
+    /// <summary>把三个控件的当前值推给主窗口。</summary>
+    private void PushGlass(bool persist)
+    {
+        if (_ctx.ApplyMainGlass is null) return;
+
+        bool on = MainGlassSwitch.IsChecked == true;
+        int level = (int)Math.Round(GlassLevelSlider.Value);
+        bool cards = GlassCardsSwitch.IsChecked == true;
+
+        _ctx.ApplyMainGlass(on, level, cards, persist);
+        UpdateGlassUiState();
+
+        if (persist && !on) Hint("毛玻璃已关闭，回到不透明纸面");
+        else if (persist) Hint($"毛玻璃已开启（浓度 {level}，遮盖约 {WindowGlassLarge.CoverageFor(level):P0}）");
+    }
+
+    /// <summary>只在"松手"时写盘。拖动的中间值不存。</summary>
+    private void PersistGlass()
+    {
+        if (_ctx.ApplyMainGlass is null) return;
+        _ctx.ApplyMainGlass(MainGlassSwitch.IsChecked == true,
+                            (int)Math.Round(GlassLevelSlider.Value),
+                            GlassCardsSwitch.IsChecked == true,
+                            true);
+    }
+
+    /// <summary>UI 从属状态：玻璃关掉时滑块与预设置灰，但仍显示当前值（下次开直接复用）。</summary>
+    private void UpdateGlassUiState()
+    {
+        bool on = MainGlassSwitch.IsChecked == true;
+        GlassControls.IsEnabled = on;
+
+        int level = (int)Math.Round(GlassLevelSlider.Value);
+        UpdateGlassLevelText();
+
+        // 半透开关的说明随情况变：浓度太低时卡片半透会让文字发虚，这是物理下限要提一句
+        GlassCardsHint.Text = !on
+            ? string.Empty
+            : GlassCardsSwitch.IsChecked == true
+                ? (level < 40 ? "浓度偏低，文字可能发虚" : "卡片透出背景图案")
+                : "只有卡片缝与边缘能看到玻璃";
+
+        GlassHint.Text = "毛玻璃是 DWM 在窗口后方注入的一层，不依赖窗口自身的半透明 —— " +
+                         "所以它能真的模糊背后的窗口与壁纸（不是单纯的半透明）。" +
+                         "浓度越高遮得越实、文字越清楚；越低越透、越能看见背景。" +
+                         "亚克力层自带约 17% 的固有底色，所以最透也到不了全透明。";
+    }
+
+    private void UpdateGlassLevelText()
+        => GlassLevelText.Text = $"{(int)Math.Round(GlassLevelSlider.Value)}  " +
+                                 $"({WindowGlassLarge.CoverageFor((int)Math.Round(GlassLevelSlider.Value)):P0})";
+
+    /// <summary>打开设置页时把主窗口的真实状态同步过来（可能被 --main-glass 改过）。</summary>
+    private void SyncGlass()
+    {
+        (bool Enabled, int Level, bool Cards) g = _ctx.GetMainGlass?.Invoke() ?? (false, 60, false);
+
+        _glassSyncing = true;
+        try
+        {
+            MainGlassSwitch.IsChecked = g.Enabled;
+            GlassLevelSlider.Value = g.Level;
+            GlassCardsSwitch.IsChecked = g.Cards;
+        }
+        finally
+        {
+            _glassSyncing = false;
+        }
+
+        UpdateGlassUiState();
+    }
+
     private void AppTheme_Changed(object sender, RoutedEventArgs e)
     {
         if (!_loaded || _suppress) return;
@@ -458,6 +595,10 @@ public partial class SettingsWindow : Window
     {
         _suppress = true;
 
+        // 毛玻璃（2026-11-01）：按主窗口的**真实状态**同步，不按配置 ——
+        // 主窗口可能被 --main-glass 覆盖过，或用户在多开的情况下改过。
+        SyncGlass();
+
         // 外观（2026-11-01）：按**当前生效的主题**同步分段，不按配置 ——
         // 配置可能与实际不符（比如用 --app-theme 临时覆盖启动），用户看到的是实际样子。
         (ThemeManager.Current == AppTheme.Dark ? ThemeDark : ThemeWhite).IsChecked = true;
@@ -471,7 +612,7 @@ public partial class SettingsWindow : Window
         // 九格的勾选态由 InitFieldBar 按配置读（构造时已经建过一次），这里只把视图分段对上。
         (_fieldView == "tray" ? FieldViewTray : FieldViewFloat).IsChecked = true;
 
-        GlassSwitch.IsChecked = _config.FloatGlassEnabled;
+        MainGlassSwitch.IsChecked = _config.FloatGlassEnabled;
         UpdateLevelText();
 
         switch (NormalizeScale(_config.FloatScale))
@@ -643,6 +784,20 @@ public partial class SettingsWindow : Window
 
             switch (key)
             {
+                // 自测：glass:on|off / glasslevel:0-100 / glasscards:on|off
+                // 走真实控件（设 IsChecked / Value 触发事件），验的是"用户点这一下"的整条链路。
+                case "main-glass":
+                    MainGlassSwitch.IsChecked = value != "off";
+                    break;
+
+                case "main-glasslevel":
+                    if (double.TryParse(value, out double gl)) GlassLevelSlider.Value = gl;
+                    break;
+
+                case "main-glasscards":
+                    GlassCardsSwitch.IsChecked = value != "off";
+                    break;
+
                 // 自测：theme:white / theme:dark —— 走**真实的分段选择**（设 IsChecked 触发 Checked 事件），
                 // 不是直接调 ThemeManager.Apply。前者验的是"用户点这一下"的整条链路
                 // （含 RadioButton 状态、写盘、CardShadow 重建），后者只验了一半。
@@ -725,7 +880,7 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "glass":
-                    GlassSwitch.IsChecked = value != "0";
+                    MainGlassSwitch.IsChecked = value != "0";
                     break;
 
                 case "fullscreen":
@@ -1019,7 +1174,7 @@ public partial class SettingsWindow : Window
     {
         if (!_loaded || _suppress) return;
 
-        bool on = GlassSwitch.IsChecked == true;
+        bool on = MainGlassSwitch.IsChecked == true;
         FloatWindow? f = _ctx.GetFloat();
 
         if (f is not null)

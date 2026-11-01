@@ -173,6 +173,66 @@
             </Setter>
         </Style>
 
+        <!--
+            滑块（2026-11-01，毛玻璃浓度）。
+            项目此前没有任何 Slider 样式，WPF 默认那套是 Aero2 浅色轨道 + 亮蓝拇指，
+            落在深色/白色主题上都会割裂。这里自己画：4px 细轨道 + 16px 圆形拇指，
+            颜色全部走 DynamicResource，两套主题自动适配。
+        -->
+        <Style x:Key="LevelSlider" TargetType="Slider">
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="Transparent" Height="24">
+                            <Border Height="4" CornerRadius="2" VerticalAlignment="Center"
+                                    Background="{DynamicResource BrushTrack}" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="16" Height="16">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid>
+                                                    <!-- 外圈用主题底，中间填语义色：拇指在深浅两套轨道上都看得清 -->
+                                                    <Ellipse Fill="{DynamicResource BrushBg}"
+                                                             Stroke="{DynamicResource BrushStroke}" StrokeThickness="1" />
+                                                    <Ellipse Width="8" Height="8" Fill="{DynamicResource AccentCpu}" />
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- 字段勾选。做成 16px 方块 + 勾，比 ToggleButton 更适合横排八项 -->
         <Style x:Key="FieldCheck" TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}" />
@@ -503,6 +563,74 @@
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="只影响大窗口和设置页。点一下立即生效，不用重启。悬浮窗玻璃深浅在下面「悬浮窗外观」里单独调，任务栏条则跟随任务栏实际亮度。" />
+                            </StackPanel>
+                        </Border>
+
+                        <!--
+                            毛玻璃（2026-11-01）。做法与悬浮窗那张卡不同：
+                            这里是**连续滑块 + 预设档位**（用户选的），悬浮窗是七档离散。
+                            滑块拖动时实时生效（不等松手）—— 玻璃浓度就是要边拖边看才对得快。
+                        -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="毛玻璃" Style="{StaticResource SectionTitle}" />
+                                    <ToggleButton x:Name="MainGlassSwitch" Style="{StaticResource Switch}"
+                                                  Margin="12,0,0,0" VerticalAlignment="Center"
+                                                  Checked="Glass_Changed" Unchecked="Glass_Changed" />
+                                </StackPanel>
+
+                                <Grid x:Name="GlassControls" Margin="0,14,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- 浓度滑块 + 百分比 -->
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="浓度" Style="{StaticResource RowLabel}"
+                                                   VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1" x:Name="GlassLevelSlider" Style="{StaticResource LevelSlider}"
+                                                Minimum="0" Maximum="100" Margin="12,0,10,0"
+                                                VerticalAlignment="Center"
+                                                ValueChanged="GlassLevel_Changed" />
+                                        <TextBlock Grid.Column="2" x:Name="GlassLevelText"
+                                                   Style="{StaticResource RowLabel}" Width="86"
+                                                   TextAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                    </Grid>
+
+                                    <!-- 预设档位：给"想快速回到某个熟悉的浓度"用 -->
+                                    <WrapPanel Grid.Row="1" Margin="0,12,0,0">
+                                        <Button x:Name="GlassPresetThin" Style="{StaticResource MiniButton}"
+                                                Content="很透" Tag="25" Click="GlassPreset_Click" />
+                                        <Button x:Name="GlassPresetMid" Style="{StaticResource MiniButton}"
+                                                Content="适中" Tag="60" Click="GlassPreset_Click" />
+                                        <Button x:Name="GlassPresetThick" Style="{StaticResource MiniButton}"
+                                                Content="较实" Tag="85" Click="GlassPreset_Click" />
+                                        <Button x:Name="GlassPresetFull" Style="{StaticResource MiniButton}"
+                                                Content="最实" Tag="97" Click="GlassPreset_Click" />
+                                    </WrapPanel>
+
+                                    <!-- 卡片半透开关 -->
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
+                                        <TextBlock Text="卡片也半透明" Style="{StaticResource RowLabel}"
+                                                   VerticalAlignment="Center" />
+                                        <ToggleButton x:Name="GlassCardsSwitch" Style="{StaticResource Switch}"
+                                                      Margin="12,0,0,0" VerticalAlignment="Center"
+                                                      Checked="GlassCards_Changed" Unchecked="GlassCards_Changed" />
+                                        <TextBlock x:Name="GlassCardsHint" Style="{StaticResource SectionHint}"
+                                                   Margin="12,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock x:Name="GlassHint" Style="{StaticResource SectionHint}" />
                             </StackPanel>
                         </Border>
 

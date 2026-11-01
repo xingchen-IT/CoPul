@@ -488,6 +488,11 @@ public partial class App : Application
             {
                 Config = ConfigStore.Current,
                 CurrentView = () => view,
+
+                // 大窗口毛玻璃（2026-11-01）：设置页不持主窗口 HWND，玻璃的施加必须由 App 转发。
+                // 第四个参数 persist 由设置页决定（拖动中 false、松手后 true）。
+                ApplyMainGlass = (on, level, cards, persist) => window.ApplyGlass(on, level, cards, persist),
+                GetMainGlass = () => (window.GlassEnabled, window.GlassLevel, window.GlassCards),
                 ShowView = target => ShowView(target, "settings"),
                 IsViewShown = target => IsShown(target),
                 ToggleView = ToggleViewFromSettings,
@@ -824,8 +829,18 @@ public partial class App : Application
                     Left = (vw - Math.Min(1200, vw)) / 2,
                     Top = (vh - Math.Min(500, vh)) / 2,
                     Background = boardBrush,
-                    Topmost = true,
+                    // --backdrop-behind：把背景板放到屏幕左半边、**不 Topmost**，
+                    // 让主窗口（居中偏右）压在它上面，这样才能测到"窗口下方有图案时玻璃是否模糊"。
+                    // 默认仍然 Topmost 并居中 —— 那是给悬浮窗小条用的（它需要背景就在自己正下方）。
+                    Topmost = !e.Args.Contains("--backdrop-behind"),
                 };
+                if (e.Args.Contains("--backdrop-behind"))
+                {
+                    // 靠左摆放，留出右侧给主窗口
+                    _backdrop.Width = Math.Min(700, vw);
+                    _backdrop.Left = 0;
+                    _backdrop.Top = Math.Max(0, (vh - Math.Min(500, vh)) / 2);
+                }
                 _backdrop.Show();
             }
         }
@@ -1050,6 +1065,19 @@ public partial class App : Application
         }
         else if (!hidden)
         {
+            // 自测：--main-glass [level] [--main-glass-cards] —— 大窗口毛玻璃（2026-11-01）。
+            // 复刻悬浮窗那套验收法：必须配 --backdrop checker，棋盘格才能测出"有没有真模糊"
+            // （纯色背景糊了也是同一个颜色，永远测不出）。
+            string? glassArg = ArgValue(e.Args, "--main-glass");
+            if (glassArg is not null)
+            {
+                int glevel = int.TryParse(glassArg, out int gl) ? gl : 60;
+
+                // 必须在 Show 之前把状态定好：Show 之后 Loaded 立刻会按配置施加一次，
+                // 晚一步设就是"先按配置画一帧、再被覆盖成自测值"，截图会拍到中间态。
+                window.ApplyGlass(true, glevel, e.Args.Contains("--main-glass-cards"), persist: false);
+            }
+
             window.Show();
             shownMain = true;
         }
