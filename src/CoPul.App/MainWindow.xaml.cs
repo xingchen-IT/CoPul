@@ -57,8 +57,16 @@ public partial class MainWindow : Window
     /// <summary>毛玻璃浓度 0–100（0 = 最透，100 = 最实）。</summary>
     public int GlassLevel { get; private set; } = 60;
 
-    /// <summary>卡片是否也跟着半透明。关掉时只有卡片缝与边缘能看到玻璃。</summary>
-    public bool GlassCards { get; private set; }
+    /// <summary>
+    /// 卡片不透明度 0–100（2026-11-01 从开关改成可调）。
+    /// 100 = 完全不透明（原样）；数值越小越透，背景图案越明显。
+    /// <para>
+    /// 为什么从"开关"改成"可调"：开关只有两个极端 —— 全不透明时玻璃几乎看不见（只剩卡片缝），
+    /// 全半透时文字又可能发虚。中间那档（比如 70）才是多数人真正想要的：卡片还像张卡片，
+    /// 但能看出底下有东西。
+    /// </para>
+    /// </summary>
+    public int GlassCardOpacity { get; private set; } = 75;
 
     /// <summary>当前实际生效的毛玻璃方式（诊断用，探针与 trace 会读）。</summary>
     public string GlassMode { get; private set; } = "关闭";
@@ -68,11 +76,11 @@ public partial class MainWindow : Window
     /// 分开设会让"先开玻璃、再把卡片设半透"这个瞬间画出一帧错误的样子。
     /// </summary>
     /// <param name="persist">false = 自测参数，不写用户配置。</param>
-    public void ApplyGlass(bool enabled, int level, bool cards, bool persist = true)
+    public void ApplyGlass(bool enabled, int level, int cardOpacity, bool persist = true)
     {
         GlassEnabled = enabled;
         GlassLevel = Math.Clamp(level, 0, 100);
-        GlassCards = cards;
+        GlassCardOpacity = Math.Clamp(cardOpacity, 0, 100);
 
         // 窗口还没建 HWND 时只记状态，不施加 —— 施加要等 Loaded
         // （SourceInitialized 之前 HwndTarget 未就绪，CompositionTarget 设的值会被覆盖，A-35）。
@@ -83,7 +91,7 @@ public partial class MainWindow : Window
 
         _config.GlassEnabled = enabled;
         _config.GlassLevel = GlassLevel;
-        _config.GlassCards = cards;
+        _config.GlassCardOpacity = GlassCardOpacity;
         ConfigStore.SaveCurrent();
     }
 
@@ -114,7 +122,7 @@ public partial class MainWindow : Window
             // 用 SetResourceReference 而不是直接赋值：直接赋值拿到的是"当时的画刷实例"，
             // 之后用户再切主题就不会跟着变了（这是本方案里 StaticResource 那个坑的同一形态）。
             RootShell.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "BrushBg");
-            SetCardsOpaque(true);
+            ApplyCardOpacity();
             GlassMode = "关闭";
             Interop.Trace.Log("glass-main", "clear");
             return;
@@ -135,14 +143,14 @@ public partial class MainWindow : Window
         RootShell.Background = Tint(dark ? Color.FromRgb(0x0B, 0x0E, 0x13) : Color.FromRgb(0xED, 0xF0, 0xF4),
                                     coverage);
 
-        SetCardsOpaque(!GlassCards);
+        ApplyCardOpacity();
 
         Interop.Trace.Log("glass-main",
-            $"apply level={GlassLevel} coverage={coverage:P0} cards={GlassCards} dark={dark} mode={GlassMode}");
+            $"apply level={GlassLevel} coverage={coverage:P0} cardOpacity={GlassCardOpacity} dark={dark} mode={GlassMode}");
     }
 
     /// <summary>
-    /// 卡片底：不透明（正常）或半透（玻璃模式下让卡片也透出背景）。
+    /// 按 <see cref="GlassCardOpacity"/> 设置卡片底的透明度。
     ///
     /// <para>
     /// <b>做法是覆盖本窗口 Resources 里的 <c>BrushPanel</c></b>，而不是给每张卡改样式。
@@ -153,21 +161,36 @@ public partial class MainWindow : Window
     ///
     /// <para>
     /// 比"逐张卡打标记 + 遍历视觉树改 Background"省事得多，也不会漏掉折叠后重建的卡片。
-    /// 代价是本窗口内任何引用 <c>BrushPanel</code> 的地方都会半透 —— 已确认大窗口里
+    /// 代价是本窗口内任何引用 <c>BrushPanel</c> 的地方都会跟着变 —— 已确认大窗口里
     /// 只有卡片用这个键（标题栏与滚动区各自用的是别的键），所以是安全的。
     /// </para>
+    ///
+    /// <para>
+    /// <b>不透明度是独立旋钮，不跟毛玻璃浓度绑定。</b>早先的实现让卡片 alpha 跟随浓度
+    /// （"浓度越高卡片越实"），但那样用户没法表达"窗口很透、但卡片要清楚"这种组合 ——
+    /// 而这两件事在观感上其实是正交的：浓度管的是"背景糊得多实"，卡片管的是"内容承载面多实"。
+    /// 拆成两个旋钮后，四象限都能调出来。
+    /// </para>
+    ///
+    /// <para>
+    /// 卡片关掉毛玻璃（<see cref="GlassEnabled"/>=false）时**一律回到完全不透明**：
+    /// 没有玻璃层时卡片半透只会透出窗口底色，那是一种浑浊的杂色，不是玻璃质感。
+    /// </para>
     /// </summary>
-    private void SetCardsOpaque(bool opaque)
+    private void ApplyCardOpacity()
     {
-        if (opaque)
+        // 毛玻璃没开：卡片必须实心，否则透出来的是窗口底色（脏灰），不是"玻璃"。
+        if (!GlassEnabled || GlassCardOpacity >= 100)
         {
             Resources.Remove("BrushPanel");
             return;
         }
 
-        // 卡片半透：alpha 跟随浓度，但**永远留一点底**。完全透明会让卡片只剩一圈描边，
-        // 在亮壁纸上几乎看不出形状（"九张卡消失、内容飘在桌面上"）。
-        double alpha = 0.30 + WindowGlassLarge.CoverageFor(GlassLevel) * 0.50;
+        // 线性映射：100 → 1.0、0 → 0.0。
+        // 不额外给下限：用户要的就是"能自由调"，替他保底反而违背意图。
+        // （实测完全透明的卡片只剩一圈描边，难看，但那是用户自己选的档位，
+        //  设置页在旁边标了提示。）
+        double alpha = GlassCardOpacity / 100.0;
         Resources["BrushPanel"] = Tint(
             ThemeManager.Current == AppTheme.Dark
                 ? Color.FromRgb(0x16, 0x1D, 0x26)
@@ -228,7 +251,29 @@ public partial class MainWindow : Window
         // 所以这里只记下配置，真正施加放到 Loaded 里（见下面的 EventHandler）。
         GlassEnabled = _config.GlassEnabled;
         GlassLevel = Math.Clamp(_config.GlassLevel, 0, 100);
-        GlassCards = _config.GlassCards;
+
+        // 旧配置迁移（2026-11-01）：卡片半透从布尔开关改成了 0–100 的透明度。
+        // 老配置里只有 "GlassCards": true/false，没有新字段 —— 直接读新字段会拿到默认 75，
+        // 用户的「关掉卡片半透」就等于白设了，而且不会有任何提示。
+        // 这里用旧值兜底：true → 40%（"确实想让卡片透"）、false → 100%（"不想透"）。
+        if (_config.LegacyGlassCards is bool legacy)
+        {
+            // 旧布尔 → 新百分比：true 表示"确实想让卡片透"，给 40%（明显透但还看得清）；
+            // false 表示"不想透"，给 100%（完全不透明）。
+            GlassCardOpacity = legacy ? 40 : 100;
+
+            // 立刻把迁移结果写回配置并清掉旧字段标志 —— 否则只在内存里对，
+            // 用户下次改任何一个设置、触发整份保存时，写下去的还是旧值（实测踩到：
+            // 迁移算出的 40% 被 _config 里原封不动的 75 覆盖）。
+            _config.GlassCardOpacity = GlassCardOpacity;
+            _config.LegacyGlassCards = null;
+            ConfigStore.SaveCurrent();
+            Interop.Trace.Log("glass-main", $"migrate legacy GlassCards={legacy} -> opacity={GlassCardOpacity}");
+        }
+        else
+        {
+            GlassCardOpacity = Math.Clamp(_config.GlassCardOpacity, 0, 100);
+        }
         // 用 ContentRendered 而不是 Loaded：实测 Loaded 在某些启动路径
         // （--shot 无头截图、--hidden）下并不触发，而 ContentRendered 只要真的渲染了首帧就会到。
         // 两种情况都要能用 —— 截图验收依赖它。

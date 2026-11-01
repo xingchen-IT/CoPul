@@ -66,8 +66,48 @@ public sealed class AppConfig
     /// <summary>大窗口毛玻璃浓度 0–100（0 = 最透 17% 遮盖，100 = 最实 98%）。</summary>
     public int GlassLevel { get; set; } = 60;
 
-    /// <summary>卡片是否也跟着半透。关掉时只有卡片缝与窗口边缘能看到玻璃。</summary>
-    public bool GlassCards { get; set; }
+    /// <summary>
+    /// 卡片底的不透明度 0–100（100 = 完全不透明）。与 <see cref="GlassLevel"/> 是**两个独立旋钮**：
+    /// 浓度管"背景糊得多实"，这个管"内容承载面多实"，正交可组合。
+    /// </summary>
+    public int GlassCardOpacity { get; set; } = 75;
+
+    /// <summary>
+    /// 旧版字段（2026-11-01 之前是布尔开关），**只用于迁移**，不再写入。
+    ///
+    /// <para>
+    /// 为什么保留：老配置里有 <c>"GlassCards": true</c>，去掉这个属性的话
+    /// System.Text.Json 会**静默忽略**它 —— 用户的"卡片半透"设置直接丢失、退回默认，
+    /// 而且没有任何提示。这类问题在 M2 踩过一次（ConfigStore.Save 手抄字段白名单漏同步）。
+    /// </para>
+    /// <para>
+    /// 处理方式：读的时候用它做兜底（true → 40%，false/缺省 → 默认 75%），
+    /// 写的时候<span>永不赋值</span>并把 <c>[JsonIgnore]</c> 挂上 —— 迁移完就不该再出现在文件里。
+    /// 标记为 null 表示"配置里没有这个旧字段"。
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public bool? LegacyGlassCards { get; set; }
+
+    /// <summary>
+    /// 旧字段的原始 JSON 名字。用私有属性接住 <c>GlassCards</c>，读完立刻搬到
+    /// <see cref="LegacyGlassCards"/> 并清掉，从而不会在保存时又写回旧名字。
+    /// </summary>
+    /// <remarks>
+    /// <b>必须 <c>[JsonIgnore(Condition = WhenWritingNull)]</c></b>：只写 <c>get => null</c>
+    /// 不够 —— 实测序列化仍会写出 <c>"GlassCards": null</c>，把用户的配置文件弄脏
+    /// （而且下次读回来会当成"有这个字段"）。这样只在**读到旧值**时反序列化，
+    /// 保存时完全不出现在 JSON 里。
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("GlassCards")]
+    public bool? LegacyGlassCardsRaw
+    {
+        // getter 永远给 null → 序列化时被 WhenWritingNull 跳过，旧字段不再写回。
+        // setter 接住旧值 → 搬到 LegacyGlassCards 供 MainWindow 迁移。
+        get => null;
+        set => LegacyGlassCards = value;
+    }
 
     /// <summary>玻璃主题：<c>"Light"</c> / <c>"Dark"</c>。存字符串而不是枚举——
     /// 枚举序号会在插入新值时整体错位，字符串认不出来时还能安全回退默认值。</summary>

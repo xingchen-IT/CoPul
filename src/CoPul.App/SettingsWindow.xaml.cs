@@ -34,10 +34,10 @@ internal sealed class SettingsContext
     /// 玻璃是主窗口的属性，所以由 App 把主窗口的三个方法传进来。
     /// </para>
     /// </summary>
-    public Action<bool, int, bool, bool>? ApplyMainGlass { get; init; }
+    public Action<bool, int, int, bool>? ApplyMainGlass { get; init; }
 
     /// <summary>主窗口当前的毛玻璃状态，打开设置页时用来同步开关与滑块。</summary>
-    public Func<(bool Enabled, int Level, bool Cards)>? GetMainGlass { get; init; }
+    public Func<(bool Enabled, int Level, int CardOpacity)>? GetMainGlass { get; init; }
 
     /// <summary>当前视图。切模式时用来避免"点当前模式"这种无意义切换。</summary>
     public Func<FullScreenAutoSwitch.View> CurrentView { get; init; }
@@ -339,27 +339,32 @@ public partial class SettingsWindow : Window
         Hint($"毛玻璃浓度已设为 {v:F0}（实际遮盖约 {WindowGlassLarge.CoverageFor((int)v):P0}）");
     }
 
-    /// <summary>卡片是否也跟着半透。</summary>
-    private void GlassCards_Changed(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 卡片透明度滑块（2026-11-01，从开关改成可调）。
+    /// 与玻璃浓度同一条规则：拖动中即时生效、不写盘，松手才落盘。
+    /// </summary>
+    private void GlassCardOpacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (!_loaded || _suppress) return;
-        PushGlass(persist: true);
+        if (!_loaded || _suppress || _glassSyncing) return;
+
+        UpdateGlassCardText();
+        PushGlass(persist: false);
     }
 
-    /// <summary>把三个控件的当前值推给主窗口。</summary>
+    /// <summary>把三个旋钮的当前值推给主窗口。</summary>
     private void PushGlass(bool persist)
     {
         if (_ctx.ApplyMainGlass is null) return;
 
         bool on = MainGlassSwitch.IsChecked == true;
         int level = (int)Math.Round(GlassLevelSlider.Value);
-        bool cards = GlassCardsSwitch.IsChecked == true;
+        int cardOpacity = (int)Math.Round(GlassCardSlider.Value);
 
-        _ctx.ApplyMainGlass(on, level, cards, persist);
+        _ctx.ApplyMainGlass(on, level, cardOpacity, persist);
         UpdateGlassUiState();
 
         if (persist && !on) Hint("毛玻璃已关闭，回到不透明纸面");
-        else if (persist) Hint($"毛玻璃已开启（浓度 {level}，遮盖约 {WindowGlassLarge.CoverageFor(level):P0}）");
+        else if (persist) Hint($"毛玻璃已开启（浓度 {level}，遮盖约 {WindowGlassLarge.CoverageFor(level):P0}；卡片 {cardOpacity}%）");
     }
 
     /// <summary>只在"松手"时写盘。拖动的中间值不存。</summary>
@@ -368,7 +373,7 @@ public partial class SettingsWindow : Window
         if (_ctx.ApplyMainGlass is null) return;
         _ctx.ApplyMainGlass(MainGlassSwitch.IsChecked == true,
                             (int)Math.Round(GlassLevelSlider.Value),
-                            GlassCardsSwitch.IsChecked == true,
+                            (int)Math.Round(GlassCardSlider.Value),
                             true);
     }
 
@@ -379,36 +384,50 @@ public partial class SettingsWindow : Window
         GlassControls.IsEnabled = on;
 
         int level = (int)Math.Round(GlassLevelSlider.Value);
+        int cardOpacity = (int)Math.Round(GlassCardSlider.Value);
         UpdateGlassLevelText();
+        UpdateGlassCardText();
 
-        // 半透开关的说明随情况变：浓度太低时卡片半透会让文字发虚，这是物理下限要提一句
-        GlassCardsHint.Text = !on
+        GlassStateText.Text = on ? "已开启" : "已关闭";
+
+        // 卡片透明度的说明随数值变 —— 两端都有明确的物理后果，要提前讲清楚
+        GlassCardHint.Text = !on
             ? string.Empty
-            : GlassCardsSwitch.IsChecked == true
-                ? (level < 40 ? "浓度偏低，文字可能发虚" : "卡片透出背景图案")
-                : "只有卡片缝与边缘能看到玻璃";
+            : cardOpacity >= 100
+                ? "卡片完全不透明：只有卡片缝与边缘能看到玻璃"
+                : cardOpacity <= 20
+                    ? "卡片几乎全透：内容等于直接飘在桌面上，可能难读"
+                    : level < 40 && cardOpacity <= 60
+                        ? "两者都偏低，文字可能发虚（浅色主题 + 暗壁纸时最明显）"
+                        : "卡片透出背景图案，数值越低越透";
 
         GlassHint.Text = "毛玻璃是 DWM 在窗口后方注入的一层，不依赖窗口自身的半透明 —— " +
                          "所以它能真的模糊背后的窗口与壁纸（不是单纯的半透明）。" +
-                         "浓度越高遮得越实、文字越清楚；越低越透、越能看见背景。" +
-                         "亚克力层自带约 17% 的固有底色，所以最透也到不了全透明。";
+                         "「玻璃浓度」管背景糊得多实，「卡片透明度」管内容承载面多实，两个旋钮互相独立：" +
+                         "可以窗口很透而卡片很实，也可以反过来。亚克力层自带约 17% 的固有底色，" +
+                         "所以浓度拉到 0 也到不了全透明。";
     }
 
+    /// <summary>浓度显示：数值 + 实际遮盖率（用户看到的那个百分比）。</summary>
     private void UpdateGlassLevelText()
         => GlassLevelText.Text = $"{(int)Math.Round(GlassLevelSlider.Value)}  " +
                                  $"({WindowGlassLarge.CoverageFor((int)Math.Round(GlassLevelSlider.Value)):P0})";
 
+    /// <summary>卡片透明度显示：直接给百分比（它没有"固有下限"这种换算）。</summary>
+    private void UpdateGlassCardText()
+        => GlassCardText.Text = $"{(int)Math.Round(GlassCardSlider.Value)}%";
+
     /// <summary>打开设置页时把主窗口的真实状态同步过来（可能被 --main-glass 改过）。</summary>
     private void SyncGlass()
     {
-        (bool Enabled, int Level, bool Cards) g = _ctx.GetMainGlass?.Invoke() ?? (false, 60, false);
+        (bool Enabled, int Level, int CardOpacity) g = _ctx.GetMainGlass?.Invoke() ?? (false, 60, 75);
 
         _glassSyncing = true;
         try
         {
             MainGlassSwitch.IsChecked = g.Enabled;
             GlassLevelSlider.Value = g.Level;
-            GlassCardsSwitch.IsChecked = g.Cards;
+            GlassCardSlider.Value = g.CardOpacity;
         }
         finally
         {
@@ -795,7 +814,7 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "main-glasscards":
-                    GlassCardsSwitch.IsChecked = value != "off";
+                    if (double.TryParse(value, out double gco)) GlassCardSlider.Value = gco;
                     break;
 
                 // 自测：theme:white / theme:dark —— 走**真实的分段选择**（设 IsChecked 触发 Checked 事件），

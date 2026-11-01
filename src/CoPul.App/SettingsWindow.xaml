@@ -550,9 +550,21 @@
                             属于"第一眼就该调"的东西，排在"显示哪个视图"之前。
                             只影响大窗口与设置页 —— 悬浮窗玻璃深浅、任务栏条取色各有自己的逻辑。
                         -->
+                        <!--
+                            外观（2026-11-01 合并）。主题与毛玻璃原本是两张卡 —— 它们都在描述
+                            "这东西长什么样"，分成两处要来回翻，而且「白底 + 深色玻璃」这种组合
+                            在两张卡里各调一半，很难看出整体效果。合并成一张，从上到下是
+                            主题 → 毛玻璃开关 → 浓度 → 卡片透明度，四层由粗到细。
+
+                            毛玻璃的做法与悬浮窗那张卡不同（那里是七档离散）：这里是
+                            **连续滑块 + 预设档位**。滑块拖动时实时生效（不等松手）——
+                            浓度就是要边拖边看才对得快。
+                        -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
                                 <TextBlock Text="外观" Style="{StaticResource SectionTitle}" />
+
+                                <!-- 主题 -->
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                     <RadioButton x:Name="ThemeWhite" Style="{StaticResource Segment}"
                                                  GroupName="apptheme" Content="白色" Tag="white"
@@ -563,38 +575,38 @@
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="只影响大窗口和设置页。点一下立即生效，不用重启。悬浮窗玻璃深浅在下面「悬浮窗外观」里单独调，任务栏条则跟随任务栏实际亮度。" />
-                            </StackPanel>
-                        </Border>
 
-                        <!--
-                            毛玻璃（2026-11-01）。做法与悬浮窗那张卡不同：
-                            这里是**连续滑块 + 预设档位**（用户选的），悬浮窗是七档离散。
-                            滑块拖动时实时生效（不等松手）—— 玻璃浓度就是要边拖边看才对得快。
-                        -->
-                        <Border Style="{StaticResource BlockCard}">
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="毛玻璃" Style="{StaticResource SectionTitle}" />
+                                <!-- 分隔线：把「主题」与「毛玻璃」两段视觉上切开 -->
+                                <Border Height="1" Background="{DynamicResource BrushDivider}" Margin="0,14,0,0" />
+
+                                <!-- 毛玻璃开关 -->
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <TextBlock Text="毛玻璃" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" FontSize="13"
+                                               Foreground="{DynamicResource BrushTextPrimary}" />
                                     <ToggleButton x:Name="MainGlassSwitch" Style="{StaticResource Switch}"
                                                   Margin="12,0,0,0" VerticalAlignment="Center"
                                                   Checked="Glass_Changed" Unchecked="Glass_Changed" />
+                                    <TextBlock x:Name="GlassStateText" Style="{StaticResource SectionHint}"
+                                               Margin="12,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
 
-                                <Grid x:Name="GlassControls" Margin="0,14,0,0">
+                                <Grid x:Name="GlassControls" Margin="0,12,0,0">
                                     <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
-                                    <!-- 浓度滑块 + 百分比 -->
+                                    <!-- 玻璃浓度滑块 + 百分比 -->
                                     <Grid Grid.Row="0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="浓度" Style="{StaticResource RowLabel}"
+                                        <TextBlock Grid.Column="0" Text="玻璃浓度" Style="{StaticResource RowLabel}"
                                                    VerticalAlignment="Center" />
                                         <Slider Grid.Column="1" x:Name="GlassLevelSlider" Style="{StaticResource LevelSlider}"
                                                 Minimum="0" Maximum="100" Margin="12,0,10,0"
@@ -606,8 +618,8 @@
                                                    Foreground="{DynamicResource BrushTextPrimary}" />
                                     </Grid>
 
-                                    <!-- 预设档位：给"想快速回到某个熟悉的浓度"用 -->
-                                    <WrapPanel Grid.Row="1" Margin="0,12,0,0">
+                                    <!-- 玻璃浓度预设 -->
+                                    <WrapPanel Grid.Row="1" Margin="0,8,0,0">
                                         <Button x:Name="GlassPresetThin" Style="{StaticResource MiniButton}"
                                                 Content="很透" Tag="25" Click="GlassPreset_Click" />
                                         <Button x:Name="GlassPresetMid" Style="{StaticResource MiniButton}"
@@ -618,16 +630,29 @@
                                                 Content="最实" Tag="97" Click="GlassPreset_Click" />
                                     </WrapPanel>
 
-                                    <!-- 卡片半透开关 -->
-                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
-                                        <TextBlock Text="卡片也半透明" Style="{StaticResource RowLabel}"
+                                    <!--
+                                        卡片透明度 —— 与玻璃浓度是**两个独立旋钮**（2026-11-01 用户要求改成可调）。
+                                        浓度管"背景糊得多实"，这个管"内容承载面多实"，正交可组合：
+                                        四象限都能调出来（窗口很透+卡片很实 / 窗口很实+卡片很透 …）。
+                                    -->
+                                    <Grid Grid.Row="2" Margin="0,14,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="卡片透明度" Style="{StaticResource RowLabel}"
                                                    VerticalAlignment="Center" />
-                                        <ToggleButton x:Name="GlassCardsSwitch" Style="{StaticResource Switch}"
-                                                      Margin="12,0,0,0" VerticalAlignment="Center"
-                                                      Checked="GlassCards_Changed" Unchecked="GlassCards_Changed" />
-                                        <TextBlock x:Name="GlassCardsHint" Style="{StaticResource SectionHint}"
-                                                   Margin="12,0,0,0" VerticalAlignment="Center" />
-                                    </StackPanel>
+                                        <Slider Grid.Column="1" x:Name="GlassCardSlider" Style="{StaticResource LevelSlider}"
+                                                Minimum="0" Maximum="100" Margin="12,0,10,0"
+                                                VerticalAlignment="Center"
+                                                ValueChanged="GlassCardOpacity_Changed" />
+                                        <TextBlock Grid.Column="2" x:Name="GlassCardText"
+                                                   Style="{StaticResource RowLabel}" Width="86"
+                                                   TextAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                    </Grid>
+                                    <TextBlock x:Name="GlassCardHint" Grid.Row="3" Style="{StaticResource SectionHint}" />
                                 </Grid>
 
                                 <TextBlock x:Name="GlassHint" Style="{StaticResource SectionHint}" />

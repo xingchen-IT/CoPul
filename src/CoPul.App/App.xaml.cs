@@ -491,8 +491,8 @@ public partial class App : Application
 
                 // 大窗口毛玻璃（2026-11-01）：设置页不持主窗口 HWND，玻璃的施加必须由 App 转发。
                 // 第四个参数 persist 由设置页决定（拖动中 false、松手后 true）。
-                ApplyMainGlass = (on, level, cards, persist) => window.ApplyGlass(on, level, cards, persist),
-                GetMainGlass = () => (window.GlassEnabled, window.GlassLevel, window.GlassCards),
+                ApplyMainGlass = (on, level, cardOpacity, persist) => window.ApplyGlass(on, level, cardOpacity, persist),
+                GetMainGlass = () => (window.GlassEnabled, window.GlassLevel, window.GlassCardOpacity),
                 ShowView = target => ShowView(target, "settings"),
                 IsViewShown = target => IsShown(target),
                 ToggleView = ToggleViewFromSettings,
@@ -1073,9 +1073,12 @@ public partial class App : Application
             {
                 int glevel = int.TryParse(glassArg, out int gl) ? gl : 60;
 
+                // 卡片透明度：--main-glass-card <0-100>，缺省 75。
+                int gcard = int.TryParse(ArgValue(e.Args, "--main-glass-card"), out int gc) ? gc : 75;
+
                 // 必须在 Show 之前把状态定好：Show 之后 Loaded 立刻会按配置施加一次，
                 // 晚一步设就是"先按配置画一帧、再被覆盖成自测值"，截图会拍到中间态。
-                window.ApplyGlass(true, glevel, e.Args.Contains("--main-glass-cards"), persist: false);
+                window.ApplyGlass(true, glevel, gcard, persist: false);
             }
 
             window.Show();
