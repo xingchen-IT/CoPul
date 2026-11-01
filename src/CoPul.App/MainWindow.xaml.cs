@@ -353,7 +353,24 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             SaveLayout();      // 必须在 Dispose 前：还要读 Window 的几何属性
-            _host.Dispose();
+
+            // 采集宿主的释放**必须兜底**（2026-11-01）。这里在 Closed 事件里，
+            // 它由 Window.WmDestroy 触发 —— 异常从这儿抛出去会直接穿到 WPF 的
+            // 窗口销毁逻辑，用户看到的是"关程序时弹错误框"，而且程序可能残留在进程列表里。
+            //
+            // 实测过的具体案例：精简部署缺少 LibreHardwareMonitorLib.dll 时，
+            // SampleScheduler.Dispose() -> MsrCpuProvider.Dispose() 在 JIT 期抛
+            // FileNotFound（方法体里的 try 救不了自己），一路穿到 WmDestroy。
+            // 采集层的修法见 SampleScheduler.Dispose() 的逐 Provider 兜底；
+            // 这里再加一层是因为"关窗口绝不能崩"是硬要求，多一层是廉价的。
+            try
+            {
+                _host.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Interop.Trace.Log("dispose", $"采集宿主释放失败（已忽略）：{ex.GetType().Name}: {ex.Message}");
+            }
         };
 
         // 采集在后台线程跑，不等窗口 Loaded——这样 --hidden 自测与"窗口还没画出来"的场景

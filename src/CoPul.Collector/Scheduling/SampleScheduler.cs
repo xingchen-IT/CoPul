@@ -340,7 +340,31 @@ public sealed class SampleScheduler : IDisposable
     {
         Stop();
         _stop.Dispose();
-        foreach (var p in _providers) p.Dispose();
+
+        // 每个 Provider **单独兜底**（2026-11-01 修一个真实崩溃）。
+        //
+        // 实测：跑一份缺 LibreHardwareMonitorLib.dll 的精简部署时，关窗口崩在
+        // MsrCpuProvider.Dispose()，异常一路穿到 Window.WmDestroy，
+        // 用户看到的是"关程序时弹错误框"。
+        //
+        // 为什么 MsrCpuProvider.Dispose() 内部那个 try/catch 没兜住：
+        // 异常不是发生在 try 块**执行时**，而是发生在**这个方法被 JIT 编译时** ——
+        // 编译它需要解析 IntelMsr 类型，而那个类型所在的程序集根本不存在，
+        // 于是方法还没开始执行就先抛 TypeLoad/FileNotFound，catch 来不及生效。
+        // 这类"方法体里的 try 救不了自己"的坑，只能在上层用 try 包住**调用**。
+        //
+        // 顺带收益：任何一个 Provider 释放失败都不再阻断其它 Provider 的释放。
+        foreach (var p in _providers)
+        {
+            try { p.Dispose(); }
+            catch (Exception ex)
+            {
+                // 只记 Debug 输出、不抛：这是进程退出路径，抛出只会让用户看到崩溃框。
+                // （Collector 是独立项目、不引用 App 的 Trace，这里用 Trace.WriteLine
+                //   —— 调试器下可见，生产静默，正是这条路径需要的强度。）
+                Trace.WriteLine($"[dispose] provider={p.Name} 释放失败（已忽略）：{ex.GetType().Name}: {ex.Message}");
+            }
+        }
     }
 
     private sealed class TierState
