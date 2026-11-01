@@ -587,8 +587,39 @@ public partial class App : Application
 
         TrayIcon CreateTray()
         {
-            string iconPath = Path.Combine(AppContext.BaseDirectory, "assets", "copul.ico");
+            // ---- 托盘图标选版（R-02 / R-03，2026-11-02）----
+            //
+            // 托盘图标不能只有一版。实测深色任务栏 #202022 上，深青绿方底几乎融进背景，
+            // 只剩中间一小段白线可辨 —— 用户在托盘里看到的是"一个白点"，认不出这是谁。
+            // 所以按任务栏**实际亮度**挑一份：
+            //   深色任务栏 → copul-tray-dark.ico （亮方底 + 深波形，方块自己发亮）
+            //   浅色任务栏 → copul-tray-light.ico（深方底 + 白波形，方块靠暗压出轮廓）
+            //
+            // 判定复用 Taskbar.SampleLuma（与任务栏模式取字色同一套逻辑）：
+            // 那个函数采样任务栏右侧空白、取 5 点平均 luma，拿不到时返回 -1。
+            // luma < 0（自动隐藏、整条滑出屏幕）时**默认走亮方底那一版** ——
+            // 深色壁纸是绝大多数，猜错时亮底图标至少不会消失。
+            string iconPath = ResolveTrayIcon();
             var icon = new TrayIcon(iconPath, "CoPul 芯脉");
+
+            /// 按任务栏实际亮度选托盘图标版本。
+            static string ResolveTrayIcon()
+            {
+                var assets = Path.Combine(AppContext.BaseDirectory, "assets");
+
+                double luma = Taskbar.SampleLuma(Taskbar.Find());
+                bool darkTaskbar = luma < 0 || luma <= 128;   // -1 也按"深"处理（见上）
+                string name = darkTaskbar ? "copul-tray-dark.ico" : "copul-tray-light.ico";
+                string path = Path.Combine(assets, name);
+
+                // 版本文件缺失时退回主图标 —— 宁可图标不完美，也不能托盘没图标。
+                // （绿色版被别人手动删文件、或只拷了 copul.ico 的场景都可能发生。）
+                if (!File.Exists(path)) path = Path.Combine(assets, "copul.ico");
+
+                Interop.Trace.Log("tray", $"icon: luma={(luma < 0 ? "-1" : luma.ToString("F0"))} " +
+                                          $"darkTaskbar={darkTaskbar} -> {Path.GetFileName(path)}");
+                return path;
+            }
 
             // 装没装上必须打日志：Shell_NotifyIcon 失败时返回值是 false，界面毫无提示，
             // 表现只是"托盘里没有图标"，和"图标被 Win11 收进溢出区"肉眼无法区分

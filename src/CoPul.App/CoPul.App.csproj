@@ -22,15 +22,38 @@
     <Product>CoPul 芯脉</Product>
     <AssemblyTitle>CoPul 芯脉</AssemblyTitle>
     <Version>0.1.0</Version>
-    <!-- 托盘图标同时用作 exe 图标（资源管理器里看到的就是它），由 tools/make-tray-icon.py 生成 -->
+    <!--
+      应用图标（R-01）。同时用作 exe 图标（资源管理器里看到的就是它）。
+      由 tools/make-icon.py 生成 —— 那个脚本会被旧版 make-tray-icon.py 取代，
+      现在统一一个生成器出「主图标 + 托盘深浅两版」，改设计只改一处。
+    -->
     <ApplicationIcon>assets\copul.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 托盘图标：运行时按路径加载（LoadImage），必须落到输出目录 -->
+    <!--
+      图标资产：运行时按路径加载（LoadImage），必须全部落到输出目录。
+
+      · copul.ico          R-01 主图标（exe / 快捷方式 / 关于页）
+      · copul-tray-dark.ico  R-02 深色任务栏版（亮方底 + 深波形）
+      · copul-tray-light.ico R-03 浅色任务栏版（深方底 + 白波形）
+
+      托盘为什么要两版而不是一版：实测深色任务栏 #202022 上，深方底图标几乎
+      融进背景，只剩中间一小段白线 —— 用户认不出。见 App.xaml.cs 的 ResolveTrayIcon。
+    -->
     <None Include="assets\copul.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\copul.ico</Link>
+      <Visible>false</Visible>
+    </None>
+    <None Include="assets\copul-tray-dark.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets\copul-tray-dark.ico</Link>
+      <Visible>false</Visible>
+    </None>
+    <None Include="assets\copul-tray-light.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets\copul-tray-light.ico</Link>
       <Visible>false</Visible>
     </None>
   </ItemGroup>
