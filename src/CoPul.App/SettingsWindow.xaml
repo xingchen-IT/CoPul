@@ -87,6 +87,53 @@
             </Setter>
         </Style>
 
+        <!--
+            视图开关（M4.29）。这里原来是 RadioButton + GroupName="mode" 的互斥三选一，
+            三视图可叠加之后它就成了整个程序里唯一还在表达"只能选一个"的地方。
+
+            更麻烦的是 RadioButton 的语义：点已经选中的那一项**连 Checked 都不触发**，
+            所以"再点一次收起"这条根本没地方挂。改成 ToggleButton + 实心圆点：
+            实心 = 正在显示，空心灰字 = 已收起，点一下翻一次。
+        -->
+        <Style x:Key="ViewChip" TargetType="ToggleButton">
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+            <Setter Property="Cursor" Value="Arrow" />
+            <Setter Property="ToolTipService.ShowDuration" Value="8000" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" CornerRadius="6" Padding="12,6,14,6"
+                                Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="Dot" Width="6" Height="6" Margin="0,0,8,0"
+                                         VerticalAlignment="Center" Fill="Transparent"
+                                         Stroke="{StaticResource BrushTextTertiary}" StrokeThickness="1" />
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
+                            </Trigger>
+                            <!-- 后写的覆盖先写的：悬停态不能把"已显示"的样子压回灰字 -->
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BrushStroke}" />
+                                <Setter TargetName="Dot" Property="Fill" Value="{StaticResource AccentCpu}" />
+                                <Setter TargetName="Dot" Property="Stroke" Value="{StaticResource AccentCpu}" />
+                                <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- 开关。轨道 38x20、滑块 14，够在 100% 缩放下点到（10.4 最小可点 28x28，
              这里外层 Border 加了 4 的透明边距把热区撑到 28 高）。 -->
         <Style x:Key="Switch" TargetType="ToggleButton">
@@ -437,23 +484,23 @@
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
 
-                        <!-- 显示模式 -->
+                        <!-- 显示视图（M4.29：三个开关，不再是互斥三选一） -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
-                                <TextBlock Text="显示模式" Style="{StaticResource SectionTitle}" />
+                                <TextBlock Text="显示视图" Style="{StaticResource SectionTitle}" />
                                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <RadioButton x:Name="ModeMain" Style="{StaticResource Segment}"
-                                                 GroupName="mode" Content="大窗口" Tag="main"
-                                                 Checked="Mode_Checked" />
-                                    <RadioButton x:Name="ModeFloat" Style="{StaticResource Segment}"
-                                                 GroupName="mode" Content="悬浮窗" Tag="float"
-                                                 Checked="Mode_Checked" />
-                                    <RadioButton x:Name="ModeTaskbar" Style="{StaticResource Segment}"
-                                                 GroupName="mode" Content="任务栏条" Tag="taskbar"
-                                                 Checked="Mode_Checked" />
+                                    <ToggleButton x:Name="ModeMain" Style="{StaticResource ViewChip}"
+                                                  Content="大窗口" Tag="main" Click="Mode_Clicked"
+                                                  ToolTip="点亮 = 显示，再点一次收起" />
+                                    <ToggleButton x:Name="ModeFloat" Style="{StaticResource ViewChip}"
+                                                  Content="悬浮窗" Tag="float" Click="Mode_Clicked"
+                                                  ToolTip="点亮 = 显示，再点一次收起" />
+                                    <ToggleButton x:Name="ModeTaskbar" Style="{StaticResource ViewChip}"
+                                                  Content="任务栏条" Tag="taskbar" Click="Mode_Clicked"
+                                                  ToolTip="点亮 = 显示，再点一次收起" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="三个视图共用同一份采集与配置，切换不重启采集。" />
+                                           Text="三个视图可以同时开着，各自独立开关：实心点 = 正在显示，再点一次收起。三个视图共用同一份采集与配置，开关不重启采集。" />
                             </StackPanel>
                         </Border>
 

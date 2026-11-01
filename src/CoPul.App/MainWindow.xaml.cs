@@ -380,8 +380,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 切到悬浮窗（M2）。这里只发请求，真正谁 Hide 谁 Show 由 App 决定——
+    /// 悬浮窗开关（M2 / M4.29）。这里只发请求，真正谁 Hide 谁 Show 由 App 决定——
     /// 悬浮窗需要同一份 DashboardState，自己 new 会变成两套采集。
+    ///
+    /// <para>
+    /// M4.29 起语义是 **toggle**：视图已经显示时再点一次收起。原来这里永远是 Show，
+    /// 三视图可叠加之后"已经显示"时点了等于没反应，从标题栏就再也关不掉那个窗口。
+    /// </para>
     /// </summary>
     private void Float_Click(object sender, RoutedEventArgs e)
     {
@@ -392,9 +397,10 @@ public partial class MainWindow : Window
         }
 
         FloatRequested();
+        RefreshViewToggles();   // 按钮自己已经翻过态了，立刻以真实可见性为准收回
     }
 
-    /// <summary>切到任务栏条（M3）。同样只发请求，Show/Hide 由 App 编排。</summary>
+    /// <summary>任务栏条开关（M3 / M4.29）。语义同 <see cref="Float_Click"/>：再点一次收起。</summary>
     private void Tray_Click(object sender, RoutedEventArgs e)
     {
         if (TrayRequested is null)
@@ -404,7 +410,44 @@ public partial class MainWindow : Window
         }
 
         TrayRequested();
+        RefreshViewToggles();
     }
+
+    /// <summary>
+    /// 某个视图此刻是否在显示（M4.29）。标题栏的两个开关要读**真实可见性** ——
+    /// 全屏自动切换会自己收放覆盖层，那时用户一次都没点过按钮，靠点击事件记状态必然错。
+    /// </summary>
+    internal Func<FullScreenAutoSwitch.View, bool>? IsViewShown { get; set; }
+
+    /// <summary>
+    /// 把标题栏两个开关拉到真实可见性。App 在每次 ShowView / HideView 之后调一次。
+    /// </summary>
+    public void RefreshViewToggles()
+    {
+        if (IsViewShown is null) return;
+
+        FloatToggle.IsChecked = IsViewShown(FullScreenAutoSwitch.View.Float);
+        TrayToggle.IsChecked = IsViewShown(FullScreenAutoSwitch.View.Taskbar);
+    }
+
+    /// <summary>
+    /// 自测用：强制两个视图开关的亮灭。三视图全开时主窗口会被覆盖层挡在
+    /// 截图目标之外（--shot 优先拍设置页/任务栏条/悬浮窗），普通照片永远拍不到"两个都亮"。
+    /// 与 <c>--run-state-probe</c> 同一类做法：只为把某一帧摆到镜头前。
+    /// </summary>
+    internal void ForceViewToggles(bool floatOn, bool trayOn)
+    {
+        FloatToggle.IsChecked = floatOn;
+        TrayToggle.IsChecked = trayOn;
+    }
+
+    /// <summary>自测用：把两个开关此刻的状态与前景色打出去（模板 trigger 是否真的换了色）。</summary>
+    internal string ViewToggleDiag()
+        => $"float checked={FloatToggle.IsChecked} fg={BrushHex(FloatToggle.Foreground)} " +
+           $"| tray checked={TrayToggle.IsChecked} fg={BrushHex(TrayToggle.Foreground)}";
+
+    private static string BrushHex(System.Windows.Media.Brush b)
+        => b is System.Windows.Media.SolidColorBrush s ? s.Color.ToString() : b?.ToString() ?? "(null)";
 
     /// <summary>
     /// 自测用（<c>--shot --shot-scroll 700</c>）：把内容区滚到指定偏移再截屏。

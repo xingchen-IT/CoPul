@@ -33,6 +33,19 @@ internal sealed class SettingsContext
     /// <summary>切视图。必须走 App 的 ShowView —— 那里同步状态机，直接 Show/Hide 会让全屏回落打架。</summary>
     public Action<FullScreenAutoSwitch.View> ShowView { get; init; } = _ => { };
 
+    /// <summary>
+    /// 某个视图此刻是不是真的在显示（M4.29）。三视图可叠加之后，界面上三个开关的亮灭
+    /// 必须能读出**事实**，不能靠"用户最后点了谁"去猜 —— 全屏自动切换会自己收放视图，
+    /// 那时用户一次都没点过。
+    /// </summary>
+    public Func<FullScreenAutoSwitch.View, bool> IsViewShown { get; init; } = _ => false;
+
+    /// <summary>
+    /// 点一下就翻一次那个视图（M4.29）。**以真实状态为准**，不看控件当前的 IsChecked：
+    /// 界面和事实万一不同步（托盘/标题栏/全屏自动切换都改得了），以控件为准会把状态翻反。
+    /// </summary>
+    public Action<FullScreenAutoSwitch.View> ToggleView { get; init; } = _ => { };
+
     public Func<FloatWindow?> GetFloat { get; init; } = () => null;
     public Func<TaskbarWindow?> GetTaskbar { get; init; } = () => null;
 
@@ -181,6 +194,10 @@ public partial class SettingsWindow : Window
         {
             if (_recordingHotkey) EndHotkeyRecording();
         };
+
+        // 视图不止这里能改：托盘菜单、大窗口标题栏、全屏自动切换都会动它。
+        // 重新激活时把三个开关拉回真实状态，否则用户"去托盘开一下条，回来一看开关没亮"。
+        Activated += (_, _) => SyncViewChips();
 
         _loaded = true;
     }
@@ -412,12 +429,10 @@ public partial class SettingsWindow : Window
     {
         _suppress = true;
 
-        switch (_ctx.CurrentView())
-        {
-            case FullScreenAutoSwitch.View.Float: ModeFloat.IsChecked = true; break;
-            case FullScreenAutoSwitch.View.Taskbar: ModeTaskbar.IsChecked = true; break;
-            default: ModeMain.IsChecked = true; break;
-        }
+        // 三个视图各自独立开关（M4.29）：这里不再"选一个"，而是把真实可见性一次到位。
+        // 走 SyncViewChips 而不是给某个 IsChecked 赋值 —— 否则另外两个会停在
+        // "上次的样子"，用户点开设置页看到的是一张过期的状态图。
+        SyncViewChips();
 
         // 显示字段（M4.25 合并）：与文字颜色同构，默认编辑「悬浮窗」那套。
         // 九格的勾选态由 InitFieldBar 按配置读（构造时已经建过一次），这里只把视图分段对上。
@@ -704,12 +719,58 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "mode":
-                    (value switch
                     {
-                        "float" => ModeFloat,
-                        "taskbar" => ModeTaskbar,
-                        _ => ModeMain,
-                    }).IsChecked = true;
+                        // 探针沿用旧语义「切到某视图」（幂等），**不是** toggle：
+                        // 老脚本会连发 mode:float，toggle 一次反而把它关掉。
+                        FullScreenAutoSwitch.View target = value switch
+                        {
+                            "float" => FullScreenAutoSwitch.View.Float,
+                            "taskbar" => FullScreenAutoSwitch.View.Taskbar,
+                            _ => FullScreenAutoSwitch.View.Main,
+                        };
+                        _ctx.ShowView(target);
+                        SyncViewChips();
+                        DumpViewChips();
+                    }
+                    break;
+
+                case "viewtoggle":
+                    {
+                        // M4.29：验「再点一次收起」。连喊两次 viewtoggle:float 应该
+                        // 显示 → 收起，第三次再回来。每次把三个开关的亮灭 + 真实可见性
+                        // 一起打出来，两边对不上就是这里报。
+                        FullScreenAutoSwitch.View target = value switch
+                        {
+                            "float" => FullScreenAutoSwitch.View.Float,
+                            "taskbar" => FullScreenAutoSwitch.View.Taskbar,
+                            "main" => FullScreenAutoSwitch.View.Main,
+                            _ => FullScreenAutoSwitch.View.Main,
+                        };
+                        bool before = _ctx.IsViewShown(target);
+                        _ctx.ToggleView(target);
+                        SyncViewChips();
+                        System.Console.WriteLine($"viewtoggle: {value} {before}→{_ctx.IsViewShown(target)}");
+                        DumpViewChips();
+                    }
+                    break;
+
+                case "chip":
+                    {
+                        // 真的"点一下"那个开关：WPF 会先把 IsChecked 翻过来再发 Click，
+                        // 这里照抄这个顺序再进 Mode_Clicked —— 只有这样才走得到
+                        // "点亮大窗口 → 设置页自己收起"那条分支。
+                        // viewtoggle 是绕开界面的，验不出这一层。
+                        ToggleButton chip = value switch
+                        {
+                            "float" => ModeFloat,
+                            "taskbar" => ModeTaskbar,
+                            _ => ModeMain,
+                        };
+                        chip.IsChecked = !(chip.IsChecked == true);
+                        Mode_Clicked(chip, new RoutedEventArgs());
+                        System.Console.WriteLine($"chip: {value} → 设置页 visible={IsVisible}");
+                        DumpViewChips();
+                    }
                     break;
 
                 case "capture":
@@ -834,10 +895,24 @@ public partial class SettingsWindow : Window
         if (diag && _loaded) LoadDiag();
     }
 
-    private void Mode_Checked(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 点亮 / 收起一个视图（M4.29）。
+    ///
+    /// <para>
+    /// 用 <c>Click</c> 而不是 <c>Checked/Unchecked</c>：后者在程序自己给 IsChecked 赋值时
+    /// 也会触发，<see cref="SyncViewChips"/> 每刷一次就会把三个视图各翻一遍。
+    /// Click 只在"人真的点了"时才来，正好是这里想要的语义。
+    /// </para>
+    ///
+    /// <para>
+    /// 动作本身交给 <see cref="SettingsContext.ToggleView"/>，它按**真实状态**翻 ——
+    /// 控件此刻的 IsChecked 已经被 WPF 翻过了，拿它当依据等于翻两次。
+    /// </para>
+    /// </summary>
+    private void Mode_Clicked(object sender, RoutedEventArgs e)
     {
         if (!_loaded || _suppress) return;
-        if (sender is not RadioButton { Tag: string tag }) return;
+        if (sender is not ToggleButton { Tag: string tag }) return;
 
         FullScreenAutoSwitch.View target = tag switch
         {
@@ -846,13 +921,53 @@ public partial class SettingsWindow : Window
             _ => FullScreenAutoSwitch.View.Main,
         };
 
-        if (_ctx.CurrentView() == target) return;
-        _ctx.ShowView(target);
+        bool wasShown = _ctx.IsViewShown(target);
+        _ctx.ToggleView(target);
+        SyncViewChips();
 
-        // 切回大窗口时关掉设置页：两个窗口都是 800 px 宽、都居中，会严丝合缝地重叠，
-        // 用户只会看到"点了没反应"。切到悬浮窗/任务栏条时不关 —— 那两个是边缘小窗，
-        // 用户本来就是想边看边调。
-        if (target == FullScreenAutoSwitch.View.Main) Close();
+        if (wasShown)
+        {
+            Hint(target switch
+            {
+                FullScreenAutoSwitch.View.Float => "已收起悬浮窗",
+                FullScreenAutoSwitch.View.Taskbar => "已收起任务栏条",
+                _ => "已收起大窗口",
+            });
+        }
+        else if (target == FullScreenAutoSwitch.View.Main)
+        {
+            // 大窗口 820 宽、设置页 800 宽，都是 CenterScreen —— 两个一起出现只会看到
+            // 一个"点了没反应"的错觉（M3 时期就踩过）。所以显示大窗口时把设置页收起来。
+            // 用 Hide 不用 Close：设置页的滚动位置、探针选择都还在，点 ⚙ 立刻回来。
+            Hide();
+        }
+    }
+
+    /// <summary>
+    /// 把三个开关拉到真实可见性。凡是"视图可能被别人改动"的地方都要调一次：
+    /// 打开设置页、点完开关、窗口重新激活（用户可能先去托盘点了一圈再回来）。
+    /// </summary>
+    private void SyncViewChips()
+    {
+        _suppress = true;
+
+        ModeMain.IsChecked = _ctx.IsViewShown(FullScreenAutoSwitch.View.Main);
+        ModeFloat.IsChecked = _ctx.IsViewShown(FullScreenAutoSwitch.View.Float);
+        ModeTaskbar.IsChecked = _ctx.IsViewShown(FullScreenAutoSwitch.View.Taskbar);
+
+        _suppress = false;
+    }
+
+    /// <summary>
+    /// 探针：把三个开关的亮灭与真实可见性并排打出来。两边必须一致 ——
+    /// 只打控件状态的话，"控件亮着但窗口早被全屏切换收走了"这种不同步根本看不出来。
+    /// </summary>
+    private void DumpViewChips()
+    {
+        System.Console.WriteLine(
+            $"views: main {ModeMain.IsChecked}/live={_ctx.IsViewShown(FullScreenAutoSwitch.View.Main)} " +
+            $"float {ModeFloat.IsChecked}/live={_ctx.IsViewShown(FullScreenAutoSwitch.View.Float)} " +
+            $"taskbar {ModeTaskbar.IsChecked}/live={_ctx.IsViewShown(FullScreenAutoSwitch.View.Taskbar)}");
     }
 
     // ---- 悬浮窗外观 ----

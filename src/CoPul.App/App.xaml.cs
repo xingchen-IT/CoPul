@@ -350,6 +350,10 @@ public partial class App : Application
             }
 
             Interop.Trace.Log("view", $"show {target} ← {previous} by={reason} user={userInitiated} 组合={ComboText()}");
+
+            // 标题栏的两个开关要跟着真实可见性走（M4.29）：全屏自动切换、托盘菜单、
+            // 设置页都能改视图，光靠"谁点的谁记"必然不同步。
+            window.RefreshViewToggles();
         }
 
         /// <summary>隐藏某个视图。用户亲手藏悬浮窗时顺带把来源归位（8.2）。</summary>
@@ -380,6 +384,8 @@ public partial class App : Application
             }
 
             Interop.Trace.Log("view", $"hide {target} by={reason} user={userInitiated} 组合={ComboText()}");
+
+            window.RefreshViewToggles();
         }
 
         void ToggleView(FullScreenAutoSwitch.View target, string reason)
@@ -387,6 +393,12 @@ public partial class App : Application
             if (IsShown(target)) HideView(target, reason);
             else ShowView(target, reason);
         }
+
+        // 设置页的「显示视图」开关走这条。单独包一层是因为 SettingsContext 里也有一个叫
+        // ToggleView 的成员，对象初始化器里直接写 `ToggleView = t => ToggleView(t, ...)`
+        // 左右同名的解析结果很难一眼看懂，出问题时也不好查。
+        void ToggleViewFromSettings(FullScreenAutoSwitch.View target)
+            => ToggleView(target, "settings");
 
         // ---- 一键全隐藏 / 恢复（托盘左键与全局热键，M4.26）----
         // 三视图可叠加后，"切换当前模式"没有意义了；这两个动作要的是
@@ -424,13 +436,17 @@ public partial class App : Application
             else RestoreViews(reason);
         }
 
-        // 大窗口标题栏的「切到悬浮窗」按钮走这条回调：MainWindow 不认识 FloatWindow，
+        // 大窗口标题栏的「显示 / 收起悬浮窗」开关走这条回调：MainWindow 不认识 FloatWindow，
         // 也不该认识——两者的关系由 App 接线，窗口之间不互相 new。
-        window.FloatRequested = () => ShowView(FullScreenAutoSwitch.View.Float, "main→float");
+        // M4.29 起是 toggle：已经显示时再点一次收起（原来只 Show，所以关不掉）。
+        window.FloatRequested = () => ToggleView(FullScreenAutoSwitch.View.Float, "main→float");
 
-        // 同上，「切到任务栏条」（M3）。这条让大窗口能进入任务栏模式——
+        // 同上，「显示 / 收起任务栏条」（M3）。这条让大窗口能进入任务栏模式——
         // 否则以 start-admin.vbs 启动后就永远到不了任务栏条（只能靠 --tray 启动）。
-        window.TrayRequested = () => ShowView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
+        window.TrayRequested = () => ToggleView(FullScreenAutoSwitch.View.Taskbar, "main→tray");
+
+        // 两个开关的亮灭读这里（M4.29）。
+        window.IsViewShown = target => IsShown(target);
 
         // G-08 设置页。窗口不放进三视图的切换序列 —— 它不是"监控视图"，
         // 而是叠加在任一视图上的工具窗口，所以 App 单独持有它，ShowView 不管它。
@@ -440,8 +456,13 @@ public partial class App : Application
         {
             // 已经开着就提到前面，不建第二个：两个设置页各持一份控件状态，
             // 改完这个再改那个，最后写盘的是后关的那个。
+            //
+            // M4.29：设置页现在也会被**收起来**（点亮大窗口时为了避免 800 宽对 820 宽
+            // 完全重叠，见 SettingsWindow.Mode_Clicked）。只 Activate 一个隐藏窗口
+            // 什么都不会发生 —— 用户看到的是"点了齿轮没反应"，所以先 Show。
             if (settings is { IsLoaded: true })
             {
+                if (!settings.IsVisible) settings.Show();
                 settings.Activate();
                 return;
             }
@@ -451,6 +472,8 @@ public partial class App : Application
                 Config = ConfigStore.Current,
                 CurrentView = () => view,
                 ShowView = target => ShowView(target, "settings"),
+                IsViewShown = target => IsShown(target),
+                ToggleView = ToggleViewFromSettings,
                 GetFloat = () => floating,
                 GetTaskbar = () => taskbar,
                 GetProviders = () => window.Host.Providers,
@@ -1495,6 +1518,16 @@ public partial class App : Application
                     {
                         mwState.State.ForceRunState(forcedRunState);
                         File.WriteAllText(shot + ".state.txt", forcedRunState.ToString());
+                    }
+
+                    // --view-buttons float,tray：把标题栏两个视图开关强制点亮（M4.29 验收用）。
+                    // 三视图全开时 --shot 一定先挑覆盖层当目标（设置页 > 任务栏条 > 悬浮窗），
+                    // 主窗口标题栏永远拍不到"两个都亮"的样子。
+                    if (target is MainWindow mwBtn && ArgValue(e.Args, "--view-buttons") is { } vb)
+                    {
+                        string[] on = vb.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                        mwBtn.ForceViewToggles(on.Contains("float"), on.Contains("tray"));
+                        File.WriteAllText(shot + ".buttons.txt", mwBtn.ViewToggleDiag());
                     }
 
                     SavePng(target, shot!);

@@ -58,10 +58,11 @@
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Margin="0,0,8,0">
-                    <Button Style="{StaticResource TitleBarButton}" Content="▭"
-                            ToolTip="切到悬浮窗" Click="Float_Click" />
-                    <Button Style="{StaticResource TitleBarButton}" Content="▤"
-                            ToolTip="切到任务栏条" Click="Tray_Click" />
+                    <!-- 两个视图开关（M4.29）：亮着 = 该视图在显示，再点一次收起 -->
+                    <ToggleButton x:Name="FloatToggle" Style="{StaticResource TitleBarToggle}"
+                                  Content="▭" ToolTip="显示 / 收起悬浮窗" Click="Float_Click" />
+                    <ToggleButton x:Name="TrayToggle" Style="{StaticResource TitleBarToggle}"
+                                  Content="▤" ToolTip="显示 / 收起任务栏条" Click="Tray_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="⚙"
                             ToolTip="设置" Click="Settings_Click" />
                     <Button Style="{StaticResource TitleBarButton}" Content="—"

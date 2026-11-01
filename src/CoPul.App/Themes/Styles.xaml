@@ -183,6 +183,45 @@
         </Setter>
     </Style>
 
+    <!--
+        标题栏的视图开关（M4.29）。▭ 悬浮窗 / ▤ 任务栏条原来是普通 Button + ShowView，
+        三视图可叠加之后就露馅了：视图已经显示时再点，Show 一遍等于什么都没发生 ——
+        用户据此认为"没办法单独关掉某个窗口"。
+
+        改成 ToggleButton：亮着 = 该视图正在显示，前景提成主色；再点一次收起。
+        IsChecked 由 App 在 ShowView/HideView 之后统一刷（见 MainWindow.RefreshViewToggles），
+        因为全屏自动切换也会动这两个视图，光看点击事件会不同步。
+    -->
+    <Style x:Key="TitleBarToggle" TargetType="ToggleButton">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextTertiary}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Arrow" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                            <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+                        </Trigger>
+                        <!-- 后写的覆盖先写的：悬停不能把"正在显示"压回灰字 -->
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource AccentCpu}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="TitleBarCloseButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
         <Setter Property="Template">
             <Setter.Value>
