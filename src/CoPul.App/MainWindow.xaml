@@ -25,7 +25,8 @@
             <!-- 自绘标题栏 -->
             <Grid Grid.Row="0" Background="Transparent"
                   MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
+                <!-- 缩进 12 与内容区 ScrollViewer 的 Padding 对齐：品牌字与第一张卡的左边缘同一条线 -->
+                <StackPanel Orientation="Horizontal" Margin="12,0,0,0">
                     <TextBlock Text="CoPul" Style="{StaticResource TextBrand}" />
                     <TextBlock Text="芯脉 · 实时资源监控" Style="{StaticResource TextBrandSub}" />
 
@@ -68,6 +69,11 @@
                     <Button Style="{StaticResource TitleBarCloseButton}" Content="✕"
                             ToolTip="退出" Click="Close_Click" />
                 </StackPanel>
+
+                <!-- 标题栏下沿一条分隔线（M4.28）：44px 的头部和内容区原来直接贴在一起，
+                     下面第一张卡的顶边会跟标题文字凑成"两行并排"。 -->
+                <Border Height="1" VerticalAlignment="Bottom"
+                        Background="{StaticResource BrushDivider}" />
             </Grid>
 
             <!-- 内容区 -->
@@ -101,8 +107,35 @@
                                     <controls:MetricTile DataContext="{Binding CpuPower}" />
                                 </UniformGrid>
 
-                                <TextBlock Text="{Binding CoresText}" Style="{StaticResource TextMono}"
-                                           Margin="0,12,0,0" TextWrapping="Wrap" />
+                                <!--
+                                    各核心占用（M4.28）。原先是 20 个数字用空格连成一句
+                                    （`20 1 42 1 52 1 63…`），字号一样、间隔一样，
+                                    看过去分不出这是几个核心、哪个核心忙。
+                                    现在一格一个核心：固定 32 宽 + 下方一条 2px 占用条，
+                                    条的深浅走阈值色，满载的核心自己会冒黄 / 红。
+                                -->
+                                <TextBlock Text="各核心占用率 %" Style="{StaticResource TextLabel}"
+                                           Margin="0,12,0,6"
+                                           Foreground="{StaticResource BrushTextTertiary}" />
+                                <ItemsControl ItemsSource="{Binding CoreCells}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Width="32" Margin="0,0,5,6"
+                                                        ToolTip="{Binding Index, StringFormat='核心 {0}（从 0 起）'}">
+                                                <TextBlock Text="{Binding Text}"
+                                                           Style="{StaticResource TextCoreValue}" />
+                                                <ProgressBar Style="{StaticResource MiniBar}" Height="2"
+                                                             Margin="0,3,0,0" Value="{Binding Bar, Mode=OneWay}"
+                                                             Foreground="{Binding BarBrush}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -217,7 +250,7 @@
 
                                 <!-- 量程 240：覆盖 60/120/144/165/240 Hz 全部常见刷新率。
                                      再高的帧率会平顶，好过让 240 以下的分辨率被压扁。 -->
-                                <controls:TrendChart x:Name="FpsView" Height="104" Margin="0,10,0,0"
+                                <controls:TrendChart x:Name="FpsView" Height="92" Margin="0,10,0,0"
                                                      MaxValue="240" Unit="FPS"
                                                      Visibility="{Binding FpsBlock.BodyVisibility}" />
                             </StackPanel>
@@ -251,7 +284,7 @@
                                 </StackPanel>
                             </Grid>
 
-                            <controls:TrendChart x:Name="TrendView" Height="104" Margin="0,10,0,0"
+                            <controls:TrendChart x:Name="TrendView" Height="92" Margin="0,10,0,0"
                                                  Visibility="{Binding TrendBlock.BodyVisibility}" />
                         </StackPanel>
                     </Border>
@@ -283,7 +316,7 @@
                                 </StackPanel>
                             </Grid>
 
-                            <controls:TrendChart x:Name="TempView" Height="104" Margin="0,10,0,0"
+                            <controls:TrendChart x:Name="TempView" Height="92" Margin="0,10,0,0"
                                                  MaxValue="100" Unit="°C"
                                                  Visibility="{Binding TempBlock.BodyVisibility}" />
                         </StackPanel>
@@ -509,9 +542,10 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 状态与诊断 -->
+                    <!-- 状态与诊断。M4.28：12 → 11px —— 降级原因本来就是"要看但不必先看"的信息，
+                         用正文尺寸加橙色占满两行，会把上面九张卡的努力一笔抹平 -->
                     <TextBlock Text="{Binding StatusText}" Style="{StaticResource TextBody}"
-                               Foreground="{Binding StatusBrush}" Margin="4,2,4,0"
+                               FontSize="11" Foreground="{Binding StatusBrush}" Margin="4,0,4,4"
                                TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>

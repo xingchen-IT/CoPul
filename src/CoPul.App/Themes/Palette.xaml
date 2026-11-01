@@ -8,12 +8,23 @@
         所有画刷都 Freeze 过，避免每帧刷新时产生额外开销。
     -->
 
-    <!-- 背景与结构 -->
-    <SolidColorBrush x:Key="BrushBg"           Color="#0F1216" />
-    <SolidColorBrush x:Key="BrushPanel"        Color="#151B21" />
-    <SolidColorBrush x:Key="BrushPanelHover"   Color="#1B222A" />
-    <SolidColorBrush x:Key="BrushStroke"       Color="#242C35" />
-    <SolidColorBrush x:Key="BrushTrack"        Color="#232B33" />
+    <!--
+        背景与结构（M4.28 重排层级）。
+
+        v1 的问题是窗口底 #0F1216 与卡片底 #151B21 只差 6 个色阶 —— 九张卡连成一片，
+        看起来不是"九张卡"而是"一块带缝隙的黑板"。这里把差距拉到 11 个色阶：
+        窗口底压深、卡片提亮，卡片才真正浮起来，区块边界不用靠描边去撑。
+    -->
+    <SolidColorBrush x:Key="BrushBg"           Color="#0B0E13" />
+    <SolidColorBrush x:Key="BrushPanel"        Color="#161D26" />
+    <SolidColorBrush x:Key="BrushPanelHover"   Color="#1E262F" />
+    <SolidColorBrush x:Key="BrushStroke"       Color="#232C36" />
+    <SolidColorBrush x:Key="BrushTrack"        Color="#212932" />
+
+    <!-- 卡片内的分隔线：比 BrushTrack 再淡一档，表格表头下面那条用 -->
+    <SolidColorBrush x:Key="BrushDivider"      Color="#1C242D" />
+    <!-- 图表网格线：只用来暗示量程，不能抢折线。原来的 #232B33 在卡片上是一排亮横线 -->
+    <SolidColorBrush x:Key="BrushGrid"         Color="#1A222A" />
 
     <!-- 滚动条滑块：常态只比轨道亮一档（不抢视线），悬停/拖动才提对比。
          三档都是低饱和中性灰，与 10.3「禁止霓虹色」一致。 -->

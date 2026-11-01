@@ -246,7 +246,7 @@ public partial class App : Application
         void Quit()
         {
             exiting = true;
-            Quit();
+            Shutdown();
         }
 
         // 在这里先声明、稍后再建：热键的按下回调要读 view / 走 ShowView，

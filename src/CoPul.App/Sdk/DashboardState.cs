@@ -10,6 +10,7 @@ using CoPul.Collector.Providers;
 namespace CoPul.App.Sdk;
 
 /// <summary>硬盘区块的一行。型号 / 类型 / 容量来自 <see cref="SystemInfo"/>，温度与速率每次快照刷新。</summary>
+
 public sealed class DiskRow : INotifyPropertyChanged
 {
     private string _temp = Fmt.Dash;
@@ -177,6 +178,60 @@ public static class Severity
 }
 
 /// <summary>
+/// CPU 各核心的一格（M4.28）。
+///
+/// 原来是一条 <c>CoresText</c>：20 个数字用空格连成一句，字号一样、间隔一样，
+/// 在 820 宽的窗口里看过去就是"20 1 42 1 52 1 63…"这么一坨 —— 既读不出哪个核心忙，
+/// 也看不出它们分属哪个格。拆成格子之后每个核心有固定宽度和一条细占用条，
+/// 阈值色（黄 / 红）直接落在条上，满载的核心会自己冒出来。
+/// </summary>
+public sealed class CoreCell : INotifyPropertyChanged
+{
+    private string _text = Fmt.Dash;
+    private double _bar;
+    private Level _level = Level.Muted;
+
+    public CoreCell(int index) => Index = index;
+
+    /// <summary>核心序号（从 0 起），只用于提示文字。</summary>
+    public int Index { get; }
+
+    public string Text => _text;
+    public double Bar => _bar;
+
+    public Brush BarBrush => Palette.Brush(_level switch
+    {
+        Level.Warn => "BrushWarn",
+        Level.Danger => "BrushDanger",
+        Level.Muted => "BrushTrack",       // 无数时条退成轨道色：只留槽，不留假读数
+        _ => "AccentCpu"
+    });
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>NaN 表示这个核心读不到（核心数刚变、采集器还没填满），显示 `—` 而不是 0。</summary>
+    public void Apply(double load)
+    {
+        bool known = !double.IsNaN(load);
+        string text = known ? load.ToString("F0") : Fmt.Dash;
+        double bar = known ? Math.Clamp(load, 0, 100) : 0;
+        Level level = known ? Severity.Load(load) : Level.Muted;
+
+        if (_text == text && _level == level && Math.Abs(_bar - bar) < 0.05) return;
+
+        _text = text;
+        _bar = bar;
+        _level = level;
+        Raise(nameof(Text));
+        Raise(nameof(Bar));
+        Raise(nameof(BarBrush));
+    }
+
+    private void Raise([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>
 /// 一个可折叠区块的状态（5.4「各区块标题左侧有折叠箭头，状态持久化」）。
 ///
 /// 折叠不只是把内容藏起来：<see cref="DashboardState.ApplySnapshot"/> 会跳过折叠区块的
@@ -233,7 +288,6 @@ public sealed class DashboardState : INotifyPropertyChanged
 {
     private string _cpuModel = "读取中…";
     private string _gpuModel = "读取中…";
-    private string _coresText = "";
     private string _loadAvgText = Fmt.Dash;
     private string _memHeadline = "读取中…";
     private string _memDetail = "";
@@ -569,7 +623,8 @@ public sealed class DashboardState : INotifyPropertyChanged
     // ---- 文案 ----
     public string CpuModel { get => _cpuModel; private set => Set(ref _cpuModel, value); }
     public string GpuModel { get => _gpuModel; private set => Set(ref _gpuModel, value); }
-    public string CoresText { get => _coresText; private set => Set(ref _coresText, value); }
+    /// <summary>CPU 各核心的格子。数量第一次拿到核心负载时才确定，之后只改每格的值。</summary>
+    public ObservableCollection<CoreCell> CoreCells { get; } = new();
     public string LoadAvgText { get => _loadAvgText; private set => Set(ref _loadAvgText, value); }
     public string MemHeadline { get => _memHeadline; private set => Set(ref _memHeadline, value); }
     public string MemDetail { get => _memDetail; private set => Set(ref _memDetail, value); }
@@ -855,6 +910,18 @@ public sealed class DashboardState : INotifyPropertyChanged
         FloatFps.Set(FpsValue.Value, "FPS", FpsValue.ValueBrushOnGlass, FpsValue.ValueBrush);
     }
 
+    /// <summary>
+    /// 让格子数与核心数对上，再逐格写值。**只有数量变了才动集合**——数量不变时
+    /// 只改格子里那三个属性，每拍不重新创建对象、也不触发 ItemsControl 重建。
+    /// </summary>
+    private void SyncCoreCells(double[] values)
+    {
+        while (CoreCells.Count < values.Length) CoreCells.Add(new CoreCell(CoreCells.Count));
+        while (CoreCells.Count > values.Length) CoreCells.RemoveAt(CoreCells.Count - 1);
+
+        for (int i = 0; i < values.Length; i++) CoreCells[i].Apply(values[i]);
+    }
+
     private void ApplyCpu(MetricSnapshot snap)
     {
         // ---------------- CPU ----------------
@@ -876,10 +943,9 @@ public sealed class DashboardState : INotifyPropertyChanged
             // 自测分支：什么都不写
         }
         else if (snap.TryGetSeries(MetricId.CpuCoreLoad, out var cores) && cores.IsUsable && cores.Values.Length > 0)
-            CoresText = string.Join(" ", cores.Values.Select(v =>
-                double.IsNaN(v) ? "  —" : v.ToString("F0").PadLeft(3)));
-        else
-            CoresText = "各核心占用率不可用";
+            SyncCoreCells(cores.Values);
+        else if (CoreCells.Count > 0)
+            CoreCells.Clear();      // 读不到就一格都不画，宁可空着也不留一排 `—`
 
         LoadAvgText = FormatLoadAvg(snap);
     }

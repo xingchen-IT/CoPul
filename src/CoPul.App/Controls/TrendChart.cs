@@ -72,7 +72,9 @@ public sealed class TrendChart : FrameworkElement
         // 值 → 像素。折线和刻度共用这一个映射，保证 50% 的标签正好落在 50% 的线上。
         double Y(double v) => h - Math.Clamp(v, 0, max) / max * (h - 2) - 1;
 
-        var grid = Pen(ref _gridPen, ref _gridBrush, "BrushTrack", 1.0);
+        // 网格线用 BrushGrid 而不是 BrushTrack（M4.28）：后者在卡片底上是一排能单独看见的横线，
+        // 三条线一拉，整张图先入眼的是"表格"而不是曲线。这里只留够暗示量程的浓度。
+        var grid = Pen(ref _gridPen, ref _gridBrush, "BrushGrid", 1.0);
         for (int i = 1; i <= 3; i++)
         {
             double y = Math.Round(Y(max * i / 4.0)) + 0.5;
@@ -80,7 +82,7 @@ public sealed class TrendChart : FrameworkElement
         }
 
         // 纵轴：一条竖线 + 底部的 0% 基线
-        var axis = Pen(ref _axisPen, ref _axisBrush, "BrushStroke", 1.0);
+        var axis = Pen(ref _axisPen, ref _axisBrush, "BrushDivider", 1.0);
         dc.DrawLine(axis, new Point(AxisW + 0.5, 0), new Point(AxisW + 0.5, h));
         dc.DrawLine(grid, new Point(AxisW, Math.Round(Y(0)) + 0.5), new Point(w, Math.Round(Y(0)) + 0.5));
 

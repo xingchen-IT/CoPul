@@ -36,7 +36,7 @@
 
     <Style x:Key="TextBlockTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -83,16 +83,17 @@
         <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
-        <Setter Property="Margin" Value="0,0,0,4" />
+        <Setter Property="Margin" Value="0,0,0,5" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="TextTileValue" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontNumeric}" />
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontSize" Value="25" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
         <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
-        <Setter Property="LineHeight" Value="28" />
+        <Setter Property="LineHeight" Value="29" />
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
     </Style>
 
@@ -112,20 +113,31 @@
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
-    <!-- 4px 细条：占用率这类有满量程的指标才用 -->
+    <!--
+        各核心占用格里的小数字（M4.28）。11px 等宽 + Tabular：
+        20 格并排时位数必须对齐，否则 100 和 7 会把整行推得忽宽忽窄。
+    -->
+    <Style x:Key="TextCoreValue" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+    </Style>
+
+    <!-- 4px 细条：占用率这类有满量程的指标才用。
+         M4.28 收到 3px：指标格里它只是"数值的注脚"，比数值本身显眼就本末倒置了 -->
     <Style x:Key="MiniBar" TargetType="ProgressBar">
         <Setter Property="Minimum" Value="0" />
         <Setter Property="Maximum" Value="100" />
-        <Setter Property="Height" Value="4" />
-        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="Height" Value="3" />
         <Setter Property="Background" Value="{StaticResource BrushTrack}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
-                    <Border Background="{TemplateBinding Background}" CornerRadius="2" ClipToBounds="True">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="1.5" ClipToBounds="True">
                         <Grid x:Name="PART_Track">
                             <Rectangle x:Name="PART_Indicator" HorizontalAlignment="Left"
-                                       Fill="{TemplateBinding Foreground}" RadiusX="2" RadiusY="2" />
+                                       Fill="{TemplateBinding Foreground}" RadiusX="1.5" RadiusY="1.5" />
                         </Grid>
                     </Border>
                 </ControlTemplate>
@@ -133,14 +145,15 @@
         </Setter>
     </Style>
 
-    <!-- 区块容器 -->
+    <!-- 区块容器。圆角 10 / 内边距 16,13,16,15：上下留白不对称是因为标题行本身有行高，
+         视觉上 13+行高 与 15 是对齐的；间距 10 让九张卡有呼吸但不散 -->
     <Style x:Key="BlockCard" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource BrushPanel}" />
         <Setter Property="BorderBrush" Value="{StaticResource BrushStroke}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="16,12,16,14" />
-        <Setter Property="Margin" Value="0,0,0,8" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="16,13,16,15" />
+        <Setter Property="Margin" Value="0,0,0,12" />
     </Style>
 
     <!-- 标题栏按钮：无边框、悬停浮起、关闭键悬停变红 -->

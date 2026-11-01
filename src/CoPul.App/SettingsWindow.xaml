@@ -26,7 +26,7 @@
 
         <Style x:Key="SectionTitle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -47,8 +47,14 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <!-- 分段选择（显示模式 / 缩放 / 取色）。用 RadioButton 而不是按钮组：
-             选中态由 WPF 自己维护，不需要在代码里手动复位其余几个。 -->
+        <!--
+            分段选择（显示模式 / 缩放 / 取色）。用 RadioButton 而不是按钮组：
+            选中态由 WPF 自己维护，不需要在代码里手动复位其余几个。
+
+            M4.28：选中态从"只换底色"改成"底 + 1px 描边"，最小可点高度定到 28。
+            原来选中与未选中的差别只有一档底色（#1E262F vs 透明），
+            在一排里几乎看不出来，整组看起来像四个纯文字。
+        -->
         <Style x:Key="Segment" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
             <Setter Property="FontFamily" Value="{StaticResource FontUi}" />
@@ -57,8 +63,9 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5"
-                                Padding="14,6" Margin="0,0,4,0">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                                BorderBrush="Transparent" BorderThickness="1"
+                                Padding="12,5" Margin="0,0,4,0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -67,6 +74,7 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BrushStroke}" />
                                 <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
@@ -84,6 +92,9 @@
         <Style x:Key="Switch" TargetType="ToggleButton">
             <Setter Property="Foreground" Value="{StaticResource BrushTextSecondary}" />
             <Setter Property="Cursor" Value="Arrow" />
+            <!-- 负左边距抵消模板里那 4px 透明热区：开关改成左对齐之后（M4.28），
+                 不留这一手会让它比同一列的其它控件右移 4px -->
+            <Setter Property="Margin" Value="-4,0,0,0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -218,11 +229,12 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Grid Background="Transparent">
-                            <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
-                                    Background="Transparent" />
                             <Border x:Name="Bd" Background="Transparent" Padding="18,9">
                                 <ContentPresenter VerticalAlignment="Center" />
                             </Border>
+                            <!-- 强调条写在 Bd 之后：Bd 选中时会铺一层底色，画在它前面就整根被盖掉了 -->
+                            <Border x:Name="Bar" Width="3" HorizontalAlignment="Left"
+                                    Background="Transparent" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -230,6 +242,7 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bar" Property="Background" Value="{StaticResource AccentGpu}" />
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource BrushPanelHover}" />
                                 <Setter Property="Foreground" Value="{StaticResource BrushTextPrimary}" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
                             </Trigger>
@@ -386,28 +399,37 @@
                 <Button Style="{StaticResource TitleBarCloseButton}" Content="✕"
                         ToolTip="关闭" HorizontalAlignment="Right" VerticalAlignment="Center"
                         Margin="0,0,8,0" Click="Close_Click" />
+                <!-- 与主窗口一致的头部收边线 -->
+                <Border Height="1" VerticalAlignment="Bottom"
+                        Background="{StaticResource BrushDivider}" />
             </Grid>
 
             <Grid Grid.Row="1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="168" />
+                    <ColumnDefinition Width="184" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- 左侧导航 -->
+                <!--
+                    左侧导航（M4.28）。原来版本号紧跟在两个导航项后面，
+                    下面拖着 400px 的空板 —— 一眼看过去像"还没做完的骨架"。
+                    现在把版本号 Dock 到底部，上面只留导航，空白落在语义正确的位置。
+                -->
                 <Border Grid.Column="0" Background="{StaticResource BrushPanel}"
                         BorderBrush="{StaticResource BrushStroke}" BorderThickness="0,1,1,0">
-                    <StackPanel Margin="0,10,0,0">
-                        <RadioButton x:Name="NavGeneral" Style="{StaticResource NavButton}"
-                                     Content="常规" GroupName="nav" IsChecked="True"
-                                     Tag="general" Checked="Nav_Checked" />
-                        <RadioButton x:Name="NavDiag" Style="{StaticResource NavButton}"
-                                     Content="传感器诊断" GroupName="nav"
-                                     Tag="diag" Checked="Nav_Checked" />
-
-                        <TextBlock x:Name="VersionText" Style="{StaticResource SectionHint}"
-                                   Margin="18,24,14,0" Text="版本" />
-                    </StackPanel>
+                    <DockPanel>
+                        <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom"
+                                   Style="{StaticResource SectionHint}"
+                                   Margin="18,0,16,16" Text="版本" />
+                        <StackPanel Margin="0,10,0,0">
+                            <RadioButton x:Name="NavGeneral" Style="{StaticResource NavButton}"
+                                         Content="常规" GroupName="nav" IsChecked="True"
+                                         Tag="general" Checked="Nav_Checked" />
+                            <RadioButton x:Name="NavDiag" Style="{StaticResource NavButton}"
+                                         Content="传感器诊断" GroupName="nav"
+                                         Tag="diag" Checked="Nav_Checked" />
+                        </StackPanel>
+                    </DockPanel>
                 </Border>
 
                 <!-- ===================== 常规 ===================== -->
@@ -471,16 +493,24 @@
                                 <TextBlock Text="悬浮窗外观" Style="{StaticResource SectionTitle}" />
 
                                 <Grid Margin="0,12,0,0">
-                                    <TextBlock Text="毛玻璃" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="GlassSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="毛玻璃" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="GlassSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="GlassSwitch_Toggled" Unchecked="GlassSwitch_Toggled" />
                                 </Grid>
 
                                 <Grid Margin="0,10,0,0">
-                                    <TextBlock Text="玻璃浓度" Style="{StaticResource RowLabel}" />
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                                VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="玻璃浓度" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                HorizontalAlignment="Left" VerticalAlignment="Center">
                                         <Button x:Name="LevelDown" Style="{StaticResource StepButton}"
                                                 Content="-" Click="LevelDown_Click" />
                                         <TextBlock x:Name="LevelText" Style="{StaticResource RowLabel}"
@@ -492,53 +522,68 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <TextBlock Text="排列" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="LayoutRow" Style="{StaticResource Segment}"
-                                                 GroupName="layout" Content="横向" Tag="row"
-                                                 Checked="Layout_Checked" />
-                                    <RadioButton x:Name="LayoutColumn" Style="{StaticResource Segment}"
-                                                 GroupName="layout" Content="竖向" Tag="column"
-                                                 Checked="Layout_Checked"
-                                                 ToolTip="六项上下排列，文字保持横向正立" />
-                                </StackPanel>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="排列" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="LayoutRow" Style="{StaticResource Segment}"
+                                                     GroupName="layout" Content="横向" Tag="row"
+                                                     Checked="Layout_Checked" />
+                                        <RadioButton x:Name="LayoutColumn" Style="{StaticResource Segment}"
+                                                     GroupName="layout" Content="竖向" Tag="column"
+                                                     Checked="Layout_Checked"
+                                                     ToolTip="六项上下排列，文字保持横向正立" />
+                                    </StackPanel>
+                                </Grid>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <TextBlock Text="界面缩放" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="Scale100" Style="{StaticResource Segment}"
-                                                 GroupName="scale" Content="100%" Tag="100"
-                                                 Checked="Scale_Checked" />
-                                    <RadioButton x:Name="Scale125" Style="{StaticResource Segment}"
-                                                 GroupName="scale" Content="125%" Tag="125"
-                                                 Checked="Scale_Checked" />
-                                    <RadioButton x:Name="Scale150" Style="{StaticResource Segment}"
-                                                 GroupName="scale" Content="150%" Tag="150"
-                                                 Checked="Scale_Checked" />
-                                </StackPanel>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="界面缩放" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="Scale100" Style="{StaticResource Segment}"
+                                                     GroupName="scale" Content="100%" Tag="100"
+                                                     Checked="Scale_Checked" />
+                                        <RadioButton x:Name="Scale125" Style="{StaticResource Segment}"
+                                                     GroupName="scale" Content="125%" Tag="125"
+                                                     Checked="Scale_Checked" />
+                                        <RadioButton x:Name="Scale150" Style="{StaticResource Segment}"
+                                                     GroupName="scale" Content="150%" Tag="150"
+                                                     Checked="Scale_Checked" />
+                                    </StackPanel>
+                                </Grid>
 
                                 <!--
                                     边框（M4.15）：静止时那圈描边的浓度。
                                     深色玻璃上"明显"那档在深色桌面上会显出一圈白边
                                     （实测亮度 50 vs 条内 16），所以给用户自己挑，而不是替他决定。
                                 -->
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <TextBlock Text="边框" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="EdgeNone" Style="{StaticResource Segment}"
-                                                 GroupName="edge" Content="无" Tag="none"
-                                                 Checked="Edge_Checked"
-                                                 ToolTip="静止时不描边；悬停和拖动时仍会显示" />
-                                    <RadioButton x:Name="EdgeFaint" Style="{StaticResource Segment}"
-                                                 GroupName="edge" Content="淡" Tag="faint"
-                                                 Checked="Edge_Checked"
-                                                 ToolTip="5%：能勾出四边，但不单独成线" />
-                                    <RadioButton x:Name="EdgeNormal" Style="{StaticResource Segment}"
-                                                 GroupName="edge" Content="明显" Tag="normal"
-                                                 Checked="Edge_Checked"
-                                                 ToolTip="12%：边界最清楚，深色桌面上会显白边" />
-                                </StackPanel>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="边框" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="EdgeNone" Style="{StaticResource Segment}"
+                                                     GroupName="edge" Content="无" Tag="none"
+                                                     Checked="Edge_Checked"
+                                                     ToolTip="静止时不描边；悬停和拖动时仍会显示" />
+                                        <RadioButton x:Name="EdgeFaint" Style="{StaticResource Segment}"
+                                                     GroupName="edge" Content="淡" Tag="faint"
+                                                     Checked="Edge_Checked"
+                                                     ToolTip="5%：能勾出四边，但不单独成线" />
+                                        <RadioButton x:Name="EdgeNormal" Style="{StaticResource Segment}"
+                                                     GroupName="edge" Content="明显" Tag="normal"
+                                                     Checked="Edge_Checked"
+                                                     ToolTip="12%：边界最清楚，深色桌面上会显白边" />
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
@@ -570,12 +615,11 @@
 
                                 <Grid Margin="0,6,0,0">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="108" />
                                         <ColumnDefinition Width="140" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="自定义" Style="{StaticResource RowLabel}"
-                                               Margin="0,0,12,0" />
+                                    <TextBlock Grid.Column="0" Text="自定义" Style="{StaticResource RowLabel}" />
                                     <TextBox x:Name="TextHexBox" Grid.Column="1" Style="{StaticResource Input}"
                                              MaxLength="7" KeyDown="TextHexBox_KeyDown" />
                                     <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="应用"
@@ -589,7 +633,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
 
-                                    <Border Grid.Column="0" Height="40" CornerRadius="5" Background="#0F1216"
+                                    <Border Grid.Column="0" Height="40" CornerRadius="5" Background="{StaticResource BrushBg}"
                                             BorderBrush="{StaticResource BrushStroke}" BorderThickness="1">
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <TextBlock x:Name="PreviewValueDark" Text="60 FPS" FontSize="13"
@@ -635,23 +679,35 @@
                                 <TextBlock Text="悬浮窗交互" Style="{StaticResource SectionTitle}" />
 
                                 <Grid Margin="0,12,0,0">
-                                    <TextBlock Text="锁定位置" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="FloatLockSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="锁定位置" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="FloatLockSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="FloatLockSwitch_Toggled" Unchecked="FloatLockSwitch_Toggled" />
                                 </Grid>
 
                                 <Grid Margin="0,10,0,0">
-                                    <TextBlock Text="鼠标穿透" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="FloatThroughSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="鼠标穿透" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="FloatThroughSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="FloatThroughSwitch_Toggled" Unchecked="FloatThroughSwitch_Toggled" />
                                 </Grid>
 
                                 <Grid Margin="0,10,0,0">
-                                    <TextBlock Text="始终置顶" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="FloatTopmostSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="始终置顶" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="FloatTopmostSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="FloatTopmostSwitch_Toggled" Unchecked="FloatTopmostSwitch_Toggled" />
                                 </Grid>
 
@@ -665,24 +721,33 @@
                             <StackPanel>
                                 <TextBlock Text="任务栏条" Style="{StaticResource SectionTitle}" />
 
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                    <TextBlock Text="文字取色" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="InkAuto" Style="{StaticResource Segment}"
-                                                 GroupName="ink" Content="自动" Tag="auto"
-                                                 Checked="Ink_Checked" />
-                                    <RadioButton x:Name="InkLight" Style="{StaticResource Segment}"
-                                                 GroupName="ink" Content="浅色底" Tag="light"
-                                                 Checked="Ink_Checked" />
-                                    <RadioButton x:Name="InkDark" Style="{StaticResource Segment}"
-                                                 GroupName="ink" Content="深色底" Tag="dark"
-                                                 Checked="Ink_Checked" />
-                                </StackPanel>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="文字取色" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="InkAuto" Style="{StaticResource Segment}"
+                                                     GroupName="ink" Content="自动" Tag="auto"
+                                                     Checked="Ink_Checked" />
+                                        <RadioButton x:Name="InkLight" Style="{StaticResource Segment}"
+                                                     GroupName="ink" Content="浅色底" Tag="light"
+                                                     Checked="Ink_Checked" />
+                                        <RadioButton x:Name="InkDark" Style="{StaticResource Segment}"
+                                                     GroupName="ink" Content="深色底" Tag="dark"
+                                                     Checked="Ink_Checked" />
+                                    </StackPanel>
+                                </Grid>
 
                                 <Grid Margin="0,10,0,0">
-                                    <TextBlock Text="点击穿透" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="ThroughSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="点击穿透" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="ThroughSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="ThroughSwitch_Toggled" Unchecked="ThroughSwitch_Toggled" />
                                 </Grid>
                                 <TextBlock Style="{StaticResource SectionHint}"
@@ -697,12 +762,12 @@
 
                                 <Grid Margin="0,12,0,0">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="108" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="延迟探测目标" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                               VerticalAlignment="Center" />
                                     <TextBox x:Name="PingBox" Grid.Column="1" Style="{StaticResource Input}"
                                              KeyDown="PingBox_KeyDown" />
                                     <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="应用"
@@ -717,34 +782,44 @@
                                     调快会被 floor 钳住 —— 提示里必须说清，否则用户写 5s 生效、
                                     写 0.1s 没反应会觉得是 bug。
                                 -->
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                    <TextBlock Text="刷新间隔" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="Sample500" Style="{StaticResource Segment}"
-                                                 GroupName="sampleRate" Content="0.5s" Tag="500"
-                                                 Checked="SampleRate_Checked"
-                                                 ToolTip="默认：数值最跟手，占用也最高" />
-                                    <RadioButton x:Name="Sample1000" Style="{StaticResource Segment}"
-                                                 GroupName="sampleRate" Content="1s" Tag="1000"
-                                                 Checked="SampleRate_Checked" />
-                                    <RadioButton x:Name="Sample2000" Style="{StaticResource Segment}"
-                                                 GroupName="sampleRate" Content="2s" Tag="2000"
-                                                 Checked="SampleRate_Checked" />
-                                    <RadioButton x:Name="Sample3000" Style="{StaticResource Segment}"
-                                                 GroupName="sampleRate" Content="3s" Tag="3000"
-                                                 Checked="SampleRate_Checked" />
-                                    <RadioButton x:Name="Sample5000" Style="{StaticResource Segment}"
-                                                 GroupName="sampleRate" Content="5s" Tag="5000"
-                                                 Checked="SampleRate_Checked"
-                                                 ToolTip="最省电，但数值每 5 秒才跳一次" />
-                                </StackPanel>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="刷新间隔" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="Sample500" Style="{StaticResource Segment}"
+                                                     GroupName="sampleRate" Content="0.5s" Tag="500"
+                                                     Checked="SampleRate_Checked"
+                                                     ToolTip="默认：数值最跟手，占用也最高" />
+                                        <RadioButton x:Name="Sample1000" Style="{StaticResource Segment}"
+                                                     GroupName="sampleRate" Content="1s" Tag="1000"
+                                                     Checked="SampleRate_Checked" />
+                                        <RadioButton x:Name="Sample2000" Style="{StaticResource Segment}"
+                                                     GroupName="sampleRate" Content="2s" Tag="2000"
+                                                     Checked="SampleRate_Checked" />
+                                        <RadioButton x:Name="Sample3000" Style="{StaticResource Segment}"
+                                                     GroupName="sampleRate" Content="3s" Tag="3000"
+                                                     Checked="SampleRate_Checked" />
+                                        <RadioButton x:Name="Sample5000" Style="{StaticResource Segment}"
+                                                     GroupName="sampleRate" Content="5s" Tag="5000"
+                                                     Checked="SampleRate_Checked"
+                                                     ToolTip="最省电，但数值每 5 秒才跳一次" />
+                                    </StackPanel>
+                                </Grid>
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="CPU、GPU、内存等数据多久采一次：越慢越省电，占用近乎成正比下降。实际间隔不快于各指标自身的下限（调快会被钳住），趋势图覆盖的时间也会按比例变长。" />
 
                                 <Grid Margin="0,10,0,0">
-                                    <TextBlock Text="全屏时自动隐藏" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="FullScreenSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="全屏时自动隐藏" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" />
+                                    <ToggleButton Grid.Column="1" x:Name="FullScreenSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="FullScreenSwitch_Toggled"
                                                   Unchecked="FullScreenSwitch_Toggled" />
                                 </Grid>
@@ -756,25 +831,30 @@
                                     都可能短暂"像全屏"。档位越长越稳，代价是切换反应变慢 —— 这个取舍
                                     只有"快 vs 稳"一句话，所以只给一个数，不拆成"进入/退出"两个去为难用户。
                                 -->
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <TextBlock Text="切换确认" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
-                                    <RadioButton x:Name="FsHold500" Style="{StaticResource Segment}"
-                                                 GroupName="fsHold" Content="0.5s" Tag="500"
-                                                 Checked="FsHold_Checked"
-                                                 ToolTip="反应最快，但切屏/弹窗容易被误判" />
-                                    <RadioButton x:Name="FsHold1000" Style="{StaticResource Segment}"
-                                                 GroupName="fsHold" Content="1s" Tag="1000"
-                                                 Checked="FsHold_Checked"
-                                                 ToolTip="默认：挡得住 1 秒内的切出又回来" />
-                                    <RadioButton x:Name="FsHold2000" Style="{StaticResource Segment}"
-                                                 GroupName="fsHold" Content="2s" Tag="2000"
-                                                 Checked="FsHold_Checked" />
-                                    <RadioButton x:Name="FsHold3000" Style="{StaticResource Segment}"
-                                                 GroupName="fsHold" Content="3s" Tag="3000"
-                                                 Checked="FsHold_Checked"
-                                                 ToolTip="最稳，但进游戏后要等 3 秒才切到悬浮窗" />
-                                </StackPanel>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="切换确认" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="FsHold500" Style="{StaticResource Segment}"
+                                                     GroupName="fsHold" Content="0.5s" Tag="500"
+                                                     Checked="FsHold_Checked"
+                                                     ToolTip="反应最快，但切屏/弹窗容易被误判" />
+                                        <RadioButton x:Name="FsHold1000" Style="{StaticResource Segment}"
+                                                     GroupName="fsHold" Content="1s" Tag="1000"
+                                                     Checked="FsHold_Checked"
+                                                     ToolTip="默认：挡得住 1 秒内的切出又回来" />
+                                        <RadioButton x:Name="FsHold2000" Style="{StaticResource Segment}"
+                                                     GroupName="fsHold" Content="2s" Tag="2000"
+                                                     Checked="FsHold_Checked" />
+                                        <RadioButton x:Name="FsHold3000" Style="{StaticResource Segment}"
+                                                     GroupName="fsHold" Content="3s" Tag="3000"
+                                                     Checked="FsHold_Checked"
+                                                     ToolTip="最稳，但进游戏后要等 3 秒才切到悬浮窗" />
+                                    </StackPanel>
+                                </Grid>
                                 <TextBlock Style="{StaticResource SectionHint}"
                                            Text="须连续全屏/非全屏这么久才切换：越长越不容易被切屏、弹窗带偏，代价是切换反应也慢一点。" />
                             </StackPanel>
@@ -787,12 +867,12 @@
 
                                 <Grid Margin="0,12,0,0">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="108" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="全局热键" Style="{StaticResource RowLabel}"
-                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                                               VerticalAlignment="Center" />
                                     <TextBox x:Name="HotkeyBox" Grid.Column="1" Style="{StaticResource Input}"
                                              IsReadOnly="True" IsReadOnlyCaretVisible="False" Cursor="Hand"
                                              GotKeyboardFocus="HotkeyBox_GotKeyboardFocus"
@@ -811,9 +891,14 @@
                             <StackPanel>
                                 <TextBlock Text="启动" Style="{StaticResource SectionTitle}" />
                                 <Grid Margin="0,12,0,0">
-                                    <TextBlock Text="开机自动启动" Style="{StaticResource RowLabel}" />
-                                    <ToggleButton x:Name="AutoStartSwitch" Style="{StaticResource Switch}"
-                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="开机自动启动" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" />
+                                    <ToggleButton Grid.Column="1" x:Name="AutoStartSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
                                                   Checked="AutoStartSwitch_Toggled"
                                                   Unchecked="AutoStartSwitch_Toggled" />
                                 </Grid>
@@ -848,7 +933,7 @@
                                 <DataTemplate>
                                     <Border Background="{StaticResource BrushPanel}"
                                             BorderBrush="{StaticResource BrushStroke}" BorderThickness="1"
-                                            CornerRadius="8" Padding="14,10" Margin="0,0,0,8">
+                                            CornerRadius="10" Padding="14,10" Margin="0,0,0,10">
                                         <StackPanel>
                                             <Grid>
                                                 <StackPanel Orientation="Horizontal">

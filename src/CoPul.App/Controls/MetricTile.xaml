@@ -2,18 +2,32 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Margin="0,0,12,0">
-    <!-- DataContext 是 Sdk.MetricCell，视图只绑属性，不做任何格式化 -->
-    <StackPanel>
-        <TextBlock Text="{Binding Title}" Style="{StaticResource TextTileLabel}" />
-        <StackPanel Orientation="Horizontal">
+    <!--
+        DataContext 是 Sdk.MetricCell，视图只绑属性，不做任何格式化。
+
+        M4.28：根布局从 StackPanel 换成固定行栅格。原来只有「占用率」这类格子带进度条，
+        没有条的三格底部就空了一截，四格并排时数值基线各在不同的高度上，看起来像没对齐。
+        现在第三行固定留 11px 的槽，有条件的格子往里画条、没有的也占着 —— 四格底边一行齐。
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="11" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="{Binding Title}" Style="{StaticResource TextTileLabel}" />
+        <StackPanel Grid.Row="1" Orientation="Horizontal">
             <TextBlock Text="{Binding Value}" Style="{StaticResource TextTileValue}"
                        Foreground="{Binding ValueBrush}" />
             <TextBlock Text="{Binding Unit}" Style="{StaticResource TextTileUnit}" />
         </StackPanel>
         <!-- ProgressBar.Value 默认 TwoWay，而 MetricCell.Bar 是只读的，必须显式 OneWay -->
-        <ProgressBar Style="{StaticResource MiniBar}" Value="{Binding Bar, Mode=OneWay}"
-                     Foreground="{Binding BarBrush}" Visibility="{Binding BarVisibility}" />
-        <TextBlock Text="{Binding Sub}" Style="{StaticResource TextTileSub}"
+        <ProgressBar Grid.Row="2" Style="{StaticResource MiniBar}" Value="{Binding Bar, Mode=OneWay}"
+                     Foreground="{Binding BarBrush}" Visibility="{Binding BarVisibility}"
+                     VerticalAlignment="Top" Margin="0,5,0,0" />
+        <TextBlock Grid.Row="3" Text="{Binding Sub}" Style="{StaticResource TextTileSub}"
                    Visibility="{Binding SubVisibility}" />
-    </StackPanel>
+    </Grid>
 </UserControl>
