@@ -134,6 +134,23 @@ public sealed class AppConfig
     public bool FloatClickThrough { get; set; }
 
     /// <summary>
+    /// 全屏游戏前台时自动穿透（M4.33）。默认开。
+    ///
+    /// <para>
+    /// 这是修"看不见"时带出来的真缺陷：独占全屏 / 直通翻转的游戏上，悬浮窗的**像素**
+    /// 上不了屏，但它的**命中测试**照样生效（窗口在 Z 序最上、<c>IsWindowVisible</c> 为真）。
+    /// 于是用户在游戏画面里点它所在的位置，点击被浮窗吃掉 → 前台切走 → 游戏掉出全屏。
+    /// 用户明明没看见它，却被它坑了一下。
+    /// </para>
+    ///
+    /// <para>
+    /// 与用户手动开的 <see cref="FloatClickThrough"/> 是两回事：这一项不写盘到穿透那个字段、
+    /// 不动锁定状态，前台一恢复就自动还原。
+    /// </para>
+    /// </summary>
+    public bool FloatAutoThroughFullscreen { get; set; } = true;
+
+    /// <summary>
     /// 始终置顶（M4.21）：每秒把悬浮窗提回 topmost 组最顶。默认开。
     ///
     /// <para>

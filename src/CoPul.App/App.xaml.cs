@@ -660,6 +660,10 @@ public partial class App : Application
                     // 这条是关掉它的三个出口之一（另两个是设置页与全局热键切视图）。
                     TrayMenuEntry.Item("悬浮窗可点击", "toggle:floatthrough",
                                        isChecked: !ConfigStore.Current.FloatClickThrough),
+                    // 全屏自动穿透（M4.33）：默认开。独占全屏的游戏里悬浮窗像素上不了屏，
+                    // 但点击还能被它吃掉 —— 用户看不见却一点就掉出全屏，所以默认让路。
+                    TrayMenuEntry.Item("全屏游戏自动让路", "toggle:autofloatthrough",
+                                       isChecked: ConfigStore.Current.FloatAutoThroughFullscreen),
                     TrayMenuEntry.Separator(),
                     TrayMenuEntry.Item("设置…", "settings"),
                     TrayMenuEntry.Item("开机自启", "toggle:autostart", isChecked: AutoStart.IsEnabled()),
@@ -758,6 +762,18 @@ public partial class App : Application
                         ConfigStore.SaveCurrent();
                     }
                     Interop.Trace.Log("tray", $"悬浮窗穿透 → {floatThrough}");
+                    break;
+
+                case "toggle:autofloatthrough":
+                    // 全屏自动穿透（M4.33）。默认开，这里是关掉它的出口。
+                    bool autoFs = !ConfigStore.Current.FloatAutoThroughFullscreen;
+                    if (floating is not null && floating.IsLoaded) floating.AutoThroughFullscreen = autoFs;
+                    else
+                    {
+                        ConfigStore.Current.FloatAutoThroughFullscreen = autoFs;
+                        ConfigStore.SaveCurrent();
+                    }
+                    Interop.Trace.Log("tray", $"全屏自动穿透 → {autoFs}");
                     break;
 
                 case "toggle:autostart":

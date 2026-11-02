@@ -1477,13 +1477,14 @@ public partial class SettingsWindow : Window
     /// 跑一次 <c>floatthrough:1</c> 就把用户的悬浮窗永久设成穿透，那是最难自查的一种污染
     /// （表现为"鼠标点不到悬浮窗"，用户不会想到是上次跑过探针）。
     /// </summary>
-    private (bool locked, bool through, bool topmost)? _probeInteractBackup;
+    private (bool locked, bool through, bool topmost, bool autoFs)? _probeInteractBackup;
 
     private void BeginInteractProbeBackup()
     {
         if (_probeInteractBackup is not null) return;
 
-        _probeInteractBackup = (_config.FloatLocked, _config.FloatClickThrough, _config.FloatAlwaysOnTop);
+        _probeInteractBackup = (_config.FloatLocked, _config.FloatClickThrough,
+                                _config.FloatAlwaysOnTop, _config.FloatAutoThroughFullscreen);
         Application.Current.Exit += (_, _) => RestoreInteractProbe();
     }
 
@@ -1494,6 +1495,7 @@ public partial class SettingsWindow : Window
         _config.FloatLocked = backup.locked;
         _config.FloatClickThrough = backup.through;
         _config.FloatAlwaysOnTop = backup.topmost;
+        _config.FloatAutoThroughFullscreen = backup.autoFs;
         _probeInteractBackup = null;
         ConfigStore.SaveCurrent();
     }
@@ -1851,10 +1853,35 @@ public partial class SettingsWindow : Window
         FloatLockSwitch.IsChecked = locked;
         FloatThroughSwitch.IsChecked = through;
         FloatTopmostSwitch.IsChecked = f?.AlwaysOnTop ?? _config.FloatAlwaysOnTop;
+        FloatAutoThroughSwitch.IsChecked = f?.AutoThroughFullscreen ?? _config.FloatAutoThroughFullscreen;
 
         // 穿透状态下「锁定位置」是被动结果，置灰免得用户点了没反应
         FloatLockSwitch.IsEnabled = !through;
         _suppress = false;
+    }
+
+    /// <summary>
+    /// 全屏自动穿透（M4.33）。默认开，因为它是修缺陷而不是加特性：
+    /// 独占全屏的游戏里悬浮窗像素上不了屏、点击却还能被它吃掉，用户一点就掉出全屏。
+    /// 留这个开关是为了"我就想在游戏里点它"的少数场景（比如配合录屏）。
+    /// </summary>
+    private void FloatAutoThroughSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress) return;
+
+        bool on = FloatAutoThroughSwitch.IsChecked == true;
+        FloatWindow? f = _ctx.GetFloat();
+
+        if (f is not null) f.AutoThroughFullscreen = on;
+        else
+        {
+            _config.FloatAutoThroughFullscreen = on;
+            ConfigStore.SaveCurrent();
+        }
+
+        Hint(on
+            ? "前台是铺满屏幕的游戏时，悬浮窗自动不接收鼠标（避免点一下就掉出全屏）"
+            : "全屏游戏里悬浮窗仍然可点 —— 如果你看不见它，点击会直接把游戏踢出全屏");
     }
 
     // ---- 采集与网络 ----

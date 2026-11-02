@@ -125,6 +125,7 @@ public partial class FloatWindow : Window
         _locked = config.FloatLocked;
         _lockedBeforeThrough = config.FloatLocked;
         _clickThrough = config.FloatClickThrough;
+        _autoThroughEnabled = config.FloatAutoThroughFullscreen;
         _alwaysOnTop = config.FloatAlwaysOnTop;
         _scalePercent = NormalizeScale(config.FloatScale);
         _vertical = config.FloatVertical;
@@ -195,9 +196,15 @@ public partial class FloatWindow : Window
             // 只发 LOCATIONCHANGE，而有些游戏连这个都不发（走的是渲染线程自己搬窗口）。
             // 漏一次就退化成 1Hz 兜底，用户看到的就是"游戏里悬浮窗没了，过一会儿又冒出来"。
             // 巡检本身很便宜（一次矩形比较），把周期压到 250ms 也就多几次唤醒。
-            bool fs = _alwaysOnTop && Monitors.IsFullscreenForeground(Handle, out _);
-            LogTopmostMode(fs);
-            TimeSpan want = TimeSpan.FromMilliseconds(fs ? 250 : 1000);
+            bool fs = Monitors.IsFullscreenForeground(Handle, out _);
+
+            // 全屏期间自动让路（M4.33）。这一条是独立于置顶开关的：
+            // 即使用户关掉了"始终置顶"，全屏游戏里的误点一样会掉出全屏。
+            SetAutoThrough(fs);
+
+            bool guard = fs && _alwaysOnTop;
+            LogTopmostMode(guard);
+            TimeSpan want = TimeSpan.FromMilliseconds(guard ? 250 : 1000);
             if (frameWatch.Interval != want) frameWatch.Interval = want;
         };
         frameWatch.Start();
@@ -550,6 +557,54 @@ public partial class FloatWindow : Window
     private bool _clickThrough;
     private bool _alwaysOnTop = true;
 
+    /// <summary>
+    /// 前台是全屏外部窗口时临时打开的穿透（M4.33）。
+    /// 与用户手动开的 <see cref="ClickThrough"/> 分开存：这一份不写盘、不动锁定状态，
+    /// 前台一恢复就自消 —— 否则用户重启程序会发现"我明明没开穿透，怎么拖不动了"。
+    /// </summary>
+    private bool _autoThrough;
+
+    /// <summary>全屏自动穿透的开关（设置项，见 <c>ConfigStore.FloatAutoThroughFullscreen</c>）。</summary>
+    private bool _autoThroughEnabled = true;
+
+    /// <summary>
+    /// 全屏游戏前台时自动穿透（M4.33）。
+    ///
+    /// <para>
+    /// 真机报障原话：「点游戏中悬浮窗所对的位置，游戏就掉出全屏」。
+    /// 这句话把问题定死了：窗口的**命中测试**是在生效的（否则点击会落到游戏上，游戏不会掉全屏），
+    /// 只是它的**像素**没被画出来 —— 独占全屏 / 直通翻转下 DWM 的合成结果不参与扫描输出。
+    /// 用户看不见它，却会因为点到它而丢掉全屏，所以全屏期间一律让路。
+    /// </para>
+    ///
+    /// <para>
+    /// 与手动 <see cref="ClickThrough"/> 取或、互不覆盖：手动那份要写盘、连带锁位置，
+    /// 这一份纯运行时，前台一恢复就自消。
+    /// </para>
+    /// </summary>
+    private void SetAutoThrough(bool on)
+    {
+        bool want = on && _autoThroughEnabled;
+        if (_autoThrough == want) return;
+        _autoThrough = want;
+        Trace.Log("float", want
+            ? "auto-through on（前台铺满屏 → 命中测试让路，避免点掉游戏全屏）"
+            : "auto-through off（前台恢复 → 命中测试交回自己）");
+    }
+
+    /// <summary>全屏自动穿透的开关（设置页 / 托盘切换后调用）。</summary>
+    public bool AutoThroughFullscreen
+    {
+        get => _autoThroughEnabled;
+        set
+        {
+            if (_autoThroughEnabled == value) return;
+            _autoThroughEnabled = value;
+            if (!value) SetAutoThrough(false);
+            _config.FloatAutoThroughFullscreen = value;
+        }
+    }
+
     /// <summary>打开穿透之前的锁定状态，关掉穿透时还原（见 <see cref="ClickThrough"/>）。</summary>
     private bool _lockedBeforeThrough;
 
@@ -558,7 +613,7 @@ public partial class FloatWindow : Window
     /// 所以计数用**真实命中次数**：鼠标每动一次都会来一条 <c>WM_NCHITTEST</c>。
     /// </summary>
     public string InteractDiag =>
-        $"interact: lock={_locked} through={_clickThrough} hitTestHits={_hitTestHits} " +
+        $"interact: lock={_locked} through={_clickThrough} autoFS={_autoThrough} hitTestHits={_hitTestHits} " +
         $"ontop={_alwaysOnTop}(exStyle={_exTopmost}) raiseHits={_topmostHits} reason={_lastReason} " +
         $"zhooks={(_zWatch?.HookCount ?? 0)} above=0x{_lastAbove.ToInt64():X}" +
         $" aboveOwn={_aboveOwn} fgOwn={_fgOwn} aboveNow=[{Monitors.Describe(_lastAbove)}]" +
@@ -1696,7 +1751,10 @@ public partial class FloatWindow : Window
         //
         // 代价：右键菜单也一起收不到了（消息根本不投递过来）。出口放在托盘图标、
         // 设置页和全局热键三处，缺一个都会把用户困住，见 ConfigStore.FloatClickThrough。
-        if (msg == WM_NCHITTEST && _clickThrough)
+        //
+        // _autoThrough 是同一条路、另一份来由（M4.33）：前台铺满屏时临时让路，
+        // 见 SetAutoThrough。两者取或，谁开的都算。
+        if (msg == WM_NCHITTEST && (_clickThrough || _autoThrough))
         {
             _hitTestHits++;
             handled = true;
@@ -2451,6 +2509,7 @@ public partial class FloatWindow : Window
         _config.FloatLocked = _locked;
         _config.FloatClickThrough = _clickThrough;
         _config.FloatAlwaysOnTop = _alwaysOnTop;
+        _config.FloatAutoThroughFullscreen = _autoThroughEnabled;   // 存的是开关，不是当前那次自动让路
 
         // 整张表换掉而不是逐项改：用户在设置页"全部重置"时，旧表里那些项要真的消失，
         // 只改动的几项会留下"上次的色"这种幽灵值。

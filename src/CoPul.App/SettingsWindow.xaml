@@ -933,8 +933,19 @@
                                                   Checked="FloatTopmostSwitch_Toggled" Unchecked="FloatTopmostSwitch_Toggled" />
                                 </Grid>
 
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="全屏自动穿透" Style="{StaticResource RowLabel}" />
+                                    <ToggleButton Grid.Column="1" x:Name="FloatAutoThroughSwitch" Style="{StaticResource Switch}"
+                                                  HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                  Checked="FloatAutoThroughSwitch_Toggled" Unchecked="FloatAutoThroughSwitch_Toggled" />
+                                </Grid>
+
                                 <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="穿透后悬浮窗不接收任何鼠标操作（右键菜单也会失效），关掉它的出口有三处：本页这个开关、托盘图标右键菜单、全局热键切到其他视图。开启穿透会自动锁定位置——鼠标消息根本不投递，本来也拖不动。始终置顶每秒把悬浮窗提回最顶层，能压过游戏浮层等其它置顶窗口；独占全屏的游戏不在此列。" />
+                                           Text="穿透后悬浮窗不接收任何鼠标操作（右键菜单也会失效），关掉它的出口有三处：本页这个开关、托盘图标右键菜单、全局热键切到其他视图。开启穿透会自动锁定位置——鼠标消息根本不投递，本来也拖不动。始终置顶每秒把悬浮窗提回最顶层，能压过游戏浮层等其它置顶窗口；独占全屏的游戏不在此列。全屏自动穿透：前台是铺满屏幕的游戏时临时让路（点不到它），因为这类游戏里悬浮窗的像素可能上不了屏、但点击还能被它吃掉，一点就掉出全屏；离开全屏立刻自动还原。" />
                             </StackPanel>
                         </Border>
 
