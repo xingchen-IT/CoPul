@@ -13,6 +13,8 @@ CoPul 芯脉 —— 应用图标生成器（R-01）。
   1. 只有"心电"，没有"脉"（脉络/血管）的延伸感，也没有"芯"（芯片）的暗示 ——
      放在一堆健康类 App 里认不出来。
   2. 深色方底 + 亮绿波，在**白色主题**下很跳（本项目现在默认白主题）。
+  3. （2026-11-02 第二轮追加）心电本身就是医疗语汇 —— 用户要"科技感"，
+     换的不是颜色是字形：直角方波 + PCB 过孔 + 面板倒角。详见下面「第二轮」一节。
 
 新图标的做法：
   · **一条脉冲波形 + 一条电路走线，两者交叠**，正是"波形/电路交叠"的字面实现。
@@ -67,60 +69,61 @@ TRACE = (0xFF, 0xFF, 0xFF, 200)
 TILE_RADIUS = 0.22
 
 # ---------------------------------------------------------------------------
-# 几何定义：全部用 0..1 归一化坐标，按目标尺寸缩放
+# 2026-11-02（第二轮）—— 从"心电"改成"数字方波 + 面板倒角"
 #
-# 最终版（2026-11-02）—— 干净脉冲 + 两端焊点
-# ---------------------------------------------------------------------------
-# 前四版的经验（全部实测截图对比过）：
-#   1. 把"波形"与"电路走线"当两套图形叠加 → 杂乱，像"心电图旁边又画了几根线"
-#   2. 改成一条连续路径（走线→脉冲→走线）→ 结构对了，但分段线宽在斜线
-#      段上必然粘连：R 峰与 S 谷的 x 间距仅 ~0.05，脉冲段一加粗就糊成一团
-#   3. 用矩形距离场求尖角 → 斜线段被沿坐标轴平切，脉冲方波化
-#   4. 修成沿法向的平头方笔 → 尖角对了，但"暧昧的粗线段"问题依旧
+# 用户要求"科技感"。回头看得失，问题不在配色，在**字形语汇**：
+# 平滑的心电 QRS 曲线是健康/医疗 App 的通用符号，越画得标准越像体检软件。
+# 科技感来自三样东西，都是心电不具备的：
+#   1. **直角** —— 方波的上升沿/平台/下降沿全是 90°
+#   2. **阶跃** —— "信号在高/低两个电平之间跳"，这是数字电路的语言
+#   3. **过孔** —— 两端用圆点（via）而不是方块焊盘，才是 PCB 的写法
 #
-# 结论：**分段线宽这个维度本身要砍掉**。线宽一均匀，粘连问题从根上消失，
-# 尖峰完全靠几何角度表达（角度够尖，细线也像脉冲；角度不尖，粗线只会更糊）。
+# 另一层是形体：右上角铺一块 16% 提亮的 45° 三角面，读起来是金属件的**倒角高光**。
+# 试过两个失败的变体（都出过对照图，见 docs/icon-lab/）：
+#   · 把这个三角**挖空** → 轮廓上多出一道不属于砖面的直边，像"折了角的纸"
+#   · 四角画取景括号 / 内缩一圈细线 → 一个像裁切标记，一个像"边框画了两遍"
+# 亮面版之所以成立，是因为**轮廓仍然是完整的圆角方块**，变化只发生在明度上。
 #
-# 那"芯"从哪来？不是靠走线，而是靠两个更省的元素：
-#   · **圆角方底** —— 现代应用的容器形态，本身就是"芯片/面板"的语义
-#   · **两端焊点** —— PCB 最小的视觉语素（一颗焊盘），放两个在波形两端，
-#     "这是一条走在线路板上的信号"立刻成立，且不会造成任何杂乱
-#
-# 这样在 16px 下：方底是纯色块、波形是 3-4 段折线、焊点退化成 2 个像素点 ——
-# 三层全部保得住，这是图标能认出来的最低要求。
+# 配色也测过四档（brand 深青 / deepspace 深空蓝 / graphite 石墨 / steel 钢灰）。
+# graphite 与 steel 在**深色任务栏**上整体溶解，只剩一圈淡边 —— 和 R-02 分深浅两版
+# 是同一个坑。所以主图标继续用品牌深青。
 # ---------------------------------------------------------------------------
 
-# 脉冲波形主体。均匀线宽。角度按"标准心电 QRS"取：
-# 基线 → R 峰（陡）→ S 谷（更深）→ 回基线。
-# 峰的 x 半宽 0.085、y 跨度 0.42 → 斜率约 2.8:1，够陡；
-# 谷的 x 半宽 0.085、y 跨度 0.30 → 略缓，与峰形成不对称（真实 QRS 就不对称）。
-WAVE = [
-    (0.255, 0.545),      # 基线左端（焊点位置）
-    (0.395, 0.545),
-    (0.480, 0.155),      # R：主峰
-    (0.565, 0.775),      # S：主谷
-    (0.650, 0.545),      # 回基线
-    (0.745, 0.545),      # 基线右端（焊点位置）
+# 一轮完整方波：低位平台 → 上升沿 → 高位平台 → 下降沿（过冲）→ 深位平台 → 回升
+SQUARE = [
+    (0.185, 0.585),
+    (0.325, 0.585),      # 低位平台
+    (0.325, 0.315),      # 上升沿
+    (0.450, 0.315),      # 高位平台
+    (0.450, 0.740),      # 下降沿（越过基线，形成负脉冲）
+    (0.575, 0.740),      # 深位平台
+    (0.575, 0.585),      # 回基线
+    (0.815, 0.585),      # 收尾低位平台
 ]
 
-# 小尺寸简化：去掉基线的两端压平段，让峰谷更陡、更占面积。
-# 16px 下 6 个点已经能保住"一峰一谷"，不需要再简化。
-WAVE_SMALL = [
-    (0.20, 0.545),
-    (0.375, 0.545),
-    (0.485, 0.135),      # 峰更高
-    (0.585, 0.815),      # 谷更深
-    (0.690, 0.545),
-    (0.820, 0.545),
+# 小尺寸：平台段相对更长、竖段更短，16px 下才不会糊成一块
+SQUARE_SMALL = [
+    (0.195, 0.590),
+    (0.350, 0.590),
+    (0.350, 0.300),
+    (0.480, 0.300),
+    (0.480, 0.755),
+    (0.610, 0.755),
+    (0.610, 0.590),
+    (0.805, 0.590),
 ]
 
-# 线宽（归一化）。均匀一档，不再按段区分 —— 这是本次设计的核心简化。
-STROKE = 0.072
-STROKE_SMALL = 0.118          # 小尺寸相对更粗，否则 16px 下的线不足 1px
+# 线宽（归一化）。均匀一档 —— 分段的粗细在斜线/竖线交界处必然粘连（前四版的坑）。
+STROKE = 0.078
+STROKE_SMALL = 0.125
 
-# 两端焊点：正方形边长（归一化）+ 位置（取 WAVE 首末点）
-PAD_SIZE = 0.105
-PAD_SIZE_SMALL = 0.140
+# 两端过孔：半径（归一化）。圆点，不是旧版的方块焊盘。
+VIA_R = 0.062
+VIA_R_SMALL = 0.080
+
+# 右上角倒角面：三角区大小（占边长）与提亮比例
+FACET_K = 0.42
+FACET_T = 0.16
 
 # 母版超采样：先按 grid × SS 采样，再盒式降采样到 grid。
 MASTER = 256
@@ -166,26 +169,35 @@ def scale_pts(pts, size):
 # 渲染：超采样母版 → 盒式降采样
 # ---------------------------------------------------------------------------
 
+def blend(a, b, t):
+    """按比例线性混两个 RGB，返回 RGB（不带 alpha）。"""
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
 def render_master(small=False, dark=False):
     """渲染一张 MASTER×MASTER 的 RGBA 浮点缓冲（按 SS 超采样后平均）。
 
-    small=True  用 WAVE_SMALL（更陡、更占面积），否则用 WAVE。两者都是均匀线宽。
+    small=True  用 SQUARE_SMALL（平台更长、竖段更短），否则用 SQUARE。
     dark=True   用 R-02 那套亮方底 + 深波形（深色任务栏专用）。
     """
     tile = TILE_DARK if dark else TILE
     tile_rim = TILE_DARK_RIM if dark else TILE_RIM
     glyph = GLYPH_DARK if dark else GLYPH
+    # 倒角面：往字色方向提亮 16%（深色托盘版是亮方底，于是自动变成"压暗"）
+    facet = blend(tile, glyph, FACET_T)
     size = MASTER
     n = size * SS
     samples = [0.0] * (size * size * 4)
 
-    wave = scale_pts(WAVE_SMALL if small else WAVE, size)
+    wave = scale_pts(SQUARE_SMALL if small else SQUARE, size)
     stroke = (STROKE_SMALL if small else STROKE) * size
     half = stroke / 2.0
-    pad = (PAD_SIZE_SMALL if small else PAD_SIZE) * size
+    via = (VIA_R_SMALL if small else VIA_R) * size
+    facet_k = FACET_K * size
 
-    # 焊点：取波形首末点为中心的正方形
-    pads = [(wave[0][0], wave[0][1]), (wave[-1][0], wave[-1][1])]
+    xs = [p[0] for p in wave]
+    ys = [p[1] for p in wave]
+    box = (min(xs) - half, min(ys) - half, max(xs) + half, max(ys) + half)
 
     rim_w = max(1.0, size * 0.012)
     radius = TILE_RADIUS * size
@@ -198,41 +210,40 @@ def render_master(small=False, dark=False):
         for sx in range(n):
             px = (sx + 0.5) * step
 
-            if rounded_rect_cov(px, py, size, radius) <= 0:
+            d = rounded_rect_cov(px, py, size, radius)
+            if d <= 0:
                 continue
 
-            r, g, b, a = tile
-            if rounded_rect_cov(px, py, size, radius) <= rim_w:
+            if d <= rim_w:
                 r, g, b, _ = tile_rim
+            elif (size - px) + py < facet_k:
+                r, g, b = facet
+            else:
+                r, g, b, _ = tile
 
-            # ---- 脉冲波形：均匀线宽，平头方笔（沿线段法向切）----
+            # ---- 方波：到折线的距离（均匀线宽）+ 顶点补方（保证转角是 90° 的方角）----
             hit = False
-            for si in range(len(wave) - 1):
-                ax, ay = wave[si]
-                bx, by = wave[si + 1]
-                dx, dy = bx - ax, by - ay
-                seg_len = math.hypot(dx, dy)
-                if seg_len < 1e-9:
-                    continue
-                ux, uy = dx / seg_len, dy / seg_len
-                rx, ry = px - ax, py - ay
-                u = (rx * ux + ry * uy) / seg_len
-                v = abs(rx * (-uy) + ry * ux)
-                # u 两端各外扩 10%：相邻段在尖角处轻微重叠，不留缺口
-                if v <= half and -0.10 <= u <= 1.10:
-                    hit = True
-                    break
+            if box[0] <= px <= box[2] and box[1] <= py <= box[3]:
+                for si in range(len(wave) - 1):
+                    if seg_dist(px, py, wave[si][0], wave[si][1],
+                                wave[si + 1][0], wave[si + 1][1]) <= half:
+                        hit = True
+                        break
+                if not hit:
+                    for cx, cy in wave:
+                        if abs(px - cx) <= half and abs(py - cy) <= half:
+                            hit = True
+                            break
 
-            # ---- 两端焊点：小方块（轴对齐，不随线段角度旋转）----
+            # ---- 两端过孔：圆点（PCB 的 via，不是焊盘方块）----
             if not hit:
-                for cx, cy in pads:
-                    if abs(px - cx) <= pad / 2.0 and abs(py - cy) <= pad / 2.0:
+                for cx, cy in (wave[0], wave[-1]):
+                    if (px - cx) ** 2 + (py - cy) ** 2 <= via * via:
                         hit = True
                         break
 
             if hit:
-                gr, gg, gb, _ = glyph
-                r, g, b = gr, gg, gb
+                r, g, b, _ = glyph
 
             i = ((sy // SS) * size + (sx // SS)) * 4
             samples[i]     += r * inv
@@ -367,7 +378,7 @@ def main():
     print(f'渲染大尺寸母版 {MASTER}x{MASTER}（{SS}x 超采样 = {MASTER*SS}x{MASTER*SS} 采样）...')
     master = render_master(small=False)
 
-    print(f'渲染小尺寸母版 {MASTER}x{MASTER}（简化几何 PATH_SMALL）...')
+    print(f'渲染小尺寸母版 {MASTER}x{MASTER}（简化几何 SQUARE_SMALL）...')
     master_small = render_master(small=True)
 
     # 尺寸分界：<= 24 用简化几何的母版，其余用完整几何。
