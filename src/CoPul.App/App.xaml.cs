@@ -2070,6 +2070,13 @@ public partial class App : Application
         long wall0 = 0;
         long snap0 = 0;
 
+        // 渲染计数同样要取**窗口内的增量**（M4.35）：ApplyCount / ApplyTotalMs / LayoutTotalMs
+        // 都是进程启动以来的累计值，直接打印会把 warmup 那 10 次也算进平均 ——
+        // 而 warmup 的头几帧带着首次布局与 JIT，量出来必然偏大。
+        // `sample` 行早就用 delta 了，`frames` 行漏了，两边口径必须一致。
+        long apply0 = 0;
+        double applyMs0 = 0, layoutMs0 = 0;
+
         // 中途翻档（M4.24）：记录翻档那一刻的墙钟与快照数，结尾据此算前后两段的实测间隔。
         // 只翻一次 —— 翻多次会让"哪一段对应哪个档位"变成要对齐时间戳的麻烦事。
         long flipWallTs = 0;
@@ -2089,6 +2096,9 @@ public partial class App : Application
                 cpu0 = process.TotalProcessorTime;
                 wall0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 snap0 = window.Host.SnapshotCount;
+                apply0 = window.ApplyCount;
+                applyMs0 = window.ApplyTotalMs;
+                layoutMs0 = window.LayoutTotalMs;
 
                 foreach (System.Diagnostics.ProcessThread t in process.Threads)
                 {
@@ -2119,6 +2129,11 @@ public partial class App : Application
             double single = cpuMs / wallMs * 100.0;
             double machine = single / Environment.ProcessorCount;
 
+            // 窗口内的渲染增量（见 apply0 的注释）：warmup 期一律不计入平均。
+            long frames = window.ApplyCount - apply0;
+            double applyMs = window.ApplyTotalMs - applyMs0;
+            double layoutMs = window.LayoutTotalMs - layoutMs0;
+
             var lines = new List<string>
             {
                 $"time        : {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
@@ -2133,8 +2148,8 @@ public partial class App : Application
                 // 渲染档位：2 = 硬件加速，0/1 = 软件渲染（远程桌面或驱动异常时 WPF 会退到这里，
                 // 那时 CPU 高是环境问题，不是采集器的问题）
                 $"render tier : {RenderCapability.Tier >> 16}",
-                $"frames      : {window.ApplyCount}  平均 ApplySnapshot {SafeAvg(window.ApplyTotalMs, window.ApplyCount):F3} ms" +
-                $"  平均 Layout {SafeAvg(window.LayoutTotalMs, window.ApplyCount):F3} ms",
+                $"frames      : {frames}  平均 ApplySnapshot {SafeAvg(applyMs, frames):F3} ms" +
+                $"  平均 Layout {SafeAvg(layoutMs, frames):F3} ms",
                 // D04 的 10s 刷新：刷新次数 vs 变化次数。60s 窗口下应该刷新 5-6 次，
                 // 变化 0 次是正常的（磁盘使用率一秒内不可能跳过一个整数百分点）。
                 // 数据刷新（M4.24）：档位 + 实测间隔。档位改了但实测没跟着变，
