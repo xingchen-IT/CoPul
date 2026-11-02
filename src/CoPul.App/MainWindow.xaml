@@ -322,7 +322,7 @@
                             </Grid>
 
                             <controls:TrendChart x:Name="TempView" Height="92" Margin="0,10,0,0"
-                                                 MaxValue="100" Unit="°C"
+                                                 MaxValue="100" Unit="℃"
                                                  Visibility="{Binding TempBlock.BodyVisibility}" />
                         </StackPanel>
                     </Border>

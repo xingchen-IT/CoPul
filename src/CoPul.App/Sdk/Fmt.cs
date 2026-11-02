@@ -10,6 +10,13 @@ internal static class Fmt
 {
     public const string Dash = "—";
 
+    /// <summary>
+    /// 摄氏度单位（M4.34）。用单字符 <c>℃</c>(U+2103) 而不是 <c>°C</c>：
+    /// 任务栏与悬浮窗的格子是窄条里的定尺排版，两字符的 <c>°C</c> 会把整格撑宽，
+    /// 而 <c>℃</c> 只有一个字宽、与「%」同宽，视觉上就是一列数字的尾巴。
+    /// </summary>
+    public const string TempUnit = "℃";
+
     public static string Pct(double v) => v.ToString("F0", CultureInfo.InvariantCulture);
 
     public static string Temp(double v) => v.ToString("F0", CultureInfo.InvariantCulture);

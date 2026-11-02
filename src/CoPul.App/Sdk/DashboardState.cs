@@ -50,7 +50,7 @@ public sealed class DiskRow : INotifyPropertyChanged
 
     public void SetTemp(double celsius)
     {
-        string text = $"{celsius:F0}°C";
+        string text = $"{celsius:F0}{Fmt.TempUnit}";
         var level = Severity.Temp(celsius);
         if (_temp == text && _level == level) return;
 
@@ -303,12 +303,12 @@ public sealed class DashboardState : INotifyPropertyChanged
     public DashboardState()
     {
         CpuLoad = new MetricCell("占用率", "%", "AccentCpu");
-        CpuTemp = new MetricCell("封装温度", "°C", "AccentCpu");
+        CpuTemp = new MetricCell("封装温度", Fmt.TempUnit, "AccentCpu");
         CpuClock = new MetricCell("核心频率", "GHz", "AccentCpu");
         CpuPower = new MetricCell("封装功耗", "W", "AccentPower");
 
         GpuLoad = new MetricCell("占用率", "%", "AccentGpu");
-        GpuTemp = new MetricCell("核心温度", "°C", "AccentGpu");
+        GpuTemp = new MetricCell("核心温度", Fmt.TempUnit, "AccentGpu");
         GpuPower = new MetricCell("板卡功耗", "W", "AccentPower");
         GpuMem = new MetricCell("显存", "GB", "AccentVram");
         GpuClock = new MetricCell("核心频率", "MHz", "AccentGpu");
@@ -656,7 +656,7 @@ public sealed class DashboardState : INotifyPropertyChanged
     public string TrendSubtitle { get; } = "近 60 秒 · 0–100%";
 
     /// <summary>温度图副标题。温度要管理员权限，读不到时整张图是空的，先说清楚。</summary>
-    public string TempSubtitle { get; } = "近 60 秒 · 0–100°C · 需管理员";
+    public string TempSubtitle { get; } = "近 60 秒 · 0–100℃ · 需管理员";
 
     public string StatusText { get => _statusText; private set => Set(ref _statusText, value); }
 
@@ -931,7 +931,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         SetCell(CpuLoad, snap, MetricId.CpuTotalLoad, Fmt.Pct, Severity.Load, withBar: true);
         SetCell(CpuTemp, snap, MetricId.CpuPackageTemp, Fmt.Temp, Severity.Temp);
         SetCell(CpuPower, snap, MetricId.CpuPackagePowerW, Fmt.Watts);
-        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, "°C"), CpuLoad.ValueBrushOnGlass, CpuLoad.ValueBrush);
+        FloatCpu.Set(WithUnit(CpuLoad.Value, "%"), WithUnit(CpuTemp.Value, Fmt.TempUnit), CpuLoad.ValueBrushOnGlass, CpuLoad.ValueBrush);
 
         // ---- 只有大窗口才看的：折叠时整段跳过（折叠省下的 CPU 主要在这里）----
         if (CpuBlock.Collapsed) return;
@@ -967,7 +967,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         else
             GpuMem.Unavailable();
 
-        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, "°C"), GpuLoad.ValueBrushOnGlass, GpuLoad.ValueBrush);
+        FloatGpu.Set(WithUnit(GpuLoad.Value, "%"), WithUnit(GpuTemp.Value, Fmt.TempUnit), GpuLoad.ValueBrushOnGlass, GpuLoad.ValueBrush);
 
         // 显存两行都带小写 v（6.3 / Q-04）：只看任意一行都能立刻分清"这是显存不是内存"。
         string vramPct = memPct.HasValue ? "v" + Fmt.Pct(memPct.Value) + "%" : "v" + Fmt.Dash;
@@ -1050,7 +1050,7 @@ public sealed class DashboardState : INotifyPropertyChanged
         MemDetail = pageFile.HasValue ? $"页面文件 ~{pageFile.Value / 1024:F1} GB（推算值）" : "";
     }
 
-    /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—°C` 这种半截字符串，整格保持 `—`。</summary>
+    /// <summary>值 + 单位。值不可用时（`—`）不要拼出 `—℃` 这种半截字符串，整格保持 `—`。</summary>
     private static string WithUnit(string value, string unit)
         => value.Length == 0 || value == Fmt.Dash ? Fmt.Dash : value + unit;
 
@@ -1158,12 +1158,12 @@ public sealed class DashboardState : INotifyPropertyChanged
             : $"合计  读 {read} MB/s   写 {write} MB/s";
     }
 
-    /// <summary>取第 n 块盘的温度文本（`45°`），越界或无效时给 `—`。</summary>
+    /// <summary>取第 n 块盘的温度文本（`45℃`），越界或无效时给 `—`。</summary>
     private static string DiskTempText(bool has, MetricSeries temps, int index)
     {
         if (!has || index >= temps.Values.Length) return Fmt.Dash;
         double v = temps.Values[index];
-        return double.IsNaN(v) ? Fmt.Dash : v.ToString("F0") + "°";
+        return double.IsNaN(v) ? Fmt.Dash : v.ToString("F0") + Fmt.TempUnit;
     }
 
     // ---------------- 内部小工具 ----------------
