@@ -187,9 +187,29 @@ public partial class FloatWindow : Window
         {
             if (!IsVisible) return;
             GuardFrame();
-            GuardTopmost();
+            GuardTopmost("poll");
         };
         frameWatch.Start();
+
+        // Z 序事件驱动提顶（M4.30）。
+        //
+        // 一秒一次的巡检对"被别的置顶窗口压住"是不够的：真机打 MC 的 F11 抓到，
+        // GLFW 进全屏时会给自己的窗口加 WS_EX_TOPMOST，两个窗口同处 topmost 组，
+        // 谁最后 SetWindowPos 谁在上 → 悬浮窗每次都要空窗 0.5~1 秒才被拉回来。
+        // 挂两个 WinEvent（前台变化 + Z 序重排）把这段空窗压到几十毫秒内。
+        //
+        // 判断仍然交给 GuardTopmost：钩子只负责"可能有变化"，不知道策略，
+        // 也不该在回调里做 80 次 GetWindow 的链遍历（reorder 一秒能来几百条）。
+        _zWatch = new ZOrderWatch();
+        _zWatch.Changed += () =>
+        {
+            if (_alwaysOnTop && IsVisible) GuardTopmost("event");
+        };
+        Closed += (_, _) =>
+        {
+            _zWatch?.Dispose();
+            _zWatch = null;
+        };
 
         // 定位必须等首帧渲染完：SizeToContent 的窗口在 Loaded 阶段宽度还没定型，
         // 实测此时 GetWindowRect 量到的是 94px（最终 381 DIP × 1.5 = 571px）。
@@ -528,7 +548,8 @@ public partial class FloatWindow : Window
     /// </summary>
     public string InteractDiag =>
         $"interact: lock={_locked} through={_clickThrough} hitTestHits={_hitTestHits} " +
-        $"ontop={_alwaysOnTop}(exStyle={_exTopmost}) raiseHits={_topmostHits} above=0x{_lastAbove.ToInt64():X}" +
+        $"ontop={_alwaysOnTop}(exStyle={_exTopmost}) raiseHits={_topmostHits} reason={_lastReason} " +
+        $"zhooks={(_zWatch?.HookCount ?? 0)} above=0x{_lastAbove.ToInt64():X}" +
         $" aboveOwn={_aboveOwn} fgOwn={_fgOwn} aboveNow=[{Monitors.Describe(_lastAbove)}]" +
         (_topmostHits == 0
             ? string.Empty
@@ -543,6 +564,15 @@ public partial class FloatWindow : Window
 
     /// <summary>巡检把窗口提回顶层的次数。</summary>
     private int _topmostHits;
+
+    /// <summary>最近一次提顶是被什么触发的（<c>poll</c> / <c>event</c>，诊断用，M4.30）。</summary>
+    private string _lastReason = "(无)";
+
+    /// <summary>提顶 trace 的限流时间戳（M4.30）。reorder 事件很密，不限流会刷满日志。</summary>
+    private long _lastTopLogMs;
+
+    /// <summary>Z 序事件源（M4.30）。为 null 表示还没挂上或已释放。</summary>
+    private ZOrderWatch? _zWatch;
 
     /// <summary>最近一次巡检时压在上面的那个窗口（诊断用）。</summary>
     private IntPtr _lastAbove;
@@ -620,7 +650,7 @@ public partial class FloatWindow : Window
     };
 
     /// <summary>
-    /// 每秒把悬浮窗提回 topmost 组最顶。
+    /// 把悬浮窗提回 topmost 组最顶（M4.21 起，M4.30 改成事件驱动 + 三条提顶理由）。
     ///
     /// <para>
     /// 为什么必须巡检：没有任何事件能告诉我们"Z 序变了"。别的置顶窗口盖上来时，
@@ -630,18 +660,27 @@ public partial class FloatWindow : Window
     /// </para>
     ///
     /// <para>
-    /// 两个"别抢"的条件：① 本进程有窗口在前台（用户在跟设置页交互）——
-    /// 那时抢顶会把悬浮窗压到设置页上面，挡住正在看的内容；
-    /// ② 压在上面的是本进程自己的窗口 —— 同上，设置页本来就该在它上面。
+    /// <b>M4.30 的两处修正</b>（真机打 MC F11 抓到的现场，<c>tools/f11-transient.py</c>）：
+    /// <list type="number">
+    /// <item>提顶不再只由"检测到遮挡"触发 —— 每秒只靠 <c>GW_HWNDPREV</c> 判一次，
+    ///   碰上游戏自己提顶（GLFW 全屏会给窗口加 <c>WS_EX_TOPMOST</c>）就要空窗近乎一秒。
+    ///   现在改为 Z 序事件一到就进这里，reason 会写成 <c>event</c>。</item>
+    /// <item>去掉"本进程有窗口在前台就不抢"的早退。那条策略的原意是别压住设置页，
+    ///   但设置页压着悬浮窗时 <paramref name="reason"/> 那条路上的 <c>_aboveOwn</c> 已经挡住了；
+    ///   而"前台是自家的、上面压着的却是外部窗口（游戏 / 开始菜单）"这个组合下，
+    ///   早退会让悬浮窗**永远**出不来 —— 正是用户报的"不能一直在最上层"。</item>
+    /// </list>
     /// </para>
     /// </summary>
-    private void GuardTopmost()
+    /// <param name="reason">触发来源：<c>poll</c>（1Hz 兜底）/ <c>event</c>（Z 序事件）。</param>
+    private void GuardTopmost(string reason)
     {
         if (!_hwndReady) return;
 
         IntPtr hwnd0 = Handle;
         if (hwnd0 != IntPtr.Zero)
             _exTopmost = (GetWindowLongPtr(hwnd0, GWL_EXSTYLE).ToInt64() & WS_EX_TOPMOST) != 0;
+        bool lostTopmost = !_exTopmost;
 
         if (!_alwaysOnTop || !IsVisible) return;
 
@@ -655,22 +694,50 @@ public partial class FloatWindow : Window
         IntPtr above = Monitors.FirstBlockingAbove(hwnd);
         _lastAbove = above;
         _aboveOwn = Monitors.IsOwnVisibleWindow(above);
-        if (above == IntPtr.Zero) return;                 // 没有被任何可见窗口挡住
+
+        // 提顶的三条理由：被外部窗口压住 / WS_EX_TOPMOST 掉了 / 什么都没有就不动。
+        // 第二条单独列出来是因为它会被第一条漏掉：style 掉了但恰好没有窗口与我重叠时，
+        // "没被挡住"是真的，"不在 topmost 组里"也是真的 —— 后者才是根因。
+        if (above == IntPtr.Zero && !lostTopmost) return;
 
         IntPtr foreground = Win32Window.ForegroundWindow;
         _fgOwn = foreground != IntPtr.Zero && foreground != hwnd && Monitors.IsOwnWindow(foreground);
-        // 自家让路是策略，不是能力：自测要验的是"检测到就顶得动"这一段，
-        // 而本机造不出能压住提权进程的外部窗口（UIPI），只能拿自家窗口当遮挡物。
-        if (_fgOwn && !TopmostIncludeOwn) return;
-        if (_aboveOwn && !TopmostIncludeOwn) return;      // 自家可见窗口（设置页）：让它压着
+        // 自家可见窗口（设置页 / 大窗口）压着我：让路是策略，不是能力。
+        // 自测要验"检测到就顶得动"，本机造不出能压住提权进程的外部窗口（UIPI），
+        // 所以 --float-ztop-own 允许拿自家窗口当遮挡物。
+        if (_aboveOwn && !TopmostIncludeOwn) return;
 
         _raiseOk = Monitors.RaiseToTopmost(hwnd);
         _topmostHits++;
+        _lastReason = reason;
 
         // 提完立刻再问一次：这是"提顶到底有没有生效"的唯一证据 ——
         // 事前的 above 只能证明"被压了"，提完的 above 才证明"真的回到了最顶"。
         _lastAboveAfter = Monitors.FirstBlockingAbove(hwnd);
         _aboveAfterDesc = Monitors.Describe(_lastAboveAfter);
+        LogTopmost(above, lostTopmost);
+    }
+
+    /// <summary>
+    /// 提顶落一条 trace（限流 1 秒）。
+    ///
+    /// <para>
+    /// 这条日志是 M4.30 的取证入口：下次再"看不见悬浮窗"，直接看
+    /// <c>%TEMP%\copul-trace.log</c> 里的 <c>[topmost]</c> 行就能分辨
+    /// —— 有 raise 且 after 为空 = 我们赢了；没有 raise = 根本没被挡住，
+    /// 那就是**渲染**问题（DWM 换了合成层），跟 Z 序无关。
+    /// </para>
+    /// </summary>
+    private void LogTopmost(IntPtr above, bool lostTopmost)
+    {
+        long now = Environment.TickCount64;
+        if (now - _lastTopLogMs < 1000) return;
+        _lastTopLogMs = now;
+
+        Trace.Log("topmost",
+            $"raise reason={_lastReason} hits={_topmostHits} exTopmost={!lostTopmost} " +
+            $"blocker=[{Monitors.Describe(above)}] ok={_raiseOk} " +
+            $"after=0x{_lastAboveAfter.ToInt64():X} [{_aboveAfterDesc}]");
     }
 
     /// <summary>
