@@ -438,6 +438,52 @@ internal static class Monitors
     public static bool IsOwnVisibleWindow(IntPtr hwnd)
         => hwnd != IntPtr.Zero && IsWindowVisible(hwnd) && IsOwnWindow(hwnd);
 
+    /// <summary>
+    /// 前台是不是一个**铺满整块显示器**的外部窗口（也就是"在玩游戏"）。
+    ///
+    /// <para>
+    /// 为什么悬浮窗需要知道这件事（M4.32）：全屏游戏是唯一会**反复抢顶**的邻居 ——
+    /// GLFW 进全屏会给自己加 <c>WS_EX_TOPMOST</c>，两个窗口同处 topmost 组，
+    /// 谁最后 <c>SetWindowPos</c> 谁在上。WinEvent 能覆盖大部分抢顶路径，但不是全部
+    /// （实测 <c>SetWindowPos(HWND_TOPMOST)</c> 只发 <c>LOCATIONCHANGE</c>，不发
+    /// <c>REORDER</c>；有些游戏走的是别的路径，一次事件都没有），漏掉的那次就只剩
+    /// 1Hz 巡检兜底 = 最多 1 秒看不见。全屏在前台时把巡检提到 4Hz，空窗压到 250ms 以内。
+    /// </para>
+    ///
+    /// <para>
+    /// 判据用"铺满显示器"而不是那套完整的全屏状态机：这里只要一个**便宜且宽松**的信号
+    /// （一次 GetForegroundWindow + GetWindowRect + GetMonitorInfo，约 30µs），
+    /// 不需要 QUNS 那套旁证 —— 万一误判成"有全屏应用"，代价只是多跑几次巡检。
+    /// </para>
+    ///
+    /// <para>桌面、任务栏、以及本进程自己的窗口一律不算。</para>
+    /// </summary>
+    public static bool IsFullscreenForeground(IntPtr self, out IntPtr foreground)
+    {
+        foreground = Win32Window.ForegroundWindow;
+        if (foreground == IntPtr.Zero || foreground == self) return false;
+        if (IsOwnWindow(foreground)) return false;
+
+        if (!GetWindowRect(foreground, out Win32Window.RECT r)) return false;
+        if (r.Right - r.Left < 320 || r.Bottom - r.Top < 240) return false;
+
+        if (!TryForWindow(foreground, out MonitorArea area)) return false;
+
+        // 2px 容差：全屏窗口的矩形偶尔会因为 DWM 的非客户区差一两个像素。
+        const int tol = 2;
+        bool covers = r.Left <= area.Left + tol && r.Top <= area.Top + tol
+                   && r.Right >= area.Right - tol && r.Bottom >= area.Bottom - tol;
+        if (!covers) return false;
+
+        var cls = new System.Text.StringBuilder(64);
+        GetClassNameW(foreground, cls, cls.Capacity);
+        string name = cls.ToString();
+
+        // 桌面与任务栏本身就是铺满屏的，但它们不是"游戏"：
+        // 把它们当成全屏应用会让巡检在正常用桌面时也一直跑 4Hz。
+        return name is not ("Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd");
+    }
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr hwnd);

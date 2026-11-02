@@ -188,6 +188,17 @@ public partial class FloatWindow : Window
             if (!IsVisible) return;
             GuardFrame();
             GuardTopmost("poll");
+
+            // 全屏护航（M4.32）：前台是铺满屏幕的游戏时把巡检提到 4Hz。
+            //
+            // 抢顶事件不是每条路径都有 WinEvent 的 —— 实测 SetWindowPos(HWND_TOPMOST)
+            // 只发 LOCATIONCHANGE，而有些游戏连这个都不发（走的是渲染线程自己搬窗口）。
+            // 漏一次就退化成 1Hz 兜底，用户看到的就是"游戏里悬浮窗没了，过一会儿又冒出来"。
+            // 巡检本身很便宜（一次矩形比较），把周期压到 250ms 也就多几次唤醒。
+            bool fs = _alwaysOnTop && Monitors.IsFullscreenForeground(Handle, out _);
+            LogTopmostMode(fs);
+            TimeSpan want = TimeSpan.FromMilliseconds(fs ? 250 : 1000);
+            if (frameWatch.Interval != want) frameWatch.Interval = want;
         };
         frameWatch.Start();
 
@@ -738,6 +749,28 @@ public partial class FloatWindow : Window
             $"raise reason={_lastReason} hits={_topmostHits} exTopmost={!lostTopmost} " +
             $"blocker=[{Monitors.Describe(above)}] ok={_raiseOk} " +
             $"after=0x{_lastAboveAfter.ToInt64():X} [{_aboveAfterDesc}]");
+    }
+
+    /// <summary>巡检周期档（M4.32）：1Hz / 全屏游戏时的 4Hz。只在切换时记一条。</summary>
+    private bool _fsGuardMode;
+
+    /// <summary>
+    /// 进出"全屏护航"各记一条 trace。
+    ///
+    /// <para>
+    /// 这条日志是下次"游戏里看不见悬浮窗"的第一判据：如果用户报障时段里
+    /// <b>一条 fs-guard on 都没有</b>，说明程序当时**根本没认成"前台是全屏应用"**
+    /// —— 那就不是抢顶的问题（要么前台根本不是游戏，要么游戏窗口没铺满显示器），
+    /// 排查方向要立刻换到渲染/位置那条线上，不要再去调 Z 序。
+    /// </para>
+    /// </summary>
+    private void LogTopmostMode(bool fs)
+    {
+        if (fs == _fsGuardMode) return;
+        _fsGuardMode = fs;
+        Trace.Log("topmost", fs
+            ? "fs-guard on（前台是全屏应用 → 巡检 4Hz）"
+            : "fs-guard off（回到 1Hz）");
     }
 
     /// <summary>
