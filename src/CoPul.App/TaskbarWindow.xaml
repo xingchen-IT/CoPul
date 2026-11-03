@@ -9,7 +9,7 @@
         Title="CoPul 芯脉 · 任务栏"
         Height="48" Width="404"
         WindowStyle="None" ResizeMode="NoResize"
-        ShowInTaskbar="False" AllowsTransparency="False"
+        ShowInTaskbar="False" AllowsTransparency="True"
         ShowActivated="False"
         Background="Transparent" WindowStartupLocation="Manual"
         FontFamily="{StaticResource FontUi}"
@@ -25,8 +25,12 @@
         - 背景默认完全透明（7.5「跟随系统」），只画字不画底，看起来就是任务栏自带的
         - 窗口是顶层 topmost 窗口（7.1 的 A 方案），贴在任务栏那一行上
 
-        AllowsTransparency 仍然保持 False：开它会变 layered window，
-        与 DWM 合成/硬件加速冲突（A-30）。透明靠 WindowGlass.MakeClientTransparent。
+        AllowsTransparency 从 False 改成 **True**（M4.38）—— 这是"透明档真的什么都不画"的唯一路。
+        非 layered 窗口的客户区 alpha 会被 DWM 丢掉，想透只能靠 accent 注入；而 accent 在 Win11 上
+        **会给窗口区域套一层模糊**（实测条内纹理 grad 3.8、紧邻条外 25），用户看到的就是
+        "任务栏上糊了一块"。layered 走逐像素 alpha，未绘制区域真正透明。
+        代价：WPF 在这一个窗口上退回软件渲染、文字用灰阶抗锯齿（M2 时因这一点否掉过）；
+        只在这个窗口开，悬浮窗 / 大窗口不动。
 
         各列的右侧间距由代码按"最后一个可见字段"决定（7.4 / Q-03：关闭字段后宽度收缩、
         不保留空位）。XAML 里的 Margin 只是首帧兜底，Reposition 会统一覆盖。

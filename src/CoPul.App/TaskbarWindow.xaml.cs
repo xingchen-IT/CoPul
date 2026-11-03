@@ -77,7 +77,7 @@ public partial class TaskbarWindow : Window
     /// <summary>点击是否穿透（7.6 / Q-12）。true 时 WM_NCHITTEST 一律返回 HTTRANSPARENT。</summary>
     private bool _clickThrough = true;
 
-    /// <summary>当前实际生效的毛玻璃方式，由 <see cref="WindowGlass.Apply"/> 返回，用于诊断输出。</summary>
+    /// <summary>当前实际生效的画底方式，用于诊断输出（M4.38 起条不再走 DWM accent）。</summary>
     public string GlassMode { get; private set; } = "未设置";
 
     /// <summary>Auto 模式下最近一次成功测得的"任务栏是浅底吗"。采样失败时沿用这个值。</summary>
@@ -588,7 +588,7 @@ public partial class TaskbarWindow : Window
         // 只改 alt 那一路 —— 悬浮窗那一条条有自己的表，两边互不相干。
         _state?.SetTrayText(_fieldColors, LabelBrush);
 
-        ApplyBackdrop(taskbarIsLight);
+        ApplyBackdrop();
 
         AutoInkMenu.IsChecked = _ink == InkMode.Auto;
         LightInkMenu.IsChecked = _ink == InkMode.Light;
@@ -596,63 +596,46 @@ public partial class TaskbarWindow : Window
     }
 
     /// <summary>
-    /// 条底的两种画法（M4.36 立、M4.37 合并成两档）。与字色分开成一段：
+    /// 条底的两种画法（M4.36 立、M4.37 合并成两档、M4.38 换 layered）。与字色分开成一段：
     /// 字色由 <see cref="ApplyInk"/> 算好传进来，这里只负责"底"。
     ///
     /// <para>
-    /// <b>transparent</b>（默认）：一点底都不画，字直接浮在任务栏上。注意不是把 Brush 设成
-    /// Transparent 就完事 —— 条是独立顶层窗口（A 方案），WPF 非 layered 窗口的客户区 alpha
-    /// 会被 DWM 丢掉，纯"不画底"变成一块黑。必须走 <c>ACCENT_ENABLE_BLURBEHIND</c>
-    /// + <c>tint alpha = 0</c>：它的着色基底是 0，也不做模糊，于是窗口区域真的透出任务栏
-    /// （悬浮窗的「极透」档是同一条路）。
+    /// <b>transparent</b>（默认）：<b>一点底都不画</b>。条是 layered 窗口（<c>AllowsTransparency</c>），
+    /// <c>Shell.Background = Transparent</c> 就是逐像素 alpha = 0，透出来的就是任务栏原样，
+    /// 既没有底色也没有模糊。
     /// </para>
     ///
     /// <para>
-    /// <b>custom</b>：自己给底色 + 不透明度，字色按这个底色判深浅。
+    /// <b>M4.36/M4.37 那条路为什么不行</b>：当时用 <c>ACCENT_ENABLE_BLURBEHIND</c>
+    /// + <c>tint alpha = 0</c> 冒充"透明"。着色基底确实是 0，但 accent **照样给窗口区域套一层模糊** ——
+    /// 实测条内纹理 grad=3.8、紧邻条外 25，肉眼就是"任务栏上糊了一块"，用户原话
+    /// "还不是彻底的没有背景"。M4.36 记的"BLURBEHIND 在 Win11 上不模糊"是错的：
+    /// 当时在悬浮窗上看棋盘格看不出来，是因为浮窗底下没有可模糊的细节。
+    /// </para>
+    ///
+    /// <para>
+    /// 判"有没有画东西"只能看 **grad（相邻像素差）**，不能看颜色均值 ——
+    /// 任务栏跟随壁纸，横向本身就是渐变的，均值会骗人。
     /// </para>
     /// </summary>
-    private void ApplyBackdrop(bool taskbarIsLight)
+    private void ApplyBackdrop()
     {
+        // layered 窗口不需要 DWM 那圈 1 DIP 边框（底去掉后它会是唯一看得见的东西），
+        // 也不该再注入任何 accent。
+        WindowGlass.SetWindowBorder(this, visible: false);
+
         if (_backdrop == BackdropCustom)
         {
-            WindowGlass.SetWindowBorder(this, visible: true);
-
             Shell.Background = new SolidColorBrush(Color.FromArgb(
                 (byte)(Math.Clamp(_backdropOpacity, 0, 100) * 255 / 100),
                 _backdropColor.R, _backdropColor.G, _backdropColor.B));
-
-            // 亚克力保留：底层模糊让自定义色不像一块贴上去的塑料膜。
-            // tint 用 0.10 —— 自定义色本身已经由 Shell 那层体现，accent 只做"这是玻璃"的暗示。
-            if (_attached)
-            {
-                GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
-                    dark: !IsLightColor(_backdropColor), tintOpacity: 0.10);
-            }
-            return;
-        }
-
-        // ---- 透明（默认档）----
-        // 没挂上任务栏（attach 失败）时**不能**走这条：它的透明完全靠 accent 的 BLURBEHIND 撑
-        // （着色基底为 0、不做模糊），没有 accent 就只剩 WPF 自己的表面 —— 而 alpha 被 DWM 丢掉后
-        // 表现是"整条看不见"，用户会以为程序挂了。退回一层薄对比底，至少还能读。
-        if (!_attached)
-        {
-            WindowGlass.SetWindowBorder(this, visible: true);
-            Shell.Background = taskbarIsLight
-                ? new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF))
-                : new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00));
+            GlassMode = "Layered 实色";
             return;
         }
 
         // alpha 全 0 的 Brush 与 null 在 DWM 眼里等价，这里给 Transparent 只为读代码时明确。
         Shell.Background = Brushes.Transparent;
-
-        // 底去掉以后，DWM 那圈 1 DIP 边框就成了整条上唯一看得见的东西
-        // （实测 150% 缩放下 2px、亮度 90 vs 条内 57），必须一起去掉才是"透明"。
-        WindowGlass.SetWindowBorder(this, visible: false);
-
-        GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
-            dark: !taskbarIsLight, tintOpacity: 0.0, blurOnly: true);
+        GlassMode = "Layered 直通";
     }
 
     /// <summary>自定义底色属于浅色还是深色。用与 <see cref="Taskbar.SampleLuma"/> 同一套权重。</summary>
