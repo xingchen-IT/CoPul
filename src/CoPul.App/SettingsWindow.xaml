@@ -841,7 +841,14 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- 只有「自定义」才可操作。灰掉而不是隐藏：切换档位时行高不跳，眼睛不用重新找 -->
+                                <!--
+                                    只有「自定义」才需要底、只有开毛玻璃才需要色（见 SyncBackdropPanel）。
+                                    灰掉而不是隐藏：切换档位时行高不跳，眼睛不用重新找。
+
+                                    M4.42：毛玻璃的着色就是用这一块颜色，所以「透明 + 毛玻璃」时
+                                    **色板与十六进制仍可操作**（此时它就是玻璃色），只有「不透明度」灰掉 ——
+                                    那一条说的是"实色层有多实"，磨砂档没有实色层。
+                                -->
                                 <StackPanel x:Name="BgCustomPanel">
                                     <WrapPanel x:Name="BgSwatches" Margin="0,10,0,0" />
 
@@ -851,14 +858,15 @@
                                             <ColumnDefinition Width="140" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="底色" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Grid.Column="0" x:Name="BgColorLabel" Text="底色"
+                                                   Style="{StaticResource RowLabel}" />
                                         <TextBox x:Name="BgHexBox" Grid.Column="1" Style="{StaticResource Input}"
                                                  MaxLength="7" KeyDown="BgHexBox_KeyDown" />
                                         <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="应用"
                                                 Margin="8,0,0,0" Click="ApplyBgHex_Click" />
                                     </Grid>
 
-                                    <Grid Margin="0,8,0,0">
+                                    <Grid x:Name="BgOpacityPanel" Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
@@ -883,6 +891,9 @@
                                     自定义 + 玻璃 = 磨砂之上再叠一层实色（不透明度越低，磨砂越透）。
                                     两者合成一个"底"控件的话，"我想要带色的磨砂"就没有表达方式了。
                                     放最后而不是紧跟背景档：先说"底是什么"，再说"另加一层玻璃"。
+
+                                    M4.42：磨砂的**着色就是用上面的底色**，不再自己挑深/浅灰。所以
+                                    透明档下色板也可操作 —— 那是"玻璃色"。
                                 -->
                                 <Border Height="1" Background="{DynamicResource BrushDivider}" Margin="0,14,0,0" />
 
@@ -898,7 +909,7 @@
                                     <ToggleButton Grid.Column="1" x:Name="TrayGlassSwitch" Style="{StaticResource Switch}"
                                                   Margin="-4,0,0,0" VerticalAlignment="Center"
                                                   Checked="TrayGlass_Toggled" Unchecked="TrayGlass_Toggled"
-                                                  ToolTip="在条的区域垫一层磨砂：模糊后面的任务栏，再按浓度覆一层色" />
+                                                  ToolTip="在条的区域垫一层磨砂：模糊后面的任务栏，再用上面的底色按浓度染一层" />
                                     <TextBlock Grid.Column="2" x:Name="TrayGlassStateText" Style="{StaticResource SectionHint}"
                                                Margin="12,0,0,0" VerticalAlignment="Center" />
                                 </Grid>

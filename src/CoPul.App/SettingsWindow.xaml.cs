@@ -1923,8 +1923,14 @@ public partial class SettingsWindow : Window
     private void SyncBackdropPanel()
     {
         bool custom = _bgMode == "custom";
-        BgCustomPanel.IsEnabled = custom;
-        BgCustomPanel.Opacity = custom ? 1.0 : 0.45;
+
+        // 毛玻璃开 + 透明档时，**底色仍然有用**：它就是磨砂的染色（M4.42），所以色板不灰。
+        // 灰的只有「不透明度」—— 那条描述的是实色层有多实，磨砂档根本没有实色层。
+        BgCustomPanel.IsEnabled = custom || _trayGlass;
+        BgCustomPanel.Opacity = custom || _trayGlass ? 1.0 : 0.45;
+        BgOpacityPanel.IsEnabled = custom;
+        BgOpacityPanel.Opacity = custom ? 1.0 : 0.45;
+        BgColorLabel.Text = custom ? "底色" : "玻璃色";
 
         if (BgHexBox.Text != _bgColor) BgHexBox.Text = _bgColor;
         BgOpacityText.Text = _bgOpacity + "%";
@@ -1951,10 +1957,10 @@ public partial class SettingsWindow : Window
         BgHint.Text = _bgMode switch
         {
             "custom" => _trayGlass
-                ? "自定义底色铺在磨砂之上：不透明度管实色有多实（越低越透出模糊），浓度管磨砂本身有多浓。文字颜色仍按这个底色判深浅。"
+                ? "自定义底色同时当磨砂的染色：浓度管这层色有多浓，不透明度管底下还叠多少实色（越低越透出模糊）。文字颜色按这个底色判深浅。"
                 : "自定义底色铺在字下面，不透明度管它有多实；0% 等于只剩一层极淡的玻璃，文字颜色仍按这个底色判深浅。",
             _ => _trayGlass
-                ? "透明档 + 毛玻璃：条上只有一层磨砂，模糊后面的任务栏再按浓度覆色。浓度 0 也仍有一层约 17% 的底色（亚克力自带，压不掉）。"
+                ? "透明档 + 毛玻璃：只有一层磨砂，模糊后面的任务栏，再用上面那块「玻璃色」按浓度染上去。改玻璃色不会铺成实色 —— 想加实色请切「自定义」。"
                 : "透明档不画任何底、也不做模糊，字直接浮在任务栏上。文字颜色仍按任务栏实际亮度自动判，可在下面「文字颜色」里改。",
         };
     }
@@ -2034,9 +2040,14 @@ public partial class SettingsWindow : Window
         _bgColor = NormalizeBgColor(hex);
 
         // 点色板本身就是"我要用自定义底"，不用再让人回去点一下「自定义」。
-        _bgMode = "custom";
+        // 例外：透明档 + 毛玻璃 —— 这块颜色这时是磨砂的染色（M4.42），
+        // 挑个颜色不该顺手把"透明"变成"自定义"（那会平白多出一层实色）。
+        if (!IsColorOnlyForGlass()) _bgMode = "custom";
         PushBackdrop(persist: true);
     }
+
+    /// <summary>当前是不是「透明 + 毛玻璃」：此时底色只用来染磨砂，不铺实色。</summary>
+    private bool IsColorOnlyForGlass() => _bgMode == "transparent" && _trayGlass;
 
     private void BgHexBox_KeyDown(object sender, KeyEventArgs e)
     {
@@ -2057,7 +2068,9 @@ public partial class SettingsWindow : Window
         }
 
         _bgColor = NormalizeBgColor(text);
-        _bgMode = "custom";
+
+        // 同上：透明 + 毛玻璃时只换染色，不改成自定义档。
+        if (!IsColorOnlyForGlass()) _bgMode = "custom";
         PushBackdrop(persist: true);
     }
 

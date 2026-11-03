@@ -80,7 +80,7 @@ public partial class TaskbarWindow : Window
     /// <summary>毛玻璃浓度 0–100 = accent tint 的 alpha（0 仍有亚克力自带的 17% 基底）。</summary>
     private int _glassOpacity = 45;
 
-    /// <summary>最近一次 <see cref="ApplyInk"/> 判出的"底是浅的"（= 字用深色）。玻璃缇跟着它反向取色。</summary>
+    /// <summary>最近一次 <see cref="ApplyInk"/> 判出的"底是浅的"（= 字用深色）。</summary>
     private bool _inkIsLight;
 
     /// <summary>点击是否穿透（7.6 / Q-12）。true 时 WM_NCHITTEST 一律返回 HTTRANSPARENT。</summary>
@@ -582,6 +582,19 @@ public partial class TaskbarWindow : Window
                 // 这时**保持上一次的判断**。早先的实现把"没采到"当 128 处理，
                 // 再拿 > 128 一比就翻成浅底 → 深色字，任务栏滑回来是深底深字，一片糊。
                 if (luma >= 0) _autoIsLight = luma > 128;
+
+                // 毛玻璃染的是用户选的底色（M4.42），那"自动"就不能只看任务栏：
+                // 底色浅 + 浓度高时整条已经接近那块底色，按任务栏（可能是深色）判会给浅字，
+                // 糊成一片。这里按 accent 的实际合成算一遍有效亮度 —— 亚克力自带约 17% 基底，
+                // tint 再按浓度压上去，所以浓度低时仍跟着任务栏走，浓度高时由底色接管。
+                if (_glass && _glassOpacity > 0)
+                {
+                    double a = 0.17 + 0.83 * (_glassOpacity / 100.0);
+                    double backdropLuma = luma >= 0 ? luma : (_autoIsLight ? 190 : 60);
+                    taskbarIsLight = backdropLuma * (1 - a) + Luma(_backdropColor) * a > 128;
+                    break;
+                }
+
                 taskbarIsLight = _autoIsLight;
                 break;
         }
@@ -657,8 +670,9 @@ public partial class TaskbarWindow : Window
     /// 所以 Shell 那块实色是盖在模糊之上的 —— 这正是"自定义 + 磨砂"该有的叠法。
     ///
     /// <para>
-    /// 缇的深浅跟字色**反向**取：浅色字配深玻璃、深色字配浅玻璃，对比度不会因为调浓度而崩掉。
-    /// 用户若在「文字颜色」里手动锁了一档，<see cref="_ink"/> 已经体现在 <see cref="_inkIsLight"/> 里了。
+    /// <b>着色用「底色」（M4.42）</b>，不再按字色深浅取内置的 #0F1216 / #F6F8FB。
+    /// 理由：条有一块用户自己选的底色，玻璃若自带一套白雾/黑雾，就等于两个作者各画一层 ——
+    /// 用户原话"毛玻璃的颜色要以底色为基础"。浓度只调这块底色的 alpha。
     /// </para>
     ///
     /// <para>
@@ -673,14 +687,15 @@ public partial class TaskbarWindow : Window
             return;
         }
 
-        bool dark = !_inkIsLight;
-        if (!WindowGlass.ApplyAccent(this, dark, _glassOpacity / 100.0))
+        if (!WindowGlass.ApplyAccent(this, _backdropColor, _glassOpacity / 100.0))
             Trace($"glass: ApplyAccent 失败 hwnd=0x{_hwnd:X}");
     }
 
     /// <summary>自定义底色属于浅色还是深色。用与 <see cref="Taskbar.SampleLuma"/> 同一套权重。</summary>
-    private static bool IsLightColor(Color c)
-        => (c.R * 299 + c.G * 587 + c.B * 114) / 1000.0 > 128;
+    private static bool IsLightColor(Color c) => Luma(c) > 128;
+
+    /// <summary>0–255 加权亮度，权重同 <see cref="Taskbar.SampleLuma"/>（两者要能直接比大小）。</summary>
+    private static double Luma(Color c) => c.R * 0.299 + c.G * 0.587 + c.B * 0.114;
 
     /// <summary>
     /// 装 <c>TaskbarCreated</c> 监听（7.7 的 explorer 重启）。
@@ -1313,7 +1328,7 @@ public partial class TaskbarWindow : Window
     /// <summary>背景诊断串（截图自测时打到 stdout，验"设置真的落到窗口上了"而不是只落了配置）。</summary>
     public string BackdropDiag =>
         $"backdrop={_backdrop} color={HexOf(_backdropColor)} opacity={_backdropOpacity} " +
-        $"glass={( _glass ? $"on/{_glassOpacity}%/{(_inkIsLight ? "light" : "dark")}" : "off")} " +
+        $"glass={(_glass ? $"on/{_glassOpacity}%/tint={HexOf(_backdropColor)}/ink={(_inkIsLight ? "dark" : "light")}" : "off")} " +
         $"shell={(Shell.Background as SolidColorBrush)?.Color.ToString() ?? "null"} mode={GlassMode}";
 
     /// <summary>背景三档的当前值。设置页要按**窗口实际状态**回填，不按配置 ——

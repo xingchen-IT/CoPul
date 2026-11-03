@@ -16,10 +16,12 @@ namespace CoPul.App.Interop;
 /// </para>
 ///
 /// <para>
-/// <b>硬约束：禁止 <c>AllowsTransparency=true</c>。</b>它会把窗口切成 layered window，
-/// 系统背景直接失效，而且 WPF 会退掉硬件加速——与 1.5% 预算直接冲突（A-30 同源）。
-/// 想让背景透出来，正确做法是把 WPF 自己的底刷成透明（<see cref="Window.Background"/> +
-/// <see cref="CompositionTarget.BackgroundColor"/>），把"画背景"这件事交给合成器。
+/// <b>注意 <c>AllowsTransparency=true</c> 的语义</b>：它把窗口切成 layered，客户区的逐像素 alpha
+/// 才**不会被 DWM 丢掉**；反过来，非 layered 窗口的客户区 alpha 是无效的 —— 想让背景透出来，
+/// 只能把 WPF 自己的底刷成透明，再靠 accent 注入。历史上把这条因果写反过一次
+/// （记成"layered 会让系统背景失效"），M4.41 的注入实验已证伪：layered 窗口照样吃 accent，
+/// 任务栏条正是 layered + accent 的组合。悬浮窗/大窗口仍不用 layered，理由是
+/// <b>ClearType</b> 与渲染路径，不是"系统背景会失效"。
 /// </para>
 ///
 /// <para>
@@ -188,7 +190,14 @@ internal static class WindowGlass
     /// </summary>
     internal static int AccentStateOverride = 0;
 
-    private static bool TryApplyAccent(IntPtr hwnd, Backdrop kind, bool dark, double tintOpacity, bool blurOnly)
+    /// <param name="tint">
+    /// 显式指定着色 RGB（M4.42）。给 <c>null</c> 时按 <paramref name="dark"/> 取内置的深/浅两档 ——
+    /// 那是悬浮窗与大窗口的老路：它们没有"用户自己的底色"可言。
+    /// 任务栏条不一样，它有一块用户选的底色，玻璃必须染成那个颜色，否则"自定义 + 磨砂"
+    /// 会得到"自己的底色 + 别人的白雾/黑雾"两层打架。
+    /// </param>
+    private static bool TryApplyAccent(
+        IntPtr hwnd, Backdrop kind, bool dark, double tintOpacity, bool blurOnly, Color? tint = null)
     {
         // GradientColor 是 AABBGGRR。alpha 不是随便取的：accent 路径的 tint 会**再叠一次**
         // 窗口自己的半透明底（FloatWindow 的 Shell），两层相乘才是最终"遮住背景"的比例。
@@ -201,9 +210,9 @@ internal static class WindowGlass
 
         // RGB 必须跟着深浅走。浅色毛玻璃的"白雾"就是这一层给的：
         // 只把 alpha 调薄、RGB 却仍给 #0F1216，画面上会变成一层灰罩而不是奶白玻璃。
-        int r = dark ? 0x0F : 0xF6;
-        int g = dark ? 0x12 : 0xF8;
-        int b = dark ? 0x16 : 0xFB;
+        int r = tint?.R ?? (dark ? 0x0F : 0xF6);
+        int g = tint?.G ?? (dark ? 0x12 : 0xF8);
+        int b = tint?.B ?? (dark ? 0x16 : 0xFB);
         int color = (alpha << 24) | (b << 16) | (g << 8) | r;
 
         // BLURBEHIND(3) 在 Win11 上**不模糊**（A-37 实测：棋盘格在它下面纹丝不动），
@@ -264,13 +273,15 @@ internal static class WindowGlass
     /// 条内均值 (128,109,108) → (195,140,97)、纹理量 7.3 → 4.2。若不成立，这组数字会一动不动。
     /// </para>
     /// </summary>
-    /// <param name="dark">深色缇还是浅色缇（RGB 见 <see cref="TryApplyAccent"/>）。</param>
+    /// <param name="tint">着色用的 RGB。alpha 由 <paramref name="opacity"/> 给，这里的 A 被忽略。</param>
     /// <param name="opacity">tint 的 alpha，0–1。0 也仍有亚克力自带的约 17% 基底，压不掉。</param>
-    public static bool ApplyAccent(Window window, bool dark, double opacity)
+    public static bool ApplyAccent(Window window, Color tint, double opacity)
     {
         IntPtr hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == IntPtr.Zero) return false;
-        return TryApplyAccent(hwnd, Backdrop.Acrylic, dark, opacity, blurOnly: false);
+
+        // dark 只在 tint 缺省时有意义，这里已经给了颜色，传什么都不影响结果。
+        return TryApplyAccent(hwnd, Backdrop.Acrylic, dark: true, opacity, blurOnly: false, tint: tint);
     }
 
     /// <summary>
