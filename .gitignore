@@ -26,3 +26,6 @@ desktop.ini
 
 # fps-selftest 的编译输出（夹具源码进仓库，二进制不进）
 tools/fps-selftest/out/
+
+# 图标设计服务的调用缓存（stdout/stderr 原始字节，纯临时）
+.creative-design/
