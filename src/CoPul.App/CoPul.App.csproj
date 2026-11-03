@@ -102,4 +102,19 @@
     </None>
   </ItemGroup>
 
+  <!--
+    许可协议正文**同时**嵌入程序集（Sdk/Eula.cs 读它显示在首启弹窗里）。
+
+    为什么不用运行时去读上面那个 LICENSE.txt：一旦文件被删（精简部署、用户清理目录），
+    弹窗就只剩一句摘要 —— 而那恰好是最需要完整条款的时刻。
+    LogicalName 写死成 CoPul.App.EULA.txt，不带资源文化后缀，免得发布多语言时找不到。
+    文本仍取自仓库根的 LICENSE，**不复制一份**：两份正文迟早会不一致，而协议不一致比没有协议更危险。
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\LICENSE">
+      <LogicalName>CoPul.App.EULA.txt</LogicalName>
+      <Visible>false</Visible>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

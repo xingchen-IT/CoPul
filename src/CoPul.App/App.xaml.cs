@@ -190,6 +190,73 @@ public partial class App : Application
             SingleInstance.Listen();
         }
 
+        // =====================================================================
+        // 首次启动的许可协议同意（发布合规项，2026-11-04）。
+        //
+        // 位置是刻意的：放在单实例之后（第二个实例不该再问一遍）、建主窗口之前
+        // （没同意就不该把采集线程和窗口拉起来）。中国法院认可点击合同的前提是
+        // 「条款可获取 + 同意有记录」—— 只在仓库里放 LICENSE，双击 exe 就能用，
+        // 起纠纷时对方可主张合同未成立，"禁止二次分发"和免责声明全都用不上。
+        //
+        // 探针/测量模式一律放行，否则所有截图与性能取证都会被弹窗挡住：
+        //   --eula               强制把窗口摆出来（取证用，通常配 --shot 拍这张窗）
+        //   --eula-pick accept|decline  不弹窗直接给结论，验两条收尾路径
+        // =====================================================================
+        bool eulaForced = e.Args.Contains("--eula");
+        string? eulaPick = ArgValue(e.Args, "--eula-pick");
+        bool probeRun = measurement
+                        || e.Args.Contains("--settings")
+                        || e.Args.Any(a => a.StartsWith("--", StringComparison.Ordinal)
+                                           && a.EndsWith("-probe", StringComparison.Ordinal));
+
+        // 截图定时器要能挑到这张窗，所以声明在方法作用域里（不能塞进 if 块）。
+        EulaWindow? eulaWindow = null;
+
+        if (eulaPick is { } pick)
+        {
+            bool eulaOk = pick.Equals("accept", StringComparison.OrdinalIgnoreCase);
+            if (eulaOk) Eula.Accept(ConfigStore.Current);
+
+            Interop.Trace.Log("eula", $"probe pick={pick} → {(eulaOk ? "记录同意" : "退出")}");
+
+            if (!eulaOk)
+            {
+                Quit();
+                return;
+            }
+        }
+        else if (probeRun)
+        {
+            // 探针不拦。--eula 时把窗口**非模态**摆出来：模态会阻塞 OnStartup，
+            // 后面注册的截图定时器永远等不到（M4.30 踩过同类坑）。
+            if (eulaForced)
+            {
+                eulaWindow = new EulaWindow { ProbeMode = true };
+
+                // --eula-consent：把勾选框摆成已勾选，拍"主按钮可用"的样子（验收用）。
+                if (e.Args.Contains("--eula-consent")) eulaWindow.SetConsentForProbe(true);
+
+                eulaWindow.Show();
+                System.Console.WriteLine(eulaWindow.Diag);
+            }
+        }
+        else if (eulaForced || !Eula.IsAccepted(ConfigStore.Current))
+        {
+            var dialog = new EulaWindow();
+            bool accepted = dialog.RunModal();
+            System.Console.WriteLine(dialog.Diag);
+
+            if (!accepted)
+            {
+                Interop.Trace.Log("eula", "用户不同意 → 退出，不进入采集");
+                Quit();
+                return;
+            }
+
+            Eula.Accept(ConfigStore.Current);
+            Interop.Trace.Log("eula", $"accepted v{Eula.Version} at {ConfigStore.Current.LicenseAcceptedAt}");
+        }
+
         var window = new MainWindow();
         MainWindow = window;
 
@@ -1490,7 +1557,9 @@ public partial class App : Application
 
             // 截哪个窗口必须在这一刻判：设置页 / 任务栏条都是"启动之后才出现的"，
             // 在定时器外面判出来永远是主窗口（第一版 --settings --shot-screen 就拍成了主窗口）。
-            Window target = settings is { IsVisible: true } ? settings
+            // 许可窗排最前：它是模态/置顶的，其它视图此时都在它后面（--eula --shot 取证用）。
+            Window target = eulaWindow is { IsVisible: true } ? eulaWindow
+                          : settings is { IsVisible: true } ? settings
                           : taskbar is { IsVisible: true } ? taskbar
                           : floating is { IsVisible: true } ? floating
                           : window;
@@ -1651,6 +1720,11 @@ public partial class App : Application
                                 : Environment.NewLine + "place: " + rfw.PlacementDiag));
                     else if (target is TaskbarWindow rtb)
                         File.WriteAllText(shot + ".info.txt", rtb.TextDiag);
+                    else if (target is EulaWindow rew)
+                        // 协议窗的验收只认三件事：条款载入了多长、勾选没勾选、按钮可用不可用。
+                        // 像素看不出"正文是不是空的"，必须靠这行。
+                        File.WriteAllText(shot + ".info.txt",
+                            $"{rew.Diag}{Environment.NewLine}acceptEnabled={rew.AcceptEnabled}");
                 }
             }
             catch (Exception ex)

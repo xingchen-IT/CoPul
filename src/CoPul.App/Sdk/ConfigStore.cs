@@ -399,6 +399,19 @@ public sealed class AppConfig
     /// <summary>纵向比例，0–1。</summary>
     public double FloatRatioY { get; set; } = double.NaN;
 
+    // ---- 许可协议同意（发布合规，2026-11-04）----
+    // 只存"哪一版"而不是"有没有同意"：协议改版时把 Eula.Version 顶上去，老用户自然会被
+    // 重新询问一次。存 bool 的话，条款换了两代也永远问不到第二次。
+
+    /// <summary>已同意的协议版本，空 = 从未同意（首次启动必须弹窗，不点同意就退出）。</summary>
+    public string LicenseAcceptedVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 同意时间（本地时间，带时区偏移）。只作记录 —— 真起争议时要能说清
+    /// "何时同意的哪一版"，这两个字段缺一个都站不住。
+    /// </summary>
+    public string LicenseAcceptedAt { get; set; } = string.Empty;
+
     /// <summary>
     /// 配置结构版本。1 = M4.17 及以前；2 = M4.18 起（悬浮窗九字段，新增三项默认关闭）；
     /// 3 = M4.20 起（文字色改成逐字段，旧版的"整条一个色"迁移进 <see cref="FloatFieldColors"/>）。
