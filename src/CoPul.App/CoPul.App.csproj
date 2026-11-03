@@ -34,12 +34,13 @@
     <!--
       图标资产：运行时按路径加载（LoadImage），必须全部落到输出目录。
 
-      · copul.ico          R-01 主图标（exe / 快捷方式 / 关于页）：深底 + 推力喷管
-      · copul-tray-dark.ico  R-02 深色任务栏版（亮青方底 + 深色发动机剪影）
-      · copul-tray-light.ico R-03 浅色任务栏版（深方底 + 青色尾焰）
+      · copul.ico          R-01 主图标（exe / 快捷方式 / 关于页）：深底 + 青色开口环 C
+      · copul-tray-dark.ico  R-02 深色任务栏版（**无底盘**，裸环 + 琥珀块）
+      · copul-tray-light.ico R-03 浅色任务栏版（深底盘 + 青环）
 
-      托盘为什么要两版而不是一版：实测深色任务栏 #202022 上，深方底图标几乎
-      融进背景，只剩中间的尾焰 —— 用户认不出。见 App.xaml.cs 的 ResolveTrayIcon。
+      托盘为什么要两版而不是一版：实测深色任务栏 #202022 上，深底盘几乎融进背景，
+      整块图标溶解成一个黑方块 —— 用户认不出。深色版干脆不要底盘，裸环最清楚。
+      见 App.xaml.cs 的 ResolveTrayIcon。
     -->
     <None Include="assets\copul.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

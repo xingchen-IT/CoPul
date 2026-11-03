@@ -1,47 +1,42 @@
 """
-CoPul 图标：推力喷管。
+CoPul 图标：「字母 C · 脉冲环」（M4.40 定稿，取代 M4.39 的推力喷管）
 
 =============================================================================
-为什么是这个
+为什么是它
 =============================================================================
 
-前四轮一共 16 个概念，全部走"数据可视化"的语汇（折线、柱、环、刻度），
-问题是**任何监控软件换个颜色都是同一个图标**；16px 下更是全部糊成一团。
+前四轮一共 16 个概念，几乎全部困在"数据可视化"的语汇里（折线、柱、环、刻度、
+准星）。问题是那套语汇**谁都能用**，换个配色就能套在任何监控软件上；16px 下
+更是必然糊成线团。
 
-这一版换的是**物**：一枚朝下的火箭发动机。它同时说清三件事 ——
-
-  · 这是"推力"（pulse）：尾焰是整幅唯一的亮区，视线第一秒就落在那里
-  · 这是"机器"：钟形喷管、冷却管、喉口、出口唇环，全是真发动机的零件
-  · 这是"往下喷"：竖构图。系统托盘里横构图和圆形图标占绝大多数，
-    一个上重下轻的竖直亮条在一片方块里最容易被认出来
-
-**竖构图还有工程上的好处**：16px 下一枚图标只有 256 个像素，
-竖条的可用像素比环形/折线多得多 —— 亮区宽度占满 1/3 画幅，
-无论缩到多小都还剩 5~6 个像素宽，不会像细线那样消失。
+字母 C 不一样：它同时是**名字**（CoPul）和**一个够粗的几何体**——环厚是外径的
+45%，缩到 16px 还剩 3 个像素，是这套候选里唯一在最小尺寸上仍然"有形"的构成。
+缺口里的琥珀块给了它一个非对称的落点，否则纯 C 会显得像一个裁切出来的甜甜圈。
 
 =============================================================================
-细节分层（这是"加细节"的具体内容）
+几何（归一化到画布，比例量自用户给的截图）
 =============================================================================
 
-  1 安装法兰  顶部一块浅钢色横板，让喷管有"装在某处"的确定感
-  2 钟形喷管  上窄下宽，左半压暗做出圆柱体
-  3 冷却管    6 根细线沿着母线走，**只在大尺寸出现**（<=32 会变噪点）
-  4 喉口      出口上方一条近黑带，喷管因此是"空心的"
-  5 出口唇环  琥珀色一道，全图唯一的暖色，也是"高温"的信号
-  6 尾焰      三层：青边 → 淡青芯 → 白炽芯
-  7 激波钻石  白炽芯里 3 颗菱形，超音速尾焰的标志性结构（真发动机才有）
+    环外径 0.300 / 内径 0.165      厚度 = 外径的 45%
+    缺口   内缘 12°~-64°、外缘 2°~-56°（两端各向外张 10°，形成喇叭口）
+    琥珀块 径向 0.205~0.315、角度 -19°~+3°（落在缺口外半侧，略微探出环外）
+    白点   0.058
 
-小尺寸（<=24）另有一套几何：去掉冷却管与钻石，尾焰收敛成一个锐角三角，
-唇环加粗 —— 保证 16px 下还剩"暗帽 + 琥珀横杠 + 亮三角"三个可辨元素。
+缺口两端不是径向切：外缘比内缘多转 10°。截图里就是这个形状，端面朝缺口方向
+外张，C 才不像"被切掉一段的甜甜圈"。
 
 =============================================================================
-配色
+三档
 =============================================================================
 
-守住需求 10.3 的低饱和底线：底 #070B11 / 钢 #2A3644 / 青 #3FC8DC / 琥珀 #E0A44A。
-尾焰用的白是 #EAF4F8（不是纯白），纯白在深底上会"发光过度"、边缘发虚。
+    big   ≥32   内缘暗边 + 环背冷光 + 外缘左上受光 + 琥珀高光
+    small ≤24   环加厚、白点/琥珀放大，去掉所有渐变与阴影
+                （这些细节在小尺寸只会变成噪点，把图形糊成一团）
+    dark  托盘   **不带底盘**：深色任务栏 + 深底盘 = 整块溶解（M4.39 踩过），
+                裸环反而最清楚
 
-托盘深色任务栏版（dark=True）走反相：亮青底 + 深色喷管 + 白尾焰。
+输出：copul.ico（7 帧）/ copul-1024.png / copul-256.png /
+      copul-tray-{light,dark}.ico + 两张验收图。
 """
 
 import math
@@ -49,129 +44,28 @@ import os
 import struct
 import zlib
 
-MASTER = 256
-SS = 3            # 超采样倍数（1024 源图降到 2，否则太慢）
-SS_BIG = 2
-BIG_CUTOFF = 320  # >= 这个尺寸时把 SS 降到 2
+SS = 4                     # 超采样倍数
+SS_HUGE = 3                # ≥512 降到 3×（4× 在 1024 上要跑好几分钟）
 
 # ---------------------------------------------------------------------------
-# 配色
+# 配色（沿用项目既有色：青 = AccentGpu 族，琥珀 = AccentNet 族）
 # ---------------------------------------------------------------------------
 
-INK        = (0x07, 0x0B, 0x11, 255)
-INK_RIM    = (0x1E, 0x2B, 0x3A, 255)
+INK      = (0x07, 0x0B, 0x11, 255)      # 底盘
+INK_HI   = (0x14, 0x1D, 0x28, 255)      # 底盘左上冷光
 
-STEEL_TOP  = (0x6A, 0x80, 0x98, 255)
-STEEL_L    = (0x3A, 0x4A, 0x5E, 255)
-STEEL_R    = (0x1E, 0x29, 0x37, 255)
-STEEL_EDGE = (0x8E, 0xA6, 0xBE, 255)
-THROAT     = (0x05, 0x08, 0x0C, 255)
+CYAN     = (0x3F, 0xC8, 0xDC, 255)
+CYAN_HI  = (0x7C, 0xDE, 0xEC, 255)
+CYAN_DIM = (0x20, 0x74, 0x84, 255)
 
-CYAN       = (0x3F, 0xC8, 0xDC, 255)
-CYAN_PALE  = (0x6E, 0xD8, 0xE8, 255)
-FLAME_HOT  = (0xB8, 0xEE, 0xF6, 255)
-DIAMOND    = (0xFF, 0xFF, 0xFF, 255)
-AMBER      = (0xE0, 0xA4, 0x4A, 255)
+AMBER    = (0xE2, 0xA6, 0x4C, 255)
+AMBER_HI = (0xF7, 0xCB, 0x88, 255)
 
-RIBS_DARK  = (0x0A, 0x10, 0x17, 170)
-RIBS_LIGHT = (0xFF, 0xFF, 0xFF, 48)
-MOUTH_C    = (0x4E, 0x61, 0x76, 255)
+WHITE    = (0xE8, 0xF3, 0xFA, 255)
 
-# 托盘（深色任务栏）：反相。
-# 尾焰不能用白色 —— 亮青底 + 白三角 = 一整块高光，读出来像高脚杯。
-# 整个发动机（喷管 + 尾焰 + 唇环）统一做成深色剪影，才是"同一台机器"。
-T_PLATE    = (0x4F, 0xC8, 0xDC, 255)
-T_RIM      = (0x8A, 0xE2, 0xEC, 255)
-T_FLANGE   = (0x0E, 0x22, 0x2A, 255)
-T_BELL     = (0x12, 0x2B, 0x36, 255)
-T_BELL_R   = (0x09, 0x18, 0x1F, 255)
-T_LIP      = (0xC2, 0x74, 0x2A, 255)
-T_FLAME    = (0x0B, 0x2C, 0x36, 255)
-T_FLAME_IN = (0x14, 0x48, 0x54, 255)
-T_RIBS     = (0x0A, 0x1B, 0x23, 110)
-T_MOUTH    = (0x0B, 0x1F, 0x27, 255)
-
-BG_RADIUS = 0.22
-
-
-# ---------------------------------------------------------------------------
-# 几何（归一化 0..1）
-# ---------------------------------------------------------------------------
-
-# --- 大尺寸 ---------------------------------------------------------------
-#
-# 喷管型线：燃烧室（等宽）→ 喉部（收缩到最窄）→ 钟形（扩张到出口）。
-# 上一版是直边梯形，读出来像灯罩；真正的发动机必须能看出"喉部"这个腰。
-BELL_PROFILE = [          # (y, 右半 x)
-    (0.098, 0.620),       # 燃烧室顶
-    (0.205, 0.620),       # 燃烧室直段
-    (0.252, 0.548),       # 喉部（最窄）
-    (0.302, 0.586),
-    (0.366, 0.652),
-    (0.436, 0.716),       # 出口
-]
-BELL_Y0 = BELL_PROFILE[0][0]
-BELL_Y1 = BELL_PROFILE[-1][0]
-EXIT_Y = BELL_Y1
-
-FLANGE     = [(0.368, 0.062), (0.632, 0.062), (0.632, 0.106), (0.368, 0.106)]
-BELL_MOUTH = [(0.286, EXIT_Y - 0.004), (0.714, EXIT_Y - 0.004),
-              (0.710, EXIT_Y + 0.026), (0.290, EXIT_Y + 0.026)]
-LIP        = [(0.290, EXIT_Y + 0.030), (0.710, EXIT_Y + 0.030)]
-
-_FY = EXIT_Y + 0.034
-# 尾焰轮廓带一点外凸：直边三角形会读成交通锥。中段鼓出来一点才像"喷出来的一团"。
-FLAME_OUT = [(0.316, _FY), (0.684, _FY), (0.646, 0.588),
-             (0.566, 0.716), (0.500, 0.818), (0.434, 0.716), (0.354, 0.588)]
-FLAME_MID = [(0.388, _FY), (0.612, _FY), (0.580, 0.584),
-             (0.532, 0.700), (0.500, 0.772), (0.468, 0.700), (0.420, 0.584)]
-FLAME_CORE = [(0.436, _FY), (0.564, _FY), (0.540, 0.576),
-              (0.516, 0.660), (0.500, 0.712), (0.484, 0.660), (0.460, 0.576)]
-
-
-def _bell_poly():
-    """把型线镜像成闭合多边形。"""
-    right = [(x, y) for y, x in BELL_PROFILE]
-    left = [(1.0 - x, y) for y, x in reversed(BELL_PROFILE)]
-    return right + left
-
-
-BELL = _bell_poly()
-# 左半块压暗：型线左轮廓 + 中轴，构成一个半块（做圆柱体用）
-BELL_SH = ([(1.0 - x, y) for y, x in BELL_PROFILE] +
-           [(0.5, y) for y, x in reversed(BELL_PROFILE)])
-
-
-def _bell_half(y):
-    """型线上给定高度的右半宽（线性插值）。"""
-    for i in range(len(BELL_PROFILE) - 1):
-        y0, x0 = BELL_PROFILE[i]
-        y1, x1 = BELL_PROFILE[i + 1]
-        if y0 <= y <= y1:
-            t = (y - y0) / (y1 - y0)
-            return x0 + (x1 - x0) * t
-    return BELL_PROFILE[-1][1]
-
-
-# 冷却管：沿型线走，从喉部下方到出口，等分成 6 根
-def _rib_x(y, t, margin=0.024):
-    h = _bell_half(y)
-    left, right = 1.0 - h, h
-    return left + margin + t * (right - left - 2 * margin)
-
-
-RIBS = [(_rib_x(0.300, i / 5.0), _rib_x(0.430, i / 5.0)) for i in range(6)]
-
-# --- 小尺寸 ---------------------------------------------------------------
-# 16px 只有 256 个像素，大尺寸那套"喷管 30% + 尾焰 42%"的比例会把喷管压成一条暗线。
-# 这里把喷管放大到占 40% 高度、出口拉宽到 60% 画幅，并且整体提亮一档钢色 ——
-# 否则深底上只剩一团亮三角，"发动机"这个信息彻底丢失。
-FLANGE_S = [(0.362, 0.098), (0.638, 0.098), (0.638, 0.152), (0.362, 0.152)]
-BELL_S   = [(0.424, 0.152), (0.576, 0.152), (0.544, 0.288),
-            (0.614, 0.372), (0.800, 0.520), (0.200, 0.520)]
-LIP_S    = [(0.204, 0.530), (0.796, 0.530)]
-FLAME_OUT_S = [(0.232, 0.542), (0.768, 0.542), (0.500, 0.902)]
-FLAME_CORE_S = [(0.390, 0.542), (0.610, 0.542), (0.500, 0.782)]
+# 深色任务栏的托盘版：环提亮一档
+T_CYAN   = (0x4F, 0xD2, 0xE4, 255)
+T_DIM    = (0x24, 0x72, 0x80, 255)
 
 
 # ---------------------------------------------------------------------------
@@ -290,21 +184,13 @@ def add_disc(layers, size, cx, cy, r, col, ss=None):
                              (X - R - 2, Y - R - 2, X + R + 2, Y + R + 2), ss), col))
 
 
-def add_stroke(layers, size, pts_norm, w, col, ss=None):
-    P = [(x * size, y * size) for x, y in pts_norm]
-    half = w * size / 2.0
-    xs = [p[0] for p in P]; ys = [p[1] for p in P]
-    pad = half + 3
-    layers.append((rasterize(size, lambda x, y: stroke_cov(x, y, P, half),
-                             (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad), ss), col))
+def add_cov(layers, size, cov_of_size, col, bbox_of_size, ss=None):
+    """把"归一化几何 → 覆盖率"的函数直接铺成一层。"""
+    layers.append((rasterize(size, cov_of_size(size), bbox_of_size(size), ss), col))
 
 
 def add_radial(layers, size, cx, cy, r_in, r_out, alpha, col, ss=None):
-    """连续径向渐变。
-
-    第一版用"三个同心圆叠加"近似光晕，结果三个圆的边界肉眼可辨 —— 分层看得很清楚。
-    这里改成逐像素算覆盖率（smoothstep），一个像素都不量化成 0/1，边缘才是连续的。
-    """
+    """连续径向渐变（smoothstep）。同心圆叠加会出现肉眼可辨的环带。"""
     if alpha <= 0:
         return
     X, Y = cx * size, cy * size
@@ -329,127 +215,191 @@ def add_radial(layers, size, cx, cy, r_in, r_out, alpha, col, ss=None):
 
 
 # ---------------------------------------------------------------------------
-# 渲染
+# 几何
 # ---------------------------------------------------------------------------
 
+def geom(small, dark):
+    """一套尺寸的几何参数，全部相对画布（0..1）。"""
+    if dark:
+        # 托盘深色版没有底盘 → 环放大到画布，裸环直接当图形
+        return dict(r_out=0.430, r_in=0.238, dot=0.072,
+                    lo_in=13.0, lo_out=7.0, up_in=296.0, up_out=303.0,
+                    amb=(0.292, 0.438, -24.0, -4.0, -29.0, -10.0))
+    if small:
+        return dict(r_out=0.342, r_in=0.176, dot=0.080,
+                    lo_in=15.0, lo_out=8.0, up_in=294.0, up_out=301.0,
+                    amb=(0.248, 0.404, -28.0, -8.0, -33.0, -14.0))
+    return dict(r_out=0.300, r_in=0.165, dot=0.058,
+                lo_in=12.0, lo_out=6.0, up_in=296.0, up_out=303.0,
+                amb=(0.202, 0.300, -20.0, -2.0, -25.0, -7.0))
+
+
+def _gap_angles(g, pad=0.0):
+    """缺口两端角度（上端归到 -180..180，方便比较）。"""
+    up_i = g['up_in'] + pad
+    up_o = g['up_out'] + pad
+    if up_i > 180.0:
+        up_i -= 360.0
+        up_o -= 360.0
+    return g['lo_in'], g['lo_out'], up_i, up_o
+
+
+def c_cov(size, g):
+    """开口环。缺口两端外张：外缘比内缘多转 10°，端面才有"喇叭口"。"""
+    CX = CY = size / 2.0
+    R0 = g['r_in'] * size
+    R1 = g['r_out'] * size
+    lo_i, lo_o, up_i, up_o = _gap_angles(g)
+
+    def cov(px, py):
+        dx = px - CX
+        dy = py - CY
+        d = math.hypot(dx, dy)
+        if d < R0 or d > R1:
+            return False
+        a = math.degrees(math.atan2(dy, dx))
+        u = (d - R0) / (R1 - R0)
+        lo = lo_i + (lo_o - lo_i) * u
+        up = up_i + (up_o - up_i) * u
+        return not (up < a < lo)
+    return cov
+
+
+def c_cov_inner(size, g):
+    """环内缘的暗边：内径起、占环厚 18%。"""
+    CX = CY = size / 2.0
+    Rout = g['r_out'] * size
+    R0 = g['r_in'] * size
+    R1 = (g['r_in'] + (g['r_out'] - g['r_in']) * 0.13) * size
+    lo_i, lo_o, up_i, up_o = _gap_angles(g)
+
+    def cov(px, py):
+        dx = px - CX
+        dy = py - CY
+        d = math.hypot(dx, dy)
+        if d < R0 or d > R1:
+            return False
+        a = math.degrees(math.atan2(dy, dx))
+        u = (d - R0) / (Rout - R0)
+        lo = lo_i + (lo_o - lo_i) * u
+        up = up_i + (up_o - up_i) * u
+        return not (up < a < lo)
+    return cov
+
+
+def c_cov_rim(size, g):
+    """左上 150°~300° 外缘的受光，沿角度两端柔化。"""
+    CX = CY = size / 2.0
+    band = (g['r_out'] - g['r_in']) * 0.16
+    R1 = g['r_out'] * size
+    R0 = (g['r_out'] - band) * size
+    span = max(1e-6, R1 - R0)
+
+    def cov(px, py):
+        dx = px - CX
+        dy = py - CY
+        d = math.hypot(dx, dy)
+        if d < R0 or d > R1:
+            return False
+        a = math.degrees(math.atan2(dy, dx))
+        if not (150.0 <= a <= 300.0):
+            return False
+        w = min((a - 150.0) / 45.0, (300.0 - a) / 45.0, 1.0)
+        return (d - R0) / span < w
+    return cov
+
+
+def _pol(r, a_deg, k):
+    a = math.radians(a_deg)
+    return (k + r * math.cos(a), k + r * math.sin(a))
+
+
+def amb_points(g):
+    """琥珀脉冲块 = 直边四边形（内缘更宽）。
+
+    早先用的是扇形（角度插值），渲出来像一只"倒料的嘴"，会和环的下端连成
+    一个 G。直边块才读得出"一块独立的读数条"。
+    """
+    r0, r1, ai0, ai1, ao0, ao1 = g['amb']
+    return [_pol(r1, ao0, 0.5), _pol(r1, ao1, 0.5), _pol(r0, ai1, 0.5), _pol(r0, ai0, 0.5)]
+
+
+def _bbox(frac):
+    return lambda size: (size * (0.5 - frac) - 2, size * (0.5 - frac) - 2,
+                         size * (0.5 + frac) + 2, size * (0.5 + frac) + 2)
+
+
 def render(size, small=False, dark=False):
-    """渲染一幅。small=小尺寸专用几何，dark=深色任务栏（反相）版。"""
-    ss = SS_BIG if size >= BIG_CUTOFF else SS
-    S = lambda a: a * size
-
-    plate = T_PLATE if dark else INK
-    rim = T_RIM if dark else INK_RIM
-    flange_c = T_FLANGE if dark else (STEEL_L if small else STEEL_TOP)
-    # 小尺寸把喷管提亮一档：深底上 #3A4A5E 缩到 16px 会退成背景
-    bell_c = (T_BELL if dark else (STEEL_TOP if small else STEEL_L))
-    bell_sh = T_BELL_R if dark else STEEL_R
-    lip_c = T_LIP if dark else AMBER
-    f_out = T_FLAME if dark else CYAN
-    f_mid = T_FLAME_IN if dark else CYAN_PALE
-    f_core = T_FLAME if dark else FLAME_HOT
-
+    """渲染一幅。small=小尺寸简化几何，dark=深色任务栏的托盘版（无底盘）。"""
+    ss = SS_HUGE if size >= 512 else SS
+    g = geom(small, dark)
     layers = []
 
-    # 底盘
-    layers.append((rasterize(size, lambda x, y: rounded_rect_cov(x, y, size, BG_RADIUS * size),
-                             None, ss), plate))
+    if not dark:
+        layers.append((rasterize(size, lambda x, y: rounded_rect_cov(x, y, size, 0.225 * size), ss=ss),
+                       INK))
+        if not small:
+            # 底盘左上一点冷光：整块纯色在大面积深色壁纸上像"没渲染完"
+            add_radial(layers, size, 0.36, 0.26, 0.02, 0.72, 24, INK_HI, ss)
 
-    # 内描边：16px 下差不多就是一个像素，只在 48 以上画
-    if size >= 48:
-        rw = size * 0.010
+    # 环背冷光：只有大盘才有意义，小尺寸会变成一圈脏边
+    if not small and not dark:
+        add_radial(layers, size, 0.5, 0.5, g['r_in'] * 0.6, g['r_out'] * 2.5, 30, CYAN, ss)
 
-        def rim_cov(x, y):
-            if not rounded_rect_cov(x, y, size, BG_RADIUS * size):
-                return False
-            return (not rounded_rect_cov(x + rw, y, size, BG_RADIUS * size) or
-                    not rounded_rect_cov(x - rw, y, size, BG_RADIUS * size) or
-                    not rounded_rect_cov(x, y + rw, size, BG_RADIUS * size) or
-                    not rounded_rect_cov(x, y - rw, size, BG_RADIUS * size))
-
-        layers.append((rasterize(size, rim_cov, None, ss), rim))
-
-    # 尾焰光晕（先画，压在喷管后面）
-    # 小尺寸不画：16px 下一层柔光会把"喷管 / 唇环 / 尾焰"三段全糊成一个亮斑，
-    # 轮廓信息比"发光感"值钱得多。
-    add_radial(layers, size, 0.5, 0.60, 0.02, 0.45, 0 if (dark or small) else 54, CYAN, ss)
-
-    flange = FLANGE_S if small else FLANGE
-    bell = BELL_S if small else BELL
-    lip = LIP_S if small else LIP
-    fobj = FLAME_OUT_S if small else FLAME_OUT
-    fcore = FLAME_CORE_S if small else FLAME_CORE
-
-    add_poly(layers, size, bell, bell_c, ss)
+    ring = T_CYAN if dark else CYAN
+    add_cov(layers, size, lambda s: c_cov(s, g), ring, _bbox(g['r_out'] + 0.02), ss)
     if not small:
-        add_poly(layers, size, BELL_SH, bell_sh, ss)
+        add_cov(layers, size, lambda s: c_cov_inner(s, g), T_DIM if dark else CYAN_DIM,
+                _bbox(g['r_out'] + 0.02), ss)
+        add_cov(layers, size, lambda s: c_cov_rim(s, g), CYAN_HI, _bbox(g['r_out'] + 0.02), ss)
 
-    # 冷却管：只在 96 以上画。小尺寸会变成噪点，把喷管糊成一团灰。
-    if size >= 96:
-        for i, (xa, xb) in enumerate(RIBS):
-            col = T_RIBS if dark else (RIBS_LIGHT if i % 2 else RIBS_DARK)
-            add_stroke(layers, size, [(xa, 0.312), (xb, 0.428)], 0.007, col, ss)
-
-    add_poly(layers, size, flange, flange_c, ss)
-
-    # 右侧受光棱：沿型线走一条亮边，喷管因此有圆柱感，而不是一块梯形色板
+    ap = amb_points(g)
+    add_poly(layers, size, ap, AMBER, ss)
     if not small:
-        edge = [(x - 0.010, y) for y, x in BELL_PROFILE]
-        add_stroke(layers, size, edge, 0.012,
-                   (STEEL_EDGE[0], STEEL_EDGE[1], STEEL_EDGE[2], 110 if not dark else 60), ss)
+        # 外缘一窄条高光：只有大盘画，小尺寸会把它吃掉
+        add_poly(layers, size, [ap[0], ap[1],
+                                ((ap[2][0] - ap[1][0]) * 0.18 + ap[1][0],
+                                 (ap[2][1] - ap[1][1]) * 0.18 + ap[1][1]),
+                                ((ap[3][0] - ap[0][0]) * 0.18 + ap[0][0],
+                                 (ap[3][1] - ap[0][1]) * 0.18 + ap[0][1])], AMBER_HI, ss)
 
-    # 出口环：给"喷口"一点金属厚度，否则那一圈只剩一根线
-    if not small:
-        add_poly(layers, size, BELL_MOUTH, MOUTH_C if not dark else T_MOUTH, ss)
-
-    # 尾焰：外 → 中 → 芯
-    add_poly(layers, size, fobj, f_out, ss)
-    if not small:
-        add_poly(layers, size, FLAME_MID, f_mid, ss)
-    add_poly(layers, size, fcore, f_core, ss)
-
-    # 激波钻石：超音速尾焰里周期性出现的亮结。
-    # 芯是淡青、钻是纯白 —— 反过来（白芯+白钻）根本看不出来，第一版就是这么废掉的。
-    if size >= 48 and not dark:
-        for yy, r in ((0.512, 0.028), (0.596, 0.022), (0.672, 0.016)):
-            add_poly(layers, size, [(0.500, yy - r), (0.500 + r * 0.85, yy),
-                                    (0.500, yy + r), (0.500 - r * 0.85, yy)], DIAMOND, ss)
-
-    # 出口唇环：压在尾焰根部，把"喷口"和"火焰"分开
-    add_stroke(layers, size, lip, 0.030 if small else 0.024, lip_c, ss)
-
+    add_disc(layers, size, 0.5, 0.5, g['dot'], WHITE, ss)
     return composite(size, layers)
 
 
 # ---------------------------------------------------------------------------
-# 输出
+# 编码 / 输出
 # ---------------------------------------------------------------------------
 
 def encode_png(size, rgba):
     raw = bytearray()
+    stride = size * 4
     for y in range(size):
         raw.append(0)
-        raw += rgba[y * size * 4:(y + 1) * size * 4]
+        raw += rgba[y * stride:(y + 1) * stride]
 
     def chunk(tag, data):
-        return struct.pack('>I', len(data)) + tag + data + \
-            struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF)
+        return (struct.pack('>I', len(data)) + tag + data +
+                struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
 
-    ihdr = struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)
-    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + \
-        chunk(b'IDAT', zlib.compress(bytes(raw), 9)) + chunk(b'IEND', b'')
+    return (b'\x89PNG\r\n\x1a\n' +
+            chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)) +
+            chunk(b'IDAT', zlib.compress(bytes(raw), 9)) +
+            chunk(b'IEND', b''))
 
 
 def write_ico(path, frames):
-    header = struct.pack('<HHH', 0, 1, len(frames))
-    entries = b''
-    offset = 6 + 16 * len(frames)
-    for size, data in frames:
-        entries += struct.pack('<BBBBHHII',
-                               0 if size >= 256 else size, 0 if size >= 256 else size,
-                               0, 0, 1, 32, len(data), offset)
-        offset += len(data)
+    n = len(frames)
     with open(path, 'wb') as f:
-        f.write(header + entries + b''.join(d for _, d in frames))
+        f.write(struct.pack('<HHH', 0, 1, n))
+        offset = 6 + 16 * n
+        for size, data in frames:
+            f.write(struct.pack('<BBBBHHII',
+                                size if size < 256 else 0, size if size < 256 else 0,
+                                0, 0, 1, 32, len(data), offset))
+            offset += len(data)
+        for _, data in frames:
+            f.write(data)
 
 
 def write_png_file(path, size, rgba):
@@ -464,18 +414,18 @@ def write_png_rgb(path, W, H, rgb):
         raw += rgb[y * W * 3:(y + 1) * W * 3]
 
     def chunk(tag, data):
-        return struct.pack('>I', len(data)) + tag + data + \
-            struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF)
+        return (struct.pack('>I', len(data)) + tag + data +
+                struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
 
-    ihdr = struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0)
     with open(path, 'wb') as f:
-        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) +
+        f.write(b'\x89PNG\r\n\x1a\n' +
+                chunk(b'IHDR', struct.pack('>IIBBBBB', W, H, 8, 2, 0, 0, 0)) +
                 chunk(b'IDAT', zlib.compress(bytes(raw), 9)) + chunk(b'IEND', b''))
 
 
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
 TRAY_SIZES = (16, 20, 24, 32, 40, 48, 64)
-SMALL_CUTOFF = 24          # <= 这个尺寸用简化几何
+SMALL_CUTOFF = 24
 
 
 def build_frames(sizes, dark=False):
@@ -483,12 +433,25 @@ def build_frames(sizes, dark=False):
             for sz in sizes]
 
 
+def _blit_zoom(canvas, W, H, rgba, sz, zoom, ox, oy, bg):
+    for dy in range(sz * zoom):
+        for dx in range(sz * zoom):
+            si = ((dy // zoom) * sz + (dx // zoom)) * 4
+            a = rgba[si + 3]
+            if a == 0:
+                continue
+            X, Y = ox + dx, oy + dy
+            if X >= W or Y >= H:
+                continue
+            o = (Y * W + X) * 3
+            canvas[o:o + 3] = bytes(
+                [int(rgba[si + c] * a / 255 + bg[c] * (255 - a) / 255) for c in range(3)])
+
+
 def make_verify(docs_dir):
-    """两张验收图：尺寸阶梯（白底/深底各一排）与托盘深浅两版。"""
     sizes = [16, 24, 32, 48, 64]
-    zoom = 4
+    zoom, pad = 4, 16
     cw = ch = max(sizes) * zoom
-    pad = 16
     W = len(sizes) * (cw + pad) + pad
     H = 2 * (ch + pad) + pad
     canvas = bytearray(W * H * 3)
@@ -499,29 +462,17 @@ def make_verify(docs_dir):
             for x in range(W):
                 o = (y * W + x) * 3
                 canvas[o:o + 3] = bytes(bg)
-
     for col, sz in enumerate(sizes):
         rgba = render(sz, small=(sz <= SMALL_CUTOFF))
         ox = pad + col * (cw + pad)
         for row, bg in enumerate(bgs):
-            oy = row * (ch + pad) + pad
-            for dy in range(sz * zoom):
-                for dx in range(sz * zoom):
-                    si = ((dy // zoom) * sz + (dx // zoom)) * 4
-                    a = rgba[si + 3]
-                    X, Y = ox + dx, oy + dy
-                    if X >= W or Y >= H or a == 0:
-                        continue
-                    o = (Y * W + X) * 3
-                    canvas[o:o + 3] = bytes(
-                        [int(rgba[si + c] * a / 255 + bg[c] * (255 - a) / 255) for c in range(3)])
+            _blit_zoom(canvas, W, H, rgba, sz, zoom, ox, row * (ch + pad) + pad, bg)
     write_png_rgb(os.path.join(docs_dir, 'preview-icon-sizes.png'), W, H, canvas)
     print('  preview-icon-sizes.png')
 
     tsizes = [16, 20, 24, 32]
-    tzoom = 4
+    tzoom, tpad = 4, 14
     tcw = tch = max(tsizes) * tzoom
-    tpad = 14
     TW = len(tsizes) * (tcw + tpad) + tpad
     TH = 2 * (tch + tpad) + tpad
     tc = bytearray(TW * TH * 3)
@@ -532,23 +483,11 @@ def make_verify(docs_dir):
             for x in range(TW):
                 o = (y * TW + x) * 3
                 tc[o:o + 3] = bytes(bg)
-
     for col, sz in enumerate(tsizes):
         for row in (0, 1):
             rgba = render(sz, small=(sz <= SMALL_CUTOFF), dark=(row == 0))
             ox = tpad + col * (tcw + tpad)
-            oy = row * (tch + tpad) + tpad
-            for dy in range(sz * tzoom):
-                for dx in range(sz * tzoom):
-                    si = ((dy // tzoom) * sz + (dx // tzoom)) * 4
-                    a = rgba[si + 3]
-                    X, Y = ox + dx, oy + dy
-                    if X >= TW or Y >= TH or a == 0:
-                        continue
-                    o = (Y * TW + X) * 3
-                    bg = tbgs[row]
-                    tc[o:o + 3] = bytes(
-                        [int(rgba[si + c] * a / 255 + bg[c] * (255 - a) / 255) for c in range(3)])
+            _blit_zoom(tc, TW, TH, rgba, sz, tzoom, ox, row * (tch + tpad) + tpad, tbgs[row])
     write_png_rgb(os.path.join(docs_dir, 'preview-icon-tray.png'), TW, TH, tc)
     print('  preview-icon-tray.png')
 
