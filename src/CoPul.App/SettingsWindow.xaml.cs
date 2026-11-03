@@ -179,6 +179,7 @@ public partial class SettingsWindow : Window
 
         InitFieldBar();
         InitTextSwatches();
+        InitBgSwatches();
         InitTextFieldBar();
         LoadFromConfig();
         LoadDiag();
@@ -325,7 +326,13 @@ public partial class SettingsWindow : Window
     protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (_loaded && MainGlassSwitch.IsChecked == true) PersistGlass();
+        if (!_loaded) return;
+
+        if (MainGlassSwitch.IsChecked == true) PersistGlass();
+
+        // 任务栏条背景（M4.36）：拖动期间只改窗口（persist:false），松手补一次落盘。
+        // 判断点放在"确实是自定义档"上：其余两档拖动无意义（控件已禁用），不写盘也不会丢东西。
+        if (_bgMode == "custom") PushBackdrop(persist: true);
     }
 
     /// <summary>预设档位：一键跳到熟悉的浓度。</summary>
@@ -610,6 +617,48 @@ public partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>
+    /// 任务栏条背景的色板（M4.36）。
+    ///
+    /// <para>
+    /// <b>不与 <see cref="FloatInk.Presets"/> 共用。</b>文字色要的是"贴在底上最高对比"，
+    /// 所以那张表里有纯白、有深墨；而底要的是"有存在感但不抢戏"，全是中低明度的实色。
+    /// 两张表混用会在各自场景里全错：拿纯白当条底 = 一整条发光，拿"墨黑"当文字色叠深底 = 看不见。
+    /// </para>
+    /// </summary>
+    private static readonly (string Label, string Hex)[] BgPresets =
+    {
+        ("深灰", "#101418"),
+        ("石墨", "#1B2127"),
+        ("蓝灰", "#243040"),
+        ("墨青", "#173034"),
+        ("暖褐", "#2B2118"),
+        ("银灰", "#9AA4B2"),
+        ("浅灰", "#D8DEE7"),
+        ("白",   "#F4F6F9"),
+    };
+
+    /// <summary>按 <see cref="BgPresets"/> 生成色板。写法与 <see cref="InitTextSwatches"/> 同构，
+    /// 只是没有「自动」那一格 —— 背景的「自动」由上面那排分段（跟随任务栏）承担。</summary>
+    private void InitBgSwatches()
+    {
+        Style style = (Style)FindResource("Swatch");
+
+        foreach ((string label, string hex) in BgPresets)
+        {
+            var chip = new RadioButton
+            {
+                Style = style,
+                GroupName = "taskbarbgcolor",
+                Tag = hex,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)),
+                ToolTip = $"{label} {hex}",
+            };
+            chip.Checked += BgSwatch_Checked;
+            BgSwatches.Children.Add(chip);
+        }
+    }
+
     private void LoadFromConfig()
     {
         _suppress = true;
@@ -670,6 +719,9 @@ public partial class SettingsWindow : Window
 
         ThroughSwitch.IsChecked = _config.TaskbarClickThrough;
         FullScreenSwitch.IsChecked = _config.FullScreenAutoSwitch;
+
+        // 任务栏条背景（M4.36）。与「文字取色」并列的一档，回填以窗口为准。
+        SyncBackdrop();
 
         // 防抖档位（M4.23）。配置里的值可能不在档位表上（手改过配置）→ 先归一到最接近的档，
         // 否则一个 1500 会让四个按钮一个都不亮，用户看到的是"当前档位未知"。
@@ -870,6 +922,39 @@ public partial class SettingsWindow : Window
                 case "ping":
                     PingBox.Text = value;
                     ApplyPing();
+                    break;
+
+                case "bgmode":
+                    // 任务栏条背景（M4.36）：<c>bgmode:auto|custom|transparent</c>
+                    BeginBackdropProbeBackup();
+                    if (value is "custom" or "transparent" or "auto") BarSegFor(value).IsChecked = true;
+                    break;
+
+                case "bgcolor":
+                    // 底色：<c>bgcolor:#1B2127</c>（会自动切到「自定义」档）
+                    BeginBackdropProbeBackup();
+                    BgHexBox.Text = value;
+                    ApplyBgHex();
+                    break;
+
+                case "bgopacity":
+                    // 不透明度：<c>bgopacity:40</c>
+                    BeginBackdropProbeBackup();
+                    if (int.TryParse(value, out int bgOp)) BgOpacitySlider.Value = Math.Clamp(bgOp, 0, 100);
+                    PushBackdrop(persist: true);
+                    break;
+
+                case "bg":
+                    // 全量打印：设置页看得到的三处 + 窗口实际画出来的底，两段必须一起读
+                    // —— 控件对了但窗口没跟上，正是这类"改了没反应"的典型。
+                    System.Console.WriteLine($"taskbarbg: mode={_bgMode} color={_bgColor} " +
+                                             $"opacity={_bgOpacity} customEnabled={BgCustomPanel.IsEnabled} " +
+                                             $"hex='{BgHexBox.Text}' seg=[auto={BgAuto.IsChecked}," +
+                                             $"custom={BgCustom.IsChecked},transparent={BgTransparent.IsChecked}]");
+                    foreach (object bgChild in BgSwatches.Children)
+                        if (bgChild is RadioButton bgChip)
+                            System.Console.WriteLine($"bgswatch: [{bgChip.Tag}] checked={bgChip.IsChecked}");
+                    System.Console.WriteLine($"taskbarbg: window={_ctx.GetTaskbar()?.BackdropDiag ?? "(未开)"}");
                     break;
 
                 case "level":
@@ -1754,6 +1839,217 @@ public partial class SettingsWindow : Window
             TaskbarWindow.InkMode.Dark => "任务栏条按浅色底配色",
             _ => "任务栏条按任务栏实际亮度自动配色",
         });
+    }
+
+    // ---- 任务栏条背景（M4.36）----
+
+    /// <summary>正在编辑的背景三档。初值取配置，<see cref="SyncBackdrop"/> 之后以窗口为准。</summary>
+    private string _bgMode = "auto";
+    private string _bgColor = "#1B2127";
+    private int _bgOpacity = 40;
+
+    /// <summary>程序自己给三个控件赋值时置位，免得回填被当成用户操作（那会把值又写回窗口）。</summary>
+    private bool _bgSyncing;
+
+    /// <summary>探针改背景之前的原值。三档是一个整体，一起备份、一起还原。</summary>
+    private (string mode, string color, int opacity)? _probeBackdropBackup;
+
+    /// <summary>
+    /// 把三个控件对齐到**窗口当前的真实状态**，窗口没开就按配置。
+    ///
+    /// <para>
+    /// 回填窗口而不是配置，理由与排列 / 边框相同：<c>--settings-probe</c>、托盘菜单都可能改过，
+    /// 而用户看到的是屏幕上那条东西的样子。以配置为准会出现"设置页说自定义、条却是透明"。
+    /// </para>
+    /// </summary>
+    private void SyncBackdrop()
+    {
+        TaskbarWindow? bar = _ctx.GetTaskbar();
+
+        _bgMode = bar?.Backdrop.Mode ?? NormalizeBgMode(_config.TaskbarBackdrop);
+        _bgColor = bar?.Backdrop.Color ?? NormalizeBgColor(_config.TaskbarBackdropColor);
+        _bgOpacity = bar?.Backdrop.Opacity ?? Math.Clamp(_config.TaskbarBackdropOpacity, 0, 100);
+
+        _bgSyncing = true;
+        try
+        {
+            (BarSegFor(_bgMode)).IsChecked = true;
+            BgOpacitySlider.Value = _bgOpacity;
+        }
+        finally
+        {
+            _bgSyncing = false;
+        }
+
+        SyncBackdropPanel();
+    }
+
+    /// <summary>
+    /// 三个控件与内部字段对齐：分段选中态、色板选中态、输入框、不透明度文字、以及"自定义"那一块能不能动。
+    ///
+    /// <para>
+    /// 色板选中态不能靠 <c>Checked</c> 事件自己维持：色板是 RadioButton，
+    /// 程序把某个 <c>IsChecked</c> 设 false 时 WPF 不会帮我们取消另一组的兄弟，
+    /// 换底色（从输入框改）之后必须整条重扫一遍。
+    /// </para>
+    /// </summary>
+    private void SyncBackdropPanel()
+    {
+        bool custom = _bgMode == "custom";
+        BgCustomPanel.IsEnabled = custom;
+        BgCustomPanel.Opacity = custom ? 1.0 : 0.45;
+
+        if (BgHexBox.Text != _bgColor) BgHexBox.Text = _bgColor;
+        BgOpacityText.Text = _bgOpacity + "%";
+
+        _bgSyncing = true;
+        try
+        {
+            foreach (object child in BgSwatches.Children)
+            {
+                if (child is RadioButton { Tag: string hex } chip)
+                    chip.IsChecked = string.Equals(hex, _bgColor, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        finally
+        {
+            _bgSyncing = false;
+        }
+
+        BgHint.Text = _bgMode switch
+        {
+            "custom" => "自定义底色铺在字下面，不透明度管它有多实；0% 等于只剩一层极淡的玻璃，文字颜色仍按这个底色判深浅。",
+            "transparent" => "透明档不画任何底、也不做模糊，字直接浮在任务栏上 —— 壁纸很花时可能不好认（这时可以调「文字取色」）。",
+            _ => "跟随任务栏：按任务栏实际亮度垫一层淡淡的反色（浅底铺白、深底铺黑），任何壁纸下字都读得清。",
+        };
+    }
+
+    private RadioButton BarSegFor(string mode) => mode switch
+    {
+        "custom" => BgCustom,
+        "transparent" => BgTransparent,
+        _ => BgAuto,
+    };
+
+    private static string NormalizeBgMode(string? mode) => mode?.Trim().ToLowerInvariant() switch
+    {
+        "custom" => "custom",
+        "transparent" => "transparent",
+        _ => "auto",
+    };
+
+    private static string NormalizeBgColor(string? hex)
+        => FloatInk.TryParse(hex, out Color c) ? $"#{c.R:X2}{c.G:X2}{c.B:X2}" : "#1B2127";
+
+    private void Backdrop_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress || _bgSyncing) return;
+        if (sender is not RadioButton { Tag: string tag }) return;
+
+        _bgMode = NormalizeBgMode(tag);
+        PushBackdrop(persist: true);
+    }
+
+    private void BgSwatch_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress || _bgSyncing) return;
+        if (sender is not RadioButton { Tag: string hex }) return;
+
+        _bgColor = NormalizeBgColor(hex);
+
+        // 点色板本身就是"我要用自定义底"，不用再让人回去点一下「自定义」。
+        _bgMode = "custom";
+        PushBackdrop(persist: true);
+    }
+
+    private void BgHexBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ApplyBgHex();
+    }
+
+    private void ApplyBgHex_Click(object sender, RoutedEventArgs e) => ApplyBgHex();
+
+    /// <summary>输入框里的自定义底色。写法不对要明说，不能静默退回上一个色 ——
+    /// 用户会以为"我填的颜色生效了"，然后去调别的东西。</summary>
+    private void ApplyBgHex()
+    {
+        string text = BgHexBox.Text.Trim();
+        if (text.Length > 0 && !FloatInk.TryParse(text, out _))
+        {
+            Hint($"颜色写法不对：{text}（要 #RRGGBB，例如 #1B2127）");
+            return;
+        }
+
+        _bgColor = NormalizeBgColor(text);
+        _bgMode = "custom";
+        PushBackdrop(persist: true);
+    }
+
+    private void BgOpacity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_loaded || _suppress || _bgSyncing) return;
+
+        _bgOpacity = (int)Math.Round(e.NewValue);
+        BgOpacityText.Text = _bgOpacity + "%";
+
+        // 拖动中不写盘：一次拖动会产生几十个值。松手由 OnMouseLeftButtonUp 补一次。
+        PushBackdrop(persist: false);
+    }
+
+    /// <summary>
+    /// 把三档推给窗口（没开就只改配置）。
+    ///
+    /// <para>
+    /// 窗口那一支必须<b>三个值一起</b>传：底色与不透明度在画刷那里是一次合成，
+    /// 分两次调用会让条闪两下。所以这里不提供单独的 setter。
+    /// </para>
+    /// </summary>
+    private void PushBackdrop(bool persist)
+    {
+        TaskbarWindow? bar = _ctx.GetTaskbar();
+        if (bar is not null)
+        {
+            bar.SetBackdrop(_bgMode, _bgColor, _bgOpacity, persist);
+        }
+        else
+        {
+            _config.TaskbarBackdrop = _bgMode;
+            _config.TaskbarBackdropColor = _bgColor;
+            _config.TaskbarBackdropOpacity = _bgOpacity;
+            if (persist) ConfigStore.SaveCurrent();
+        }
+
+        SyncBackdropPanel();
+
+        if (!persist) return;
+
+        string where = bar is not null ? "任务栏条" : "配置";
+        Hint(_bgMode switch
+        {
+            "custom" => $"{where}背景改为自定义 {_bgColor}（不透明度 {_bgOpacity}%）",
+            "transparent" => $"{where}背景改为透明",
+            _ => $"{where}背景改为跟随任务栏",
+        });
+    }
+
+    private void BeginBackdropProbeBackup()
+    {
+        if (_probeBackdropBackup is not null) return;
+
+        _probeBackdropBackup = (_config.TaskbarBackdrop, _config.TaskbarBackdropColor,
+                                _config.TaskbarBackdropOpacity);
+        Application.Current.Exit += (_, _) => RestoreBackdropProbe();
+    }
+
+    private void RestoreBackdropProbe()
+    {
+        if (_probeBackdropBackup is not { } backup) return;
+
+        _config.TaskbarBackdrop = backup.mode;
+        _config.TaskbarBackdropColor = backup.color;
+        _config.TaskbarBackdropOpacity = backup.opacity;
+        _probeBackdropBackup = null;
+        ConfigStore.SaveCurrent();
     }
 
     private void ThroughSwitch_Toggled(object sender, RoutedEventArgs e)

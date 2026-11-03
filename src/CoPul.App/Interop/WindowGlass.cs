@@ -44,6 +44,12 @@ internal static class WindowGlass
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    private const int DWMWA_BORDER_COLOR = 34;
+
+    /// <summary>DWM 的"跟着系统走"（默认边框色）。</summary>
+    private const int DWMWA_COLOR_DEFAULT = unchecked((int)0xFFFFFFFF);
+    /// <summary>DWM 的"不画边框"。</summary>
+    private const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
 
     private const int DWMSBT_NONE = 1;
     private const int DWMSBT_MAINWINDOW = 2;       // Mica
@@ -59,6 +65,26 @@ internal static class WindowGlass
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    /// <summary>
+    /// 画 / 不画 DWM 给窗口描的那一圈 1 DIP 边框（M4.36）。
+    ///
+    /// <para>
+    /// 为什么需要：任务栏条的「透明」档把底去掉之后，整条上唯一还看得见的就是这圈边框 ——
+    /// 实测 150% 缩放下是 2 个设备像素、亮度 90 左右（条内只有 57），
+    /// 在壁纸偏暗时像一个空心描边盒子，和"只有字浮在任务栏上"完全不是一回事。
+    /// 其余两档必须显式还原 <see cref="DWMWA_COLOR_DEFAULT"/>，
+    /// 否则从透明档切回去时那圈边不会自己回来（DWM 会一直记着 NONE）。
+    /// </para>
+    /// </summary>
+    public static void SetWindowBorder(Window window, bool visible)
+    {
+        IntPtr hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        int color = visible ? DWMWA_COLOR_DEFAULT : DWMWA_COLOR_NONE;
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref color, sizeof(int));
+    }
 
     /// <summary>
     /// 把整个客户区标记成"玻璃"。不加这一步时，DWM 只在标题栏区域画背景，
@@ -134,7 +160,8 @@ internal static class WindowGlass
         // SYSTEMBACKDROP_TYPE 即使返回 S_OK 也画不出来——实测窗口内部像素级均匀的纯色。
         // accent 是 DWM 在窗口后方注入的一层，不依赖 swapchain alpha，是 WPF 上真正能出模糊那条路。
         if (TryApplyAccent(hwnd, kind, dark, tintOpacity, blurOnly))
-            return kind == Backdrop.Mica ? "Accent Blur（Mica 不可用，降级为模糊）" : "Accent Acrylic";
+            return blurOnly ? "Accent Blur（极透：不模糊、不着色）"
+                 : kind == Backdrop.Mica ? "Accent Blur（Mica 不可用，降级为模糊）" : "Accent Acrylic";
 
         int type = kind == Backdrop.Mica ? DWMSBT_MAINWINDOW : DWMSBT_TRANSIENTWINDOW;
         int hr = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));

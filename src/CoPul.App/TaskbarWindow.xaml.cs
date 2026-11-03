@@ -62,6 +62,16 @@ public partial class TaskbarWindow : Window
     private bool _attached;
     private InkMode _ink = InkMode.Auto;
 
+    // 条底三档（M4.36）。存字符串而不是枚举：配置里认不出来时能安全回退到 auto，
+    // 枚举序号在插入新值时还会整体错位。
+    private const string BackdropAuto = "auto";
+    private const string BackdropCustom = "custom";
+    private const string BackdropTransparent = "transparent";
+
+    private string _backdrop = BackdropAuto;
+    private Color _backdropColor = Color.FromRgb(0x1B, 0x21, 0x27);
+    private int _backdropOpacity = 40;
+
     /// <summary>点击是否穿透（7.6 / Q-12）。true 时 WM_NCHITTEST 一律返回 HTTRANSPARENT。</summary>
     private bool _clickThrough = true;
 
@@ -162,6 +172,10 @@ public partial class TaskbarWindow : Window
 
         if (Enum.TryParse(config.TaskbarInk, out InkMode saved)) _ink = saved;
         _clickThrough = config.TaskbarClickThrough;
+
+        _backdrop = NormalizeBackdrop(config.TaskbarBackdrop);
+        _backdropColor = ParseBackdropColor(config.TaskbarBackdropColor);
+        _backdropOpacity = Math.Clamp(config.TaskbarBackdropOpacity, 0, 100);
 
         // 逐字段文字色（M4.20）。与悬浮窗那份各存各的：字段名不同（这里有 lat 没有 net），
         // 底色也不同（这边是系统任务栏）。只抄配置里出现的键，缺的仍是「自动」。
@@ -540,6 +554,15 @@ public partial class TaskbarWindow : Window
                 taskbarIsLight = true;
                 break;
             default:
+                // 自定义底色时「自动」要跟**自己给的底色**走，不能再去采样任务栏：
+                // 用户把底铺成 #F0F0F0 而任务栏是深色，按任务栏判定就会给浅字叠浅底，整条糊掉。
+                // 透明档没有"自己的底"，仍按任务栏实际亮度判。
+                if (_backdrop == BackdropCustom)
+                {
+                    taskbarIsLight = IsLightColor(_backdropColor);
+                    break;
+                }
+
                 double luma = Taskbar.SampleLuma(_bar);
 
                 // luma < 0 = 一点有效像素都没取到（自动隐藏时任务栏整条滑出屏幕）。
@@ -563,28 +586,92 @@ public partial class TaskbarWindow : Window
         // 只改 alt 那一路 —— 悬浮窗那一条条有自己的表，两边互不相干。
         _state?.SetTrayText(_fieldColors, LabelBrush);
 
-        // 给条一层淡底。为什么不能纯透明（7.5 的「跟随系统」）：
-        // 实测任务栏是"跟随壁纸"的半透明，壁纸很亮时（现场是一张橙红星球）深色字
-        // 直接糊成一团。垫一层 40% 的对比色后，字在任何壁纸上都能读，
-        // 视觉上也还是一个"任务栏上的小组件"，不破坏一致性。
-        Shell.Background = taskbarIsLight
-            ? new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF))
-            : new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00));
-
-        // A 方案：条从"任务栏的子窗口"变成了独立顶层窗口，不能再指望"父窗口透出来"当背景
-        // —— WPF 非 layered 窗口会丢弃 alpha，纯透明只会变成一块黑。
-        // 用与悬浮窗同一套 DWM accent 亚克力（A-35/A-36：必须 ACRYLICBLURBEHIND
-        // 且 AccentFlags=0，否则 tint 的 alpha 会被整个忽略），深浅跟随任务栏实际亮度。
-        if (_attached)
-        {
-            GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
-                                         dark: !taskbarIsLight, tintOpacity: 0.10);
-        }
+        ApplyBackdrop(taskbarIsLight);
 
         AutoInkMenu.IsChecked = _ink == InkMode.Auto;
         LightInkMenu.IsChecked = _ink == InkMode.Light;
         DarkInkMenu.IsChecked = _ink == InkMode.Dark;
     }
+
+    /// <summary>
+    /// 条底的三种画法（M4.36）。与字色分开成一段：字色由 <see cref="ApplyInk"/> 算好传进来，
+    /// 这里只负责"底"。
+    ///
+    /// <para>
+    /// <b>auto</b>：原来那一套。为什么不能纯透明（7.5 的「跟随系统」）——
+    /// 实测任务栏是"跟随壁纸"的半透明，壁纸很亮时（现场是一张橙红星球）深色字
+    /// 直接糊成一团。垫一层对比色后，字在任何壁纸上都能读。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>transparent</b>：不是把 Brush 设成 Transparent 就完事 —— 条是独立顶层窗口（A 方案），
+    /// WPF 非 layered 窗口的客户区 alpha 会被 DWM 丢掉，纯"不画底"变成一块黑。
+    /// 必须走 <c>ACCENT_ENABLE_BLURBEHIND</c> + <c>tint alpha = 0</c>：它的着色基底是 0，
+    /// 也不做模糊，于是窗口区域真的透出任务栏（悬浮窗的「极透」档是同一条路）。
+    /// </para>
+    /// </summary>
+    private void ApplyBackdrop(bool taskbarIsLight)
+    {
+        switch (_backdrop)
+        {
+            case BackdropTransparent:
+                // 没挂上任务栏（attach 失败）时**不能**走透明：这条路的透明完全靠 accent 的
+                // BLURBEHIND 撑（着色基底为 0、不做模糊），没有 accent 就只剩 WPF 自己的表面，
+                // 表现是"整条看不见"而用户以为程序挂了。退回 auto 至少还能读。
+                if (!_attached) goto default;
+
+                // alpha 全 0 的 Brush 与 null 在 DWM 眼里等价，这里给 Transparent 只为读代码时明确。
+                Shell.Background = Brushes.Transparent;
+
+                // 底去掉以后，DWM 那圈 1 DIP 边框就成了整条上唯一看得见的东西
+                // （实测 150% 缩放下 2px、亮度 90 vs 条内 57），必须一起去掉才是"透明"。
+                WindowGlass.SetWindowBorder(this, visible: false);
+
+                GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
+                    dark: !taskbarIsLight, tintOpacity: 0.0, blurOnly: true);
+                return;
+
+            case BackdropCustom:
+                WindowGlass.SetWindowBorder(this, visible: true);
+
+                Shell.Background = new SolidColorBrush(Color.FromArgb(
+                    (byte)(Math.Clamp(_backdropOpacity, 0, 100) * 255 / 100),
+                    _backdropColor.R, _backdropColor.G, _backdropColor.B));
+
+                // 亚克力保留：底层模糊让自定义色不像一块贴上去的塑料膜。
+                // tint 用 0.10（与 auto 同量级）—— 自定义色本身已经由 Shell 那层体现，
+                // accent 只做"这是玻璃"的暗示。
+                if (_attached)
+                {
+                    GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
+                        dark: !IsLightColor(_backdropColor), tintOpacity: 0.10);
+                }
+                return;
+
+            default:
+                // 从透明档切回来时那圈边不会自己回来（DWM 一直记着 NONE），必须显式还原。
+                WindowGlass.SetWindowBorder(this, visible: true);
+
+                Shell.Background = taskbarIsLight
+                    ? new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF))
+                    : new SolidColorBrush(Color.FromArgb(0x66, 0x00, 0x00, 0x00));
+
+                // A 方案：条从"任务栏的子窗口"变成了独立顶层窗口，不能再指望"父窗口透出来"当背景
+                // —— WPF 非 layered 窗口会丢弃 alpha，纯透明只会变成一块黑。
+                // 用与悬浮窗同一套 DWM accent 亚克力（A-35/A-36：必须 ACRYLICBLURBEHIND
+                // 且 AccentFlags=0，否则 tint 的 alpha 会被整个忽略），深浅跟随任务栏实际亮度。
+                if (_attached)
+                {
+                    GlassMode = WindowGlass.Apply(this, WindowGlass.Backdrop.Acrylic,
+                                                 dark: !taskbarIsLight, tintOpacity: 0.10);
+                }
+                return;
+        }
+    }
+
+    /// <summary>自定义底色属于浅色还是深色。用与 <see cref="Taskbar.SampleLuma"/> 同一套权重。</summary>
+    private static bool IsLightColor(Color c)
+        => (c.R * 299 + c.G * 587 + c.B * 114) / 1000.0 > 128;
 
     /// <summary>
     /// 装 <c>TaskbarCreated</c> 监听（7.7 的 explorer 重启）。
@@ -1175,6 +1262,65 @@ public partial class TaskbarWindow : Window
     /// 设置页要和它走同一条路径 —— 否则"只改一个，另一处还停在旧值"。
     /// </summary>
     public void SetInkMode(InkMode mode) => SetInk(mode);
+
+    /// <summary>
+    /// 改条的背景（M4.36，设置页「任务栏条背景」那一组）。
+    ///
+    /// <para>
+    /// 三个值一起传而不是拆成三个 setter：模式 / 底色 / 不透明度在画刷那里是**一次合成**，
+    /// 分三次调用会让条闪两下（先按旧底新色、再按新底新色）。
+    /// </para>
+    ///
+    /// <para>
+    /// <paramref name="persist"/>=false 用于拖动不透明度滑块的中间态：几十次写盘没必要，
+    /// 但**内存里的 <see cref="AppConfig"/> 一定要改** —— 设置页和这里是同一个对象，
+    /// 只改窗口不改配置的话，用户拖完松手前若程序退出，值就回到了起点。
+    /// 真正落盘由松手那一下（<c>persist:true</c>）负责。
+    /// </para>
+    /// </summary>
+    public void SetBackdrop(string mode, string color, int opacity, bool persist = true)
+    {
+        string m = NormalizeBackdrop(mode);
+        Color c = ParseBackdropColor(color);
+        int o = Math.Clamp(opacity, 0, 100);
+
+        bool same = _backdrop == m && _backdropColor == c && _backdropOpacity == o;
+        if (!same)
+        {
+            _backdrop = m;
+            _backdropColor = c;
+            _backdropOpacity = o;
+            ApplyInk();
+        }
+
+        if (!PersistToConfig) return;
+
+        _config.TaskbarBackdrop = m;
+        _config.TaskbarBackdropColor = HexOf(c);
+        _config.TaskbarBackdropOpacity = o;
+        if (persist) ConfigStore.SaveCurrent();
+    }
+
+    /// <summary>背景诊断串（截图自测时打到 stdout，验"设置真的落到窗口上了"而不是只落了配置）。</summary>
+    public string BackdropDiag =>
+        $"backdrop={_backdrop} color={HexOf(_backdropColor)} opacity={_backdropOpacity} " +
+        $"shell={(Shell.Background as SolidColorBrush)?.Color.ToString() ?? "null"} glass={GlassMode}";
+
+    /// <summary>背景三档的当前值。设置页要按**窗口实际状态**回填，不按配置 ——
+    /// 与排列 / 边框同一套取舍：配置可能被 <c>--settings-probe</c> 或手改过。</summary>
+    public (string Mode, string Color, int Opacity) Backdrop => (_backdrop, HexOf(_backdropColor), _backdropOpacity);
+
+    private static string NormalizeBackdrop(string? mode) => mode?.Trim().ToLowerInvariant() switch
+    {
+        BackdropCustom => BackdropCustom,
+        BackdropTransparent => BackdropTransparent,
+        _ => BackdropAuto,
+    };
+
+    private static Color ParseBackdropColor(string? hex)
+        => FloatInk.TryParse(hex, out Color c) ? c : Color.FromRgb(0x1B, 0x21, 0x27);
+
+    private static string HexOf(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
 
     private void SetInk(InkMode mode)
     {

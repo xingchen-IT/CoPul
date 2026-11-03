@@ -574,7 +574,7 @@
                                                  Checked="AppTheme_Changed" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource SectionHint}"
-                                           Text="只影响大窗口和设置页。点一下立即生效，不用重启。悬浮窗玻璃深浅在下面「悬浮窗外观」里单独调，任务栏条则跟随任务栏实际亮度。" />
+                                           Text="只影响大窗口和设置页。点一下立即生效，不用重启。悬浮窗玻璃深浅在下面「悬浮窗外观」里单独调，任务栏条的底色在「任务栏条背景」里单独调。" />
 
                                 <!-- 分隔线：把「主题」与「毛玻璃」两段视觉上切开 -->
                                 <Border Height="1" Background="{DynamicResource BrushDivider}" Margin="0,14,0,0" />
@@ -810,6 +810,78 @@
                         </Border>
 
                         <!--
+                            任务栏条背景（M4.36）。
+                            **紧跟「悬浮窗外观」**：两者回答的是同一个问题 —— 那块东西长什么样。
+                            之所以仍是两张卡而不是并进上面那张：上一张管的每一项都只作用于悬浮窗，
+                            这一张只作用于任务栏条；混在一张卡里，用户会以为"毛玻璃浓度"也管条。
+                        -->
+                        <Border Style="{StaticResource BlockCard}">
+                            <StackPanel>
+                                <TextBlock Text="任务栏条背景" Style="{StaticResource SectionTitle}" />
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="背景" Style="{StaticResource RowLabel}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton x:Name="BgAuto" Style="{StaticResource Segment}"
+                                                     GroupName="taskbarbg" Content="跟随任务栏" Tag="auto"
+                                                     Checked="Backdrop_Checked"
+                                                     ToolTip="按任务栏实际亮度垫一层淡淡的反色，任何壁纸下字都读得清" />
+                                        <RadioButton x:Name="BgCustom" Style="{StaticResource Segment}"
+                                                     GroupName="taskbarbg" Content="自定义" Tag="custom"
+                                                     Checked="Backdrop_Checked"
+                                                     ToolTip="自己给一个底色，深浅可由不透明度调" />
+                                        <RadioButton x:Name="BgTransparent" Style="{StaticResource Segment}"
+                                                     GroupName="taskbarbg" Content="透明" Tag="transparent"
+                                                     Checked="Backdrop_Checked"
+                                                     ToolTip="完全不留底，只有字浮在任务栏上（不模糊、不遮挡）" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 只有「自定义」才可操作。灰掉而不是隐藏：切换档位时行高不跳，眼睛不用重新找 -->
+                                <StackPanel x:Name="BgCustomPanel">
+                                    <WrapPanel x:Name="BgSwatches" Margin="0,10,0,0" />
+
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="140" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="底色" Style="{StaticResource RowLabel}" />
+                                        <TextBox x:Name="BgHexBox" Grid.Column="1" Style="{StaticResource Input}"
+                                                 MaxLength="7" KeyDown="BgHexBox_KeyDown" />
+                                        <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="应用"
+                                                Margin="8,0,0,0" Click="ApplyBgHex_Click" />
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="不透明度" Style="{StaticResource RowLabel}"
+                                                   VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1" x:Name="BgOpacitySlider" Style="{StaticResource LevelSlider}"
+                                                Minimum="0" Maximum="100" Margin="12,0,10,0"
+                                                VerticalAlignment="Center"
+                                                ValueChanged="BgOpacity_Changed" />
+                                        <TextBlock Grid.Column="2" x:Name="BgOpacityText" Style="{StaticResource RowLabel}"
+                                                   Width="86" TextAlignment="Right" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource BrushTextPrimary}"
+                                                   FontFamily="{StaticResource FontNumeric}" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <TextBlock x:Name="BgHint" Style="{StaticResource SectionHint}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!--
                             文字颜色（M4.19 整条一个色 → M4.20 逐字段，悬浮窗 / 任务栏各一套）。
                             先选视图、再选字段：九格 × 两个视图 = 18 个色，
                             每个都摆一整排色板会把设置页撑成一面墙，而用户一次只调一格。
@@ -828,7 +900,7 @@
                                     <RadioButton x:Name="InkViewTray" Style="{StaticResource Segment}"
                                                  GroupName="inkview" Content="任务栏条" Tag="tray"
                                                  Checked="InkView_Changed"
-                                                 ToolTip="任务栏条：底色是系统任务栏，深浅由「文字取色」决定" />
+                                                 ToolTip="任务栏条：底色由「任务栏条背景」决定——跟随任务栏时按任务栏亮度判，自定义时按你给的底色判" />
                                 </StackPanel>
 
                                 <WrapPanel x:Name="TextFieldBar" Margin="0,10,0,0" />

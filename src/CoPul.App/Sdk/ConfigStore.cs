@@ -246,6 +246,30 @@ public sealed class AppConfig
     public string TaskbarInk { get; set; } = "Light";
 
     /// <summary>
+    /// 任务栏条的背景（M4.36）：<c>auto</c> / <c>custom</c> / <c>transparent</c>。
+    ///
+    /// <para>
+    /// <c>auto</c> = 原来那一套：按任务栏实际亮度铺一层淡底（浅底铺白 33%、深底铺黑 40%）再叠亚克力。
+    /// <c>custom</c> = 用 <see cref="TaskbarBackdropColor"/> + <see cref="TaskbarBackdropOpacity"/> 自己给底。
+    /// <c>transparent</c> = 完全不留底，只有文字浮在任务栏上。
+    /// </para>
+    ///
+    /// <para>
+    /// 为什么需要透明这一档：条是独立顶层窗口（A 方案），非 layered 窗口的客户区 alpha 会被
+    /// DWM 丢掉，纯"不画底"会变成一块黑。所以透明档走的是
+    /// <c>ACCENT_ENABLE_BLURBEHIND</c> + <c>tint alpha = 0</c>（基底为 0 的那条路），
+    /// 而不是简单把 Brush 设成 Transparent —— 见 TaskbarWindow.ApplyBackdrop。
+    /// </para>
+    /// </summary>
+    public string TaskbarBackdrop { get; set; } = "auto";
+
+    /// <summary>自定义底色的 <c>#RRGGBB</c>。只在 <see cref="TaskbarBackdrop"/> = custom 时生效。</summary>
+    public string TaskbarBackdropColor { get; set; } = "#1B2127";
+
+    /// <summary>自定义底色的不透明度 0–100。0 = 只剩文字（等价于透明档，但字色仍按这个底色判定）。</summary>
+    public int TaskbarBackdropOpacity { get; set; } = 40;
+
+    /// <summary>
     /// 任务栏条是否点击穿透（7.6 / Q-12 采纳方案 2）。默认**穿透**：
     /// 条只负责显示，任何鼠标操作走托盘右键，符合"不抢占"原则。
     ///
