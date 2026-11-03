@@ -331,7 +331,7 @@ public partial class SettingsWindow : Window
         if (MainGlassSwitch.IsChecked == true) PersistGlass();
 
         // 任务栏条背景（M4.36）：拖动期间只改窗口（persist:false），松手补一次落盘。
-        // 判断点放在"确实是自定义档"上：其余两档拖动无意义（控件已禁用），不写盘也不会丢东西。
+        // 判断点放在"确实是自定义档"上：透明档拖动无意义（控件已禁用），不写盘也不会丢东西。
         if (_bgMode == "custom") PushBackdrop(persist: true);
     }
 
@@ -639,7 +639,7 @@ public partial class SettingsWindow : Window
     };
 
     /// <summary>按 <see cref="BgPresets"/> 生成色板。写法与 <see cref="InitTextSwatches"/> 同构，
-    /// 只是没有「自动」那一格 —— 背景的「自动」由上面那排分段（跟随任务栏）承担。</summary>
+    /// 只是没有「自动」那一格 —— 背景只有 透明 / 自定义 两档，没有"自动取色"这一档。</summary>
     private void InitBgSwatches()
     {
         Style style = (Style)FindResource("Swatch");
@@ -949,8 +949,8 @@ public partial class SettingsWindow : Window
                     // —— 控件对了但窗口没跟上，正是这类"改了没反应"的典型。
                     System.Console.WriteLine($"taskbarbg: mode={_bgMode} color={_bgColor} " +
                                              $"opacity={_bgOpacity} customEnabled={BgCustomPanel.IsEnabled} " +
-                                             $"hex='{BgHexBox.Text}' seg=[auto={BgAuto.IsChecked}," +
-                                             $"custom={BgCustom.IsChecked},transparent={BgTransparent.IsChecked}]");
+                                             $"hex='{BgHexBox.Text}' seg=[custom={BgCustom.IsChecked}," +
+                                             $"transparent={BgTransparent.IsChecked}]");
                     foreach (object bgChild in BgSwatches.Children)
                         if (bgChild is RadioButton bgChip)
                             System.Console.WriteLine($"bgswatch: [{bgChip.Tag}] checked={bgChip.IsChecked}");
@@ -1843,15 +1843,15 @@ public partial class SettingsWindow : Window
 
     // ---- 任务栏条背景（M4.36）----
 
-    /// <summary>正在编辑的背景三档。初值取配置，<see cref="SyncBackdrop"/> 之后以窗口为准。</summary>
-    private string _bgMode = "auto";
+    /// <summary>正在编辑的背景两档（M4.37 起只有 透明 / 自定义）。初值取配置，<see cref="SyncBackdrop"/> 之后以窗口为准。</summary>
+    private string _bgMode = "transparent";
     private string _bgColor = "#1B2127";
     private int _bgOpacity = 40;
 
     /// <summary>程序自己给三个控件赋值时置位，免得回填被当成用户操作（那会把值又写回窗口）。</summary>
     private bool _bgSyncing;
 
-    /// <summary>探针改背景之前的原值。三档是一个整体，一起备份、一起还原。</summary>
+    /// <summary>探针改背景之前的原值。模式 / 底色 / 不透明度是一个整体，一起备份、一起还原。</summary>
     private (string mode, string color, int opacity)? _probeBackdropBackup;
 
     /// <summary>
@@ -1919,24 +1919,18 @@ public partial class SettingsWindow : Window
         BgHint.Text = _bgMode switch
         {
             "custom" => "自定义底色铺在字下面，不透明度管它有多实；0% 等于只剩一层极淡的玻璃，文字颜色仍按这个底色判深浅。",
-            "transparent" => "透明档不画任何底、也不做模糊，字直接浮在任务栏上 —— 壁纸很花时可能不好认（这时可以调「文字取色」）。",
-            _ => "跟随任务栏：按任务栏实际亮度垫一层淡淡的反色（浅底铺白、深底铺黑），任何壁纸下字都读得清。",
+            _ => "透明档不画任何底、也不做模糊，字直接浮在任务栏上。文字颜色仍按任务栏实际亮度自动判，可在下面「文字颜色」里改。",
         };
     }
 
-    private RadioButton BarSegFor(string mode) => mode switch
-    {
-        "custom" => BgCustom,
-        "transparent" => BgTransparent,
-        _ => BgAuto,
-    };
+    private RadioButton BarSegFor(string mode) => mode == "custom" ? BgCustom : BgTransparent;
 
-    private static string NormalizeBgMode(string? mode) => mode?.Trim().ToLowerInvariant() switch
-    {
-        "custom" => "custom",
-        "transparent" => "transparent",
-        _ => "auto",
-    };
+    /// <summary>
+    /// 归一化背景档位。旧的 <c>"auto"</c>（M4.36 的「跟随任务栏 = 垫对比底」）落到透明 ——
+    /// 用户已明确两者是一个意思，垫底那套被砍掉了；认不出来的值同样走透明。
+    /// </summary>
+    private static string NormalizeBgMode(string? mode)
+        => mode?.Trim().ToLowerInvariant() == "custom" ? "custom" : "transparent";
 
     private static string NormalizeBgColor(string? hex)
         => FloatInk.TryParse(hex, out Color c) ? $"#{c.R:X2}{c.G:X2}{c.B:X2}" : "#1B2127";
@@ -1997,7 +1991,7 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 把三档推给窗口（没开就只改配置）。
+    /// 把模式 / 底色 / 不透明度一起推给窗口（没开就只改配置）。
     ///
     /// <para>
     /// 窗口那一支必须<b>三个值一起</b>传：底色与不透明度在画刷那里是一次合成，
@@ -2027,8 +2021,7 @@ public partial class SettingsWindow : Window
         Hint(_bgMode switch
         {
             "custom" => $"{where}背景改为自定义 {_bgColor}（不透明度 {_bgOpacity}%）",
-            "transparent" => $"{where}背景改为透明",
-            _ => $"{where}背景改为跟随任务栏",
+            _ => $"{where}背景改为透明（不留底，字直接浮在任务栏上）",
         });
     }
 

@@ -246,22 +246,27 @@ public sealed class AppConfig
     public string TaskbarInk { get; set; } = "Light";
 
     /// <summary>
-    /// 任务栏条的背景（M4.36）：<c>auto</c> / <c>custom</c> / <c>transparent</c>。
+    /// 任务栏条的背景（M4.36 立、M4.37 合并为两档）：<c>transparent</c> / <c>custom</c>。
     ///
     /// <para>
-    /// <c>auto</c> = 原来那一套：按任务栏实际亮度铺一层淡底（浅底铺白 33%、深底铺黑 40%）再叠亚克力。
+    /// <c>transparent</c>（默认）= 一点底都不画，只有文字浮在任务栏上。
     /// <c>custom</c> = 用 <see cref="TaskbarBackdropColor"/> + <see cref="TaskbarBackdropOpacity"/> 自己给底。
-    /// <c>transparent</c> = 完全不留底，只有文字浮在任务栏上。
     /// </para>
     ///
     /// <para>
-    /// 为什么需要透明这一档：条是独立顶层窗口（A 方案），非 layered 窗口的客户区 alpha 会被
-    /// DWM 丢掉，纯"不画底"会变成一块黑。所以透明档走的是
+    /// M4.36 曾有第三档 <c>auto</c>（"跟随任务栏"，按任务栏亮度垫一层反色对比底）。
+    /// 用户明确"跟随系统任务栏就是和透明一个意思" → 垫底那套已删除，
+    /// 老配置里的 <c>auto</c> 由 <c>TaskbarWindow.NormalizeBackdrop</c> 归一为 <c>transparent</c>。
+    /// </para>
+    ///
+    /// <para>
+    /// 为什么不能简单把 Brush 设成 Transparent：条是独立顶层窗口（A 方案），非 layered 窗口的
+    /// 客户区 alpha 会被 DWM 丢掉，纯"不画底"会变成一块黑。所以透明档走的是
     /// <c>ACCENT_ENABLE_BLURBEHIND</c> + <c>tint alpha = 0</c>（基底为 0 的那条路），
-    /// 而不是简单把 Brush 设成 Transparent —— 见 TaskbarWindow.ApplyBackdrop。
+    /// 见 TaskbarWindow.ApplyBackdrop。
     /// </para>
     /// </summary>
-    public string TaskbarBackdrop { get; set; } = "auto";
+    public string TaskbarBackdrop { get; set; } = "transparent";
 
     /// <summary>自定义底色的 <c>#RRGGBB</c>。只在 <see cref="TaskbarBackdrop"/> = custom 时生效。</summary>
     public string TaskbarBackdropColor { get; set; } = "#1B2127";

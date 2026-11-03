@@ -814,6 +814,10 @@
                             **紧跟「悬浮窗外观」**：两者回答的是同一个问题 —— 那块东西长什么样。
                             之所以仍是两张卡而不是并进上面那张：上一张管的每一项都只作用于悬浮窗，
                             这一张只作用于任务栏条；混在一张卡里，用户会以为"毛玻璃浓度"也管条。
+
+                            M4.37：原来第三档「跟随任务栏」（按任务栏亮度垫一层反色底）删掉 ——
+                            用户说"跟随系统任务栏就是和透明一个意思"。现在只有 透明（默认）/ 自定义。
+                            字色仍按任务栏实际亮度自动判，那属于「文字取色」，跟这里给不给底是两件事。
                         -->
                         <Border Style="{StaticResource BlockCard}">
                             <StackPanel>
@@ -826,18 +830,14 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="背景" Style="{StaticResource RowLabel}" />
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <RadioButton x:Name="BgAuto" Style="{StaticResource Segment}"
-                                                     GroupName="taskbarbg" Content="跟随任务栏" Tag="auto"
-                                                     Checked="Backdrop_Checked"
-                                                     ToolTip="按任务栏实际亮度垫一层淡淡的反色，任何壁纸下字都读得清" />
-                                        <RadioButton x:Name="BgCustom" Style="{StaticResource Segment}"
-                                                     GroupName="taskbarbg" Content="自定义" Tag="custom"
-                                                     Checked="Backdrop_Checked"
-                                                     ToolTip="自己给一个底色，深浅可由不透明度调" />
                                         <RadioButton x:Name="BgTransparent" Style="{StaticResource Segment}"
                                                      GroupName="taskbarbg" Content="透明" Tag="transparent"
                                                      Checked="Backdrop_Checked"
                                                      ToolTip="完全不留底，只有字浮在任务栏上（不模糊、不遮挡）" />
+                                        <RadioButton x:Name="BgCustom" Style="{StaticResource Segment}"
+                                                     GroupName="taskbarbg" Content="自定义" Tag="custom"
+                                                     Checked="Backdrop_Checked"
+                                                     ToolTip="自己给一个底色，深浅可由不透明度调" />
                                     </StackPanel>
                                 </Grid>
 
@@ -900,7 +900,7 @@
                                     <RadioButton x:Name="InkViewTray" Style="{StaticResource Segment}"
                                                  GroupName="inkview" Content="任务栏条" Tag="tray"
                                                  Checked="InkView_Changed"
-                                                 ToolTip="任务栏条：底色由「任务栏条背景」决定——跟随任务栏时按任务栏亮度判，自定义时按你给的底色判" />
+                                                 ToolTip="任务栏条：底色由「任务栏条背景」决定——透明时按任务栏亮度判，自定义时按你给的底色判" />
                                 </StackPanel>
 
                                 <WrapPanel x:Name="TextFieldBar" Margin="0,10,0,0" />
