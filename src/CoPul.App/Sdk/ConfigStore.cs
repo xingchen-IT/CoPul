@@ -260,10 +260,11 @@ public sealed class AppConfig
     /// </para>
     ///
     /// <para>
-    /// 为什么不能简单把 Brush 设成 Transparent：条是独立顶层窗口（A 方案），非 layered 窗口的
-    /// 客户区 alpha 会被 DWM 丢掉，纯"不画底"会变成一块黑。所以透明档走的是
-    /// <c>ACCENT_ENABLE_BLURBEHIND</c> + <c>tint alpha = 0</c>（基底为 0 的那条路），
-    /// 见 TaskbarWindow.ApplyBackdrop。
+    /// 为什么不能简单把 Brush 设成 Transparent：非 layered 窗口的客户区 alpha 会被 DWM 丢掉，纯"不画底"
+    /// 会变成一块黑。M4.38 起这一条<b>已经是 layered 窗口</b>（<c>AllowsTransparency=True</c>），
+    /// <c>Shell.Background = Transparent</c> 就是逐像素 alpha = 0 —— 那才是真正的"什么都不画"。
+    /// 中间那两版用 <c>ACCENT_ENABLE_BLURBEHIND</c> + <c>tint alpha = 0</c> 冒充透明的做法已删除：
+    /// 它的着色基底确实是 0，但 accent 照样在条的区域套了一层模糊。
     /// </para>
     /// </summary>
     public string TaskbarBackdrop { get; set; } = "transparent";
@@ -273,6 +274,24 @@ public sealed class AppConfig
 
     /// <summary>自定义底色的不透明度 0–100。0 = 只剩文字（等价于透明档，但字色仍按这个底色判定）。</summary>
     public int TaskbarBackdropOpacity { get; set; } = 40;
+
+    /// <summary>
+    /// 任务栏条是否垫一层毛玻璃（M4.41）。**与 <see cref="TaskbarBackdrop"/> 正交**，不是第三档：
+    /// 透明 + 玻璃 = 纯磨砂；自定义 + 玻璃 = 磨砂之上再叠一层实色（不透明度越低，磨砂越透）。
+    ///
+    /// <para>
+    /// 实现是给条注入 <c>ACCENT_ENABLE_ACRYLICBLURBEHIND</c>（见 <c>WindowGlass.ApplyAccent</c>）。
+    /// 条是 layered 窗口，但实测 accent 照样生效，所以不需要另起一个玻璃宿窗 ——
+    /// 这一点与"非 layered 窗口才吃系统背景"的老结论相反，别再照着老结论重构。
+    /// </para>
+    /// </summary>
+    public bool TaskbarGlass { get; set; }
+
+    /// <summary>
+    /// 毛玻璃浓度 0–100：直接是 accent tint 的 alpha。0 也**不是**完全透明 ——
+    /// 亚克力自带约 17% 的基底色，压不掉（那是它与 BLURBEHIND 的本质差别）。
+    /// </summary>
+    public int TaskbarGlassOpacity { get; set; } = 45;
 
     /// <summary>
     /// 任务栏条是否点击穿透（7.6 / Q-12 采纳方案 2）。默认**穿透**：

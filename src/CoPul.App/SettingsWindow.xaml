@@ -877,6 +877,51 @@
                                     </Grid>
                                 </StackPanel>
 
+                                <!--
+                                    毛玻璃（M4.41）。
+                                    **与上面两档正交、不是第三档**：透明 + 玻璃 = 纯磨砂；
+                                    自定义 + 玻璃 = 磨砂之上再叠一层实色（不透明度越低，磨砂越透）。
+                                    两者合成一个"底"控件的话，"我想要带色的磨砂"就没有表达方式了。
+                                    放最后而不是紧跟背景档：先说"底是什么"，再说"另加一层玻璃"。
+                                -->
+                                <Border Height="1" Background="{DynamicResource BrushDivider}" Margin="0,14,0,0" />
+
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="108" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="毛玻璃" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" FontSize="13"
+                                               Foreground="{DynamicResource BrushTextPrimary}" />
+                                    <ToggleButton Grid.Column="1" x:Name="TrayGlassSwitch" Style="{StaticResource Switch}"
+                                                  Margin="-4,0,0,0" VerticalAlignment="Center"
+                                                  Checked="TrayGlass_Toggled" Unchecked="TrayGlass_Toggled"
+                                                  ToolTip="在条的区域垫一层磨砂：模糊后面的任务栏，再按浓度覆一层色" />
+                                    <TextBlock Grid.Column="2" x:Name="TrayGlassStateText" Style="{StaticResource SectionHint}"
+                                               Margin="12,0,0,0" VerticalAlignment="Center" />
+                                </Grid>
+
+                                <Grid x:Name="TrayGlassPanel" Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="浓度" Style="{StaticResource RowLabel}"
+                                               VerticalAlignment="Center" />
+                                    <Slider Grid.Column="1" x:Name="TrayGlassSlider" Style="{StaticResource LevelSlider}"
+                                            Minimum="0" Maximum="100" Margin="12,0,10,0"
+                                            VerticalAlignment="Center"
+                                            ValueChanged="TrayGlass_Changed" />
+                                    <TextBlock Grid.Column="2" x:Name="TrayGlassText"
+                                               Style="{StaticResource RowLabel}" Width="86"
+                                               TextAlignment="Right" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource BrushTextPrimary}"
+                                               FontFamily="{StaticResource FontNumeric}" />
+                                </Grid>
+
                                 <TextBlock x:Name="BgHint" Style="{StaticResource SectionHint}" />
                             </StackPanel>
                         </Border>

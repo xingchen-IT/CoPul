@@ -74,6 +74,15 @@ public partial class TaskbarWindow : Window
     private Color _backdropColor = Color.FromRgb(0x1B, 0x21, 0x27);
     private int _backdropOpacity = 40;
 
+    /// <summary>条下面垫不垫毛玻璃（M4.41，与 <see cref="_backdrop"/> 正交）。</summary>
+    private bool _glass;
+
+    /// <summary>毛玻璃浓度 0–100 = accent tint 的 alpha（0 仍有亚克力自带的 17% 基底）。</summary>
+    private int _glassOpacity = 45;
+
+    /// <summary>最近一次 <see cref="ApplyInk"/> 判出的"底是浅的"（= 字用深色）。玻璃缇跟着它反向取色。</summary>
+    private bool _inkIsLight;
+
     /// <summary>点击是否穿透（7.6 / Q-12）。true 时 WM_NCHITTEST 一律返回 HTTRANSPARENT。</summary>
     private bool _clickThrough = true;
 
@@ -178,6 +187,8 @@ public partial class TaskbarWindow : Window
         _backdrop = NormalizeBackdrop(config.TaskbarBackdrop);
         _backdropColor = ParseBackdropColor(config.TaskbarBackdropColor);
         _backdropOpacity = Math.Clamp(config.TaskbarBackdropOpacity, 0, 100);
+        _glass = config.TaskbarGlass;
+        _glassOpacity = Math.Clamp(config.TaskbarGlassOpacity, 0, 100);
 
         // 逐字段文字色（M4.20）。与悬浮窗那份各存各的：字段名不同（这里有 lat 没有 net），
         // 底色也不同（这边是系统任务栏）。只抄配置里出现的键，缺的仍是「自动」。
@@ -588,6 +599,8 @@ public partial class TaskbarWindow : Window
         // 只改 alt 那一路 —— 悬浮窗那一条条有自己的表，两边互不相干。
         _state?.SetTrayText(_fieldColors, LabelBrush);
 
+        // 玻璃缇要跟字色反向（浅字 → 深玻璃），所以这一趟判定必须先落到字段上再画底。
+        _inkIsLight = taskbarIsLight;
         ApplyBackdrop();
 
         AutoInkMenu.IsChecked = _ink == InkMode.Auto;
@@ -602,7 +615,7 @@ public partial class TaskbarWindow : Window
     /// <para>
     /// <b>transparent</b>（默认）：<b>一点底都不画</b>。条是 layered 窗口（<c>AllowsTransparency</c>），
     /// <c>Shell.Background = Transparent</c> 就是逐像素 alpha = 0，透出来的就是任务栏原样，
-    /// 既没有底色也没有模糊。
+    /// 既没有底色也没有模糊 —— <b>除非毛玻璃开关打开</b>（M4.41），那时底由 accent 提供。
     /// </para>
     ///
     /// <para>
@@ -620,22 +633,49 @@ public partial class TaskbarWindow : Window
     /// </summary>
     private void ApplyBackdrop()
     {
-        // layered 窗口不需要 DWM 那圈 1 DIP 边框（底去掉后它会是唯一看得见的东西），
-        // 也不该再注入任何 accent。
+        // layered 窗口不需要 DWM 那圈 1 DIP 边框（底去掉后它会是唯一看得见的东西）。
         WindowGlass.SetWindowBorder(this, visible: false);
+
+        ApplyGlassLayer();
 
         if (_backdrop == BackdropCustom)
         {
             Shell.Background = new SolidColorBrush(Color.FromArgb(
                 (byte)(Math.Clamp(_backdropOpacity, 0, 100) * 255 / 100),
                 _backdropColor.R, _backdropColor.G, _backdropColor.B));
-            GlassMode = "Layered 实色";
+            GlassMode = _glass ? "Layered 实色 + Acrylic" : "Layered 实色";
             return;
         }
 
         // alpha 全 0 的 Brush 与 null 在 DWM 眼里等价，这里给 Transparent 只为读代码时明确。
         Shell.Background = Brushes.Transparent;
-        GlassMode = "Layered 直通";
+        GlassMode = _glass ? "Layered 直通 + Acrylic" : "Layered 直通";
+    }
+
+    /// <summary>
+    /// 毛玻璃那一层（M4.41）。**在「背景」之上、在内容之下**：DWM 把 accent 注入到窗口后方，
+    /// 所以 Shell 那块实色是盖在模糊之上的 —— 这正是"自定义 + 磨砂"该有的叠法。
+    ///
+    /// <para>
+    /// 缇的深浅跟字色**反向**取：浅色字配深玻璃、深色字配浅玻璃，对比度不会因为调浓度而崩掉。
+    /// 用户若在「文字颜色」里手动锁了一档，<see cref="_ink"/> 已经体现在 <see cref="_inkIsLight"/> 里了。
+    /// </para>
+    ///
+    /// <para>
+    /// 关掉时必须显式下发 <c>ACCENT_DISABLED</c>：accent 没有生命周期，"不再调用"不等于"撤掉"。
+    /// </para>
+    /// </summary>
+    private void ApplyGlassLayer()
+    {
+        if (!_glass)
+        {
+            WindowGlass.ClearAccent(this);
+            return;
+        }
+
+        bool dark = !_inkIsLight;
+        if (!WindowGlass.ApplyAccent(this, dark, _glassOpacity / 100.0))
+            Trace($"glass: ApplyAccent 失败 hwnd=0x{_hwnd:X}");
     }
 
     /// <summary>自定义底色属于浅色还是深色。用与 <see cref="Taskbar.SampleLuma"/> 同一套权重。</summary>
@@ -1273,11 +1313,42 @@ public partial class TaskbarWindow : Window
     /// <summary>背景诊断串（截图自测时打到 stdout，验"设置真的落到窗口上了"而不是只落了配置）。</summary>
     public string BackdropDiag =>
         $"backdrop={_backdrop} color={HexOf(_backdropColor)} opacity={_backdropOpacity} " +
-        $"shell={(Shell.Background as SolidColorBrush)?.Color.ToString() ?? "null"} glass={GlassMode}";
+        $"glass={( _glass ? $"on/{_glassOpacity}%/{(_inkIsLight ? "light" : "dark")}" : "off")} " +
+        $"shell={(Shell.Background as SolidColorBrush)?.Color.ToString() ?? "null"} mode={GlassMode}";
 
     /// <summary>背景三档的当前值。设置页要按**窗口实际状态**回填，不按配置 ——
     /// 与排列 / 边框同一套取舍：配置可能被 <c>--settings-probe</c> 或手改过。</summary>
     public (string Mode, string Color, int Opacity) Backdrop => (_backdrop, HexOf(_backdropColor), _backdropOpacity);
+
+    /// <summary>毛玻璃开关与浓度的当前值（M4.41），同上按窗口实际状态回填。</summary>
+    public (bool On, int Opacity) Glass => (_glass, _glassOpacity);
+
+    /// <summary>
+    /// 开关毛玻璃 / 改浓度（M4.41）。与 <see cref="SetBackdrop"/> 拆成两个方法而不是并成一个：
+    /// 两者正交、面板上也是两组控件；合成一个的话拖浓度滑块会把底色也重算一遍，
+    /// 自定义档下会连带闪一次实色层。
+    ///
+    /// <para>
+    /// <paramref name="persist"/>=false 用于拖动中间态（内存改、盘不写），松手那一下再落盘。
+    /// </para>
+    /// </summary>
+    public void SetGlass(bool on, int opacity, bool persist = true)
+    {
+        int o = Math.Clamp(opacity, 0, 100);
+        bool same = _glass == on && _glassOpacity == o;
+        if (!same)
+        {
+            _glass = on;
+            _glassOpacity = o;
+            ApplyBackdrop();
+        }
+
+        if (!PersistToConfig) return;
+
+        _config.TaskbarGlass = on;
+        _config.TaskbarGlassOpacity = o;
+        if (persist) ConfigStore.SaveCurrent();
+    }
 
     /// <summary>
     /// 归一化背景档位。旧的 <c>"auto"</c>（M4.36 的「跟随任务栏 = 垫对比底」）落到透明：

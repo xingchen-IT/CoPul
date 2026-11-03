@@ -944,6 +944,19 @@ public partial class SettingsWindow : Window
                     PushBackdrop(persist: true);
                     break;
 
+                case "trayglass":
+                    // 条毛玻璃开关（M4.41）：<c>trayglass:on|off|1|0</c>
+                    BeginBackdropProbeBackup();
+                    TrayGlassSwitch.IsChecked = value is not ("0" or "off" or "false");
+                    break;
+
+                case "glassopacity":
+                    // 条毛玻璃浓度：<c>glassopacity:60</c>
+                    BeginBackdropProbeBackup();
+                    if (int.TryParse(value, out int glassOp)) TrayGlassSlider.Value = Math.Clamp(glassOp, 0, 100);
+                    PushTrayGlass(persist: true);
+                    break;
+
                 case "bg":
                     // 全量打印：设置页看得到的三处 + 窗口实际画出来的底，两段必须一起读
                     // —— 控件对了但窗口没跟上，正是这类"改了没反应"的典型。
@@ -951,6 +964,9 @@ public partial class SettingsWindow : Window
                                              $"opacity={_bgOpacity} customEnabled={BgCustomPanel.IsEnabled} " +
                                              $"hex='{BgHexBox.Text}' seg=[custom={BgCustom.IsChecked}," +
                                              $"transparent={BgTransparent.IsChecked}]");
+                    System.Console.WriteLine($"taskbarglass: on={_trayGlass} opacity={_trayGlassOpacity} " +
+                                             $"switch={TrayGlassSwitch.IsChecked} slider={TrayGlassSlider.Value:F0} " +
+                                             $"panelEnabled={TrayGlassPanel.IsEnabled} text='{TrayGlassText.Text}'");
                     foreach (object bgChild in BgSwatches.Children)
                         if (bgChild is RadioButton bgChip)
                             System.Console.WriteLine($"bgswatch: [{bgChip.Tag}] checked={bgChip.IsChecked}");
@@ -1848,11 +1864,15 @@ public partial class SettingsWindow : Window
     private string _bgColor = "#1B2127";
     private int _bgOpacity = 40;
 
+    /// <summary>任务栏条毛玻璃（M4.41）。与上面三档正交，单独记住，<see cref="SyncBackdrop"/> 之后以窗口为准。</summary>
+    private bool _trayGlass;
+    private int _trayGlassOpacity = 45;
+
     /// <summary>程序自己给三个控件赋值时置位，免得回填被当成用户操作（那会把值又写回窗口）。</summary>
     private bool _bgSyncing;
 
-    /// <summary>探针改背景之前的原值。模式 / 底色 / 不透明度是一个整体，一起备份、一起还原。</summary>
-    private (string mode, string color, int opacity)? _probeBackdropBackup;
+    /// <summary>探针改背景之前的原值。模式 / 底色 / 不透明度 / 毛玻璃是一个整体，一起备份、一起还原。</summary>
+    private (string mode, string color, int opacity, bool glass, int glassOpacity)? _probeBackdropBackup;
 
     /// <summary>
     /// 把三个控件对齐到**窗口当前的真实状态**，窗口没开就按配置。
@@ -1870,11 +1890,18 @@ public partial class SettingsWindow : Window
         _bgColor = bar?.Backdrop.Color ?? NormalizeBgColor(_config.TaskbarBackdropColor);
         _bgOpacity = bar?.Backdrop.Opacity ?? Math.Clamp(_config.TaskbarBackdropOpacity, 0, 100);
 
+        (bool on, int opacity) glass = bar?.Glass ?? (_config.TaskbarGlass,
+                                                     Math.Clamp(_config.TaskbarGlassOpacity, 0, 100));
+        _trayGlass = glass.on;
+        _trayGlassOpacity = glass.opacity;
+
         _bgSyncing = true;
         try
         {
             (BarSegFor(_bgMode)).IsChecked = true;
             BgOpacitySlider.Value = _bgOpacity;
+            TrayGlassSwitch.IsChecked = _trayGlass;
+            TrayGlassSlider.Value = _trayGlassOpacity;
         }
         finally
         {
@@ -1902,6 +1929,11 @@ public partial class SettingsWindow : Window
         if (BgHexBox.Text != _bgColor) BgHexBox.Text = _bgColor;
         BgOpacityText.Text = _bgOpacity + "%";
 
+        TrayGlassPanel.IsEnabled = _trayGlass;
+        TrayGlassPanel.Opacity = _trayGlass ? 1.0 : 0.45;
+        TrayGlassText.Text = _trayGlassOpacity + "%";
+        TrayGlassStateText.Text = _trayGlass ? "已开启" : "已关闭";
+
         _bgSyncing = true;
         try
         {
@@ -1918,9 +1950,59 @@ public partial class SettingsWindow : Window
 
         BgHint.Text = _bgMode switch
         {
-            "custom" => "自定义底色铺在字下面，不透明度管它有多实；0% 等于只剩一层极淡的玻璃，文字颜色仍按这个底色判深浅。",
-            _ => "透明档不画任何底、也不做模糊，字直接浮在任务栏上。文字颜色仍按任务栏实际亮度自动判，可在下面「文字颜色」里改。",
+            "custom" => _trayGlass
+                ? "自定义底色铺在磨砂之上：不透明度管实色有多实（越低越透出模糊），浓度管磨砂本身有多浓。文字颜色仍按这个底色判深浅。"
+                : "自定义底色铺在字下面，不透明度管它有多实；0% 等于只剩一层极淡的玻璃，文字颜色仍按这个底色判深浅。",
+            _ => _trayGlass
+                ? "透明档 + 毛玻璃：条上只有一层磨砂，模糊后面的任务栏再按浓度覆色。浓度 0 也仍有一层约 17% 的底色（亚克力自带，压不掉）。"
+                : "透明档不画任何底、也不做模糊，字直接浮在任务栏上。文字颜色仍按任务栏实际亮度自动判，可在下面「文字颜色」里改。",
         };
+    }
+
+    /// <summary>毛玻璃开关（M4.41）。挂 <c>Checked/Unchecked</c> 而不是 <c>Click</c>：
+    /// 这个开关没有"程序回填自翻"的风险 —— 回填时 <see cref="_bgSyncing"/> 已经把事件挡掉了。</summary>
+    private void TrayGlass_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded || _suppress || _bgSyncing) return;
+
+        _trayGlass = TrayGlassSwitch.IsChecked == true;
+        PushTrayGlass(persist: true);
+    }
+
+    private void TrayGlass_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_loaded || _suppress || _bgSyncing) return;
+
+        _trayGlassOpacity = (int)Math.Round(e.NewValue);
+        TrayGlassText.Text = _trayGlassOpacity + "%";
+
+        // 拖动中不写盘，松手补一次（同不透明度滑块）。
+        PushTrayGlass(persist: false);
+    }
+
+    /// <summary>把开关 + 浓度一起推给窗口（没开就只改配置）。</summary>
+    private void PushTrayGlass(bool persist)
+    {
+        TaskbarWindow? bar = _ctx.GetTaskbar();
+        if (bar is not null)
+        {
+            bar.SetGlass(_trayGlass, _trayGlassOpacity, persist);
+        }
+        else
+        {
+            _config.TaskbarGlass = _trayGlass;
+            _config.TaskbarGlassOpacity = _trayGlassOpacity;
+            if (persist) ConfigStore.SaveCurrent();
+        }
+
+        SyncBackdropPanel();
+
+        if (!persist) return;
+
+        string where = bar is not null ? "任务栏条" : "配置";
+        Hint(_trayGlass
+            ? $"{where}毛玻璃已开启（浓度 {_trayGlassOpacity}%）"
+            : $"{where}毛玻璃已关闭");
     }
 
     private RadioButton BarSegFor(string mode) => mode == "custom" ? BgCustom : BgTransparent;
@@ -2030,7 +2112,8 @@ public partial class SettingsWindow : Window
         if (_probeBackdropBackup is not null) return;
 
         _probeBackdropBackup = (_config.TaskbarBackdrop, _config.TaskbarBackdropColor,
-                                _config.TaskbarBackdropOpacity);
+                                _config.TaskbarBackdropOpacity, _config.TaskbarGlass,
+                                _config.TaskbarGlassOpacity);
         Application.Current.Exit += (_, _) => RestoreBackdropProbe();
     }
 
@@ -2041,6 +2124,8 @@ public partial class SettingsWindow : Window
         _config.TaskbarBackdrop = backup.mode;
         _config.TaskbarBackdropColor = backup.color;
         _config.TaskbarBackdropOpacity = backup.opacity;
+        _config.TaskbarGlass = backup.glass;
+        _config.TaskbarGlassOpacity = backup.glassOpacity;
         _probeBackdropBackup = null;
         ConfigStore.SaveCurrent();
     }

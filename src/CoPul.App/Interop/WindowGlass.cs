@@ -250,6 +250,61 @@ internal static class WindowGlass
     }
 
     /// <summary>
+    /// 只注入 accent（M4.41，任务栏条用）。
+    ///
+    /// <para>
+    /// 与 <see cref="Apply"/> 的区别是**不碰窗口本身**：不刷 <c>Window.Background</c>、
+    /// 不改 DWM 圆角偏好与边框色。条的形状由它自己的 <c>Shell</c> 圆角 + layered 逐像素 alpha 决定，
+    /// 让 DWM 再插一层 8px 圆角会把四个角啃掉一圈。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>layered 窗口也吃 accent</b>——这一条实测过，别再照着"layered 不能用系统背景"的老结论去搭宿窗：
+    /// 条的 <c>AllowsTransparency=True</c>（exstyle 0x80088），注入 <c>ACRYLICBLURBEHIND</c> + 半透明红 tint 后，
+    /// 条内均值 (128,109,108) → (195,140,97)、纹理量 7.3 → 4.2。若不成立，这组数字会一动不动。
+    /// </para>
+    /// </summary>
+    /// <param name="dark">深色缇还是浅色缇（RGB 见 <see cref="TryApplyAccent"/>）。</param>
+    /// <param name="opacity">tint 的 alpha，0–1。0 也仍有亚克力自带的约 17% 基底，压不掉。</param>
+    public static bool ApplyAccent(Window window, bool dark, double opacity)
+    {
+        IntPtr hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == IntPtr.Zero) return false;
+        return TryApplyAccent(hwnd, Backdrop.Acrylic, dark, opacity, blurOnly: false);
+    }
+
+    /// <summary>
+    /// 撤掉 accent。<b>没有"自动恢复"</b>：不下发 <c>ACCENT_DISABLED(0)</c>，那层玻璃会一直挂在窗口上。
+    /// </summary>
+    public static void ClearAccent(Window window)
+    {
+        IntPtr hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd != IntPtr.Zero) DisableAccent(hwnd);
+    }
+
+    private static void DisableAccent(IntPtr hwnd)
+    {
+        var policy = new AccentPolicy { AccentState = 0 };
+        int size = Marshal.SizeOf<AccentPolicy>();
+        IntPtr buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(policy, buffer, false);
+            var data = new WindowCompositionAttributeData
+            {
+                Attribute = WCA_ACCENT_POLICY,
+                Data = buffer,
+                SizeOfData = size,
+            };
+            SetWindowCompositionAttribute(hwnd, ref data);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>
     /// 把 WPF 的合成目标背景刷成透明。**必须在窗口 Loaded 之后调用一次**：
     /// SourceInitialized 阶段 HwndTarget 还没完全建好，这时设的值会被后续初始化覆盖，
     /// 结果是窗口底变成纯黑（实测 #050608 = 35% 的 #0F1216 叠在纯黑上），
@@ -275,25 +330,7 @@ internal static class WindowGlass
         int type = DWMSBT_NONE;
         DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
 
-        // accent 路径没有"关"的开关，只能显式下发 ACCENT_DISABLED(0)
-        var policy = new AccentPolicy { AccentState = 0 };
-        int size = Marshal.SizeOf<AccentPolicy>();
-        IntPtr buffer = Marshal.AllocHGlobal(size);
-        try
-        {
-            Marshal.StructureToPtr(policy, buffer, false);
-            var data = new WindowCompositionAttributeData
-            {
-                Attribute = WCA_ACCENT_POLICY,
-                Data = buffer,
-                SizeOfData = size,
-            };
-            SetWindowCompositionAttribute(hwnd, ref data);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
+        DisableAccent(hwnd);
     }
 
     /// <summary>
