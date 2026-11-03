@@ -1,0 +1,88 @@
+CoPul 专有软件许可协议
+=====================
+
+Copyright (c) 2026 CoPul 作者（xingchen）。保留所有权利。
+All rights reserved.
+
+本协议适用于本仓库内的全部内容：源代码、二进制文件、图标与图片资源、文档
+（含 docs/ 下的全部里程碑报告）。除本协议明确授予的权利外，不授予任何其他权利。
+
+
+一、允许的行为
+
+1. 从作者发布的官方渠道下载本软件，并在**你自己拥有或控制的设备**上安装、运行、
+   用于个人非商业用途。
+2. 为备份目的保存一份副本。
+3. 出于学习、研究、代码评审目的阅读本仓库源码，并向作者提交 Issue 或 Pull Request。
+4. 在文章、视频、评测中引用本项目的截图、界面图与链接，但须注明出处并保留原链接。
+
+
+二、禁止的行为（未经作者事先书面许可）
+
+1. **二次分发。** 不得以任何形式再次分发本软件，包括但不限于：
+   - 转载、镜像、搬运到任何网站、网盘、论坛、应用商店、软件下载站；
+   - 将本软件（或其任何部分）打包进其他软件、整合包、启动器、安装镜像、系统镜像；
+   - 重新上传二进制文件，或提供指向二进制文件的直链/种子；
+   - 通过 U 盘、局域网共享、群文件等任何介质向第三方提供副本。
+2. **修改后发布。** 不得发布本软件的修改版、衍生版、去壳版、换皮版。Fork 仓库仅限
+   用于向本项目提交 Pull Request；不得将 Fork 作为独立项目发布或分发。
+3. **商业利用。** 不得将本软件或其任何部分用于商业目的，包括销售、出租、按次收费、
+   捆绑销售、作为付费服务的一部分提供。
+4. **移除标识。** 不得删除或隐藏本协议、版权声明、作者标识与「关于」信息。
+5. **反向工程。** 不得反编译、反汇编、逆向工程本软件，法律强制允许的情形除外。
+
+
+三、第三方组件
+
+本软件随包分发或运行时依赖以下第三方组件，它们**不受本协议约束**，各自遵循其原始许可：
+
+- PresentMon（Intel，MIT）：见 `presentmon/LICENSE.txt`，随包分发，其版权与许可声明必须保留。
+- LibreHardwareMonitorLib 0.9.6（MPL-2.0）：以未经修改的 NuGet 程序集形式引用。
+- PawnIO（PawnIO 项目）：**不随包分发**，由用户自行从其官方网站安装，遵循其自身许可。
+
+本协议不限制上述组件按其自身许可被使用或分发，但**不授予任何人将本软件与上述组件
+作为整体再次分发的权利**。
+
+
+四、免责声明
+
+本软件按「现状」提供，不附带任何明示或暗示的担保，包括但不限于适销性、特定用途
+适用性与不侵权的担保。在任何情况下，作者均不对因使用或无法使用本软件而产生的任何
+直接、间接、偶然、特殊或后果性损害承担责任，包括但不限于数据丢失、系统损坏、
+硬件损伤或业务中断。
+
+本软件会读取硬件传感器数据，并在部分功能下依赖第三方内核驱动。使用前请自行评估
+风险，并在重要环境中先行测试。
+
+
+五、协议的终止与变更
+
+违反本协议任一条款，你获得的一切授权立即自动终止，应立即停止使用并删除全部副本。
+作者保留随时修改本协议的权利；修改后的协议自仓库中本文件更新之时起生效。
+
+
+六、适用法律
+
+本协议适用中华人民共和国法律。因本协议产生的争议，双方应友好协商解决；协商不成，
+提交作者所在地有管辖权的人民法院裁决。
+
+
+---
+
+English Summary (for reference only; the Chinese text above prevails)
+
+Copyright (c) 2026 the CoPul author. All rights reserved.
+
+Permission is granted to download and use CoPul for personal, non-commercial purposes on
+devices you own or control. **Redistribution of any kind is NOT permitted** — you may not
+re-upload, mirror, repackage, bundle, sublicense, sell, or distribute this software or any
+part of it, in source or binary form, without prior written permission from the author.
+Modified versions may not be published. Forking is permitted solely to submit pull requests.
+
+Bundled third-party components (PresentMon — MIT; LibreHardwareMonitorLib — MPL-2.0;
+PawnIO — installed separately by the user) remain under their own licenses. This license
+does not grant any right to redistribute CoPul together with those components as a whole.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE
+SOFTWARE.

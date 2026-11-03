@@ -82,4 +82,18 @@
     </None>
   </ItemGroup>
 
+  <!--
+    许可协议随二进制走（专有许可：保留所有权利，禁止二次分发）。
+    用户拿到 exe 时就必须能看到条款 —— 只在仓库里放 LICENSE 是不够的，
+    下载站/网盘转手一趟，仓库就不在原地了。
+    Windows 上多数编辑器认不出无扩展名的 LICENSE，落到输出目录时补成 LICENSE.txt。
+  -->
+  <ItemGroup>
+    <None Include="..\..\LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>LICENSE.txt</Link>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
+
 </Project>
