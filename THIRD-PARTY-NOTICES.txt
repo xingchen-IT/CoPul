@@ -1,0 +1,54 @@
+CoPul 第三方组件声明（Third-Party Notices）
+==========================================
+
+本文件列出 CoPul 随包分发或运行时依赖的第三方组件。这些组件不适用 CoPul 的专有许可，
+各自遵循其原始许可。CoPul 未修改其中任何一份源码。
+
+完整许可文本随包位于对应目录；也可通过下面给出的官方地址取得。
+
+
+1. PresentMon
+   版权：Copyright (C) 2017-2024 Intel Corporation
+   许可：MIT
+   用途：读取 ETW 呈现事件以统计帧率（不注入游戏进程）
+   分发形式：随包，presentmon\PresentMon.exe（未修改）
+   许可全文：presentmon\LICENSE.txt
+   源码地址：https://github.com/GameTechDev/PresentMon
+   说明：MIT 要求在所有副本中保留上述版权声明与许可声明，本程序已完整附带。
+
+
+2. LibreHardwareMonitorLib
+   版本：0.9.6
+   许可：Mozilla Public License 2.0（MPL-2.0）
+   用途：读取 CPU / GPU / 主板 / 硬盘传感器
+   分发形式：随包，CoPul.Collector.dll 以 NuGet 程序集形式引用（未修改）
+   许可全文：https://www.mozilla.org/en-US/MPL/2.0/
+   源码获取：https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+             （对应 0.9.6 版本，可用该仓库的 tag 检出）
+   说明：MPL-2.0 为文件级弱著佐权。本程序未修改该项目的任何文件，因此没有需要
+         公开的修改；接收者可随时通过上面的地址取得其完整源码。
+
+
+3. PawnIO
+   许可：遵循 PawnIO 项目自身许可
+   用途：在用户机器上提供 Ring0 传感器访问能力（CPU 温度、功耗等）
+   **不随包分发**：本程序不附带、不下载、不静默安装该驱动，仅在检测到缺失时提示
+   用户自行前往官方站点安装。
+   官方地址：https://pawnio.eu/
+
+
+4. .NET 8 运行时（仅在自包含发布版中随包）
+   版权：Copyright (c) .NET Foundation and Contributors
+   许可：MIT
+   用途：运行本程序所需的运行时与 WPF 组件
+   分发形式：自包含发布时随包（win-x64）
+   许可全文：https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+   说明：若使用依赖框架（framework-dependent）方式发布，则由用户自行安装，不随包。
+
+
+补充说明
+--------
+
+- 上述组件的许可允许再分发这些组件本身，但**不因此授权任何人把 CoPul 连同它们作为
+  整体再次分发**。CoPul 的分发权仍由《CoPul 专有软件许可协议》（LICENSE）约束。
+- 若你发现本文件遗漏了某个组件，或希望取得某份许可全文，请联系作者。

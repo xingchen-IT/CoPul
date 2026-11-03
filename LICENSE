@@ -37,8 +37,13 @@ All rights reserved.
 本软件随包分发或运行时依赖以下第三方组件，它们**不受本协议约束**，各自遵循其原始许可：
 
 - PresentMon（Intel，MIT）：见 `presentmon/LICENSE.txt`，随包分发，其版权与许可声明必须保留。
-- LibreHardwareMonitorLib 0.9.6（MPL-2.0）：以未经修改的 NuGet 程序集形式引用。
+- LibreHardwareMonitorLib 0.9.6（MPL-2.0）：以未经修改的 NuGet 程序集形式引用。本软件未修改其
+  任何文件；按 MPL-2.0 的要求，其源码可通过 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+  取得，许可全文见 https://www.mozilla.org/en-US/MPL/2.0/。
+- .NET 8 运行时（.NET Foundation，MIT）：仅在随包自包含的发布版中出现。
 - PawnIO（PawnIO 项目）：**不随包分发**，由用户自行从其官方网站安装，遵循其自身许可。
+
+上述组件的清单、版本与源码地址见随包的 `THIRD-PARTY-NOTICES.txt`。
 
 本协议不限制上述组件按其自身许可被使用或分发，但**不授予任何人将本软件与上述组件
 作为整体再次分发的权利**。
