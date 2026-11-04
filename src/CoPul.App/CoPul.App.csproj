@@ -23,6 +23,19 @@
     <AssemblyTitle>CoPul 芯脉</AssemblyTitle>
     <Version>0.1.0</Version>
     <!--
+      程序集元数据（M4.46）。这些字段不是"填着好看"：
+
+      · 红线第 4 条要求「exe 属性、关于页、LICENSE 里的作者信息保持一致」，
+        便于维权时证明同一性。之前 Company 只是默认取成了程序集名 CoPul，Copyright 是空的。
+      · 用户右键 exe → 属性，第一眼看的就是这里。空白等于"来路不明的程序"，
+        对 SmartScreen 之外的人为判断（论坛转发、群文件）影响很大。
+      · RepositoryUrl 会进 NuGet/程序集元数据，也给 MPL-2.0 的"源码获取方式"多一条路径。
+    -->
+    <Company>CoPul</Company>
+    <Copyright>Copyright (c) 2026 CoPul 作者（xingchen）</Copyright>
+    <Description>把 CPU、GPU、内存、硬盘、网络与帧率贴在 Windows 任务栏上的轻量监控工具</Description>
+    <RepositoryUrl>https://gitee.com/stardust-xingchenya/corevessel-co-pul</RepositoryUrl>
+    <!--
       应用图标（R-01）。同时用作 exe 图标（资源管理器里看到的就是它）。
       由 tools/make-icon.py 生成 —— 那个脚本会被旧版 make-tray-icon.py 取代，
       现在统一一个生成器出「主图标 + 托盘深浅两版」，改设计只改一处。

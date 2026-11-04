@@ -21,6 +21,10 @@ tools/dotnet-install.ps1
 Thumbs.db
 desktop.ini
 
+# 发布产物（tools/publish.ps1 的输出：165 MB 目录 + 69 MB zip）
+# 产物要进 Gitee Release，不进 git 历史 —— 一旦提交，仓库会永久背着这 69 MB
+artifacts/
+
 # 工作区记忆（本地工具数据）
 .workbuddy/
 
