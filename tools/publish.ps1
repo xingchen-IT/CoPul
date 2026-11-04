@@ -203,7 +203,7 @@ $info = @(
     "源码提交 : $gitSha$(if ($gitDirty) { '（工作区有未提交改动）' } else { '' })",
     "SDK      : $(& $Dotnet --version)",
     "运行时   : win-x64 / self-contained（无需安装 .NET）",
-    "文件数   : $($files.Count)",
+    "文件数   : $($files.Count)（不含本文件）",
     "解压体积 : $([math]::Round($bytes / 1MB, 1)) MB",
     "",
     "许可：专有软件，保留所有权利，禁止二次分发。完整条款见 LICENSE.txt。",
