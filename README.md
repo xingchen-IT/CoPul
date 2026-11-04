@@ -105,16 +105,18 @@ dotnet build CoPul.sln -c Release
 dotnet publish src/CoPul.App/CoPul.App.csproj -c Release -r win-x64 --self-contained true -o publish
 ```
 
-自包含产物约 168 MB / 481 个文件（WPF 运行时占大头），整个目录一起拷走即可运行。
+自包含产物约 166 MB / 480 余个文件（WPF 运行时占大头），整个目录一起拷走即可运行。
 
-> 目前**还没有安装包和发布版**，只能从源码构建。打包、签名、自动更新都还没做。
+> 打包走 `tools\publish.ps1`，一条命令出自包含 zip + SHA-256，并校验 12 项必备文件。
+> **安装包、代码签名、自动更新都还没做。**
 
 ## 项目结构
 
 ```
 src/CoPul.App        WPF 界面：三视图、设置页、托盘、全屏状态机
 src/CoPul.Collector  采集层：各指标 Provider + 分级调度
-docs/                里程碑报告（M0 ~ M4，50+ 篇实测记录）
+docs/                里程碑报告（M0 ~ M4，60+ 篇实测记录）
+docs/spec/           需求规格说明书历史版本（v0.13 ~ v0.18）
 tools/               图标生成、取证与压测脚本
 ```
 
