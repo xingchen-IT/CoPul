@@ -34,8 +34,46 @@ public partial class EulaWindow : Window
         AcceptButton.IsEnabled = false;
 
         // 打开时回到顶部：正文 5000+ 字，停在中间会让人误以为"只有这么点条款"。
-        Loaded += (_, _) => BodyScroll.ScrollToHome();
+        Loaded += (_, _) =>
+        {
+            BodyScroll.ScrollToHome();
+
+            // 1366×768 这类屏上 660 会顶到任务栏外，「同意」按钮点不到 = 程序装上了却用不了。
+            // 按工作区收一下高度，正文区是 * 行，会自己让路。
+            double maxHeight = SystemParameters.WorkArea.Height - 32;
+            if (Height > maxHeight) Height = Math.Max(360, maxHeight);
+
+            if (AutoAcceptMs > 0 && !_readOnly) StartAutoAccept();
+        };
     }
+
+    /// <summary>
+    /// 只读查看（关于页的「查看完整协议」）。设成 true 之后：不显示勾选框、
+    /// 「同意并继续」隐藏、「退出」改成「关闭」。
+    ///
+    /// <para>
+    /// 必须是**另一个窗口实例**而不是"把首启那个窗再 Show 一次"：首启窗是 <c>ShowDialog</c>
+    /// 模态，早就关掉了，而且它的语义是"征求同意"，与"回看条款"不是一回事。
+    /// </para>
+    /// </summary>
+    public bool ReadOnly
+    {
+        get => _readOnly;
+        set
+        {
+            _readOnly = value;
+            if (!value) return;
+
+            ConsentCheck.Visibility = Visibility.Collapsed;
+            AcceptButton.Visibility = Visibility.Collapsed;
+            DeclineButton.Content = "关闭";
+            DeclineButton.IsCancel = true;
+            FootNote.Text = "这是曾经同意过的条款，仅供查阅 —— 关闭本窗口不影响继续使用。";
+            FooterRow.Margin = new Thickness(0, 0, 0, 0);
+        }
+    }
+
+    private bool _readOnly;
 
     /// <summary>同意结果。仅在窗口关闭后有意义。</summary>
     public bool Accepted { get; private set; }
@@ -54,10 +92,37 @@ public partial class EulaWindow : Window
         return result == true;
     }
 
+    /// <summary>
+    /// 取证用：多少毫秒后自动勾选并点「同意」。0 = 不自动（正常）。
+    ///
+    /// <para>
+    /// 为什么必须走**模态生产路径**而不是 <c>--eula-pick accept</c>：后者不给窗口层机会
+    /// 参与，复现不了"协议窗是 WPF 认的第一个窗口 → 关闭它等于关闭主窗口"这类
+    /// 只在真实时序下出现的退出问题（M4.45）。
+    /// </para>
+    /// </summary>
+    public int AutoAcceptMs { get; set; }
+
+    private void StartAutoAccept()
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(AutoAcceptMs),
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            SetConsentForProbe(true);
+            Finish(true);
+        };
+        timer.Start();
+    }
+
     /// <summary>诊断串（探针与截图 sidecar 用）：条款到底有没有载入、多长。</summary>
     public string Diag =>
         $"eula: version={Eula.Version} chars={BodyText.Text.Length} " +
-        $"consent={ConsentCheck.IsChecked == true} accepted={Accepted} modal={_modal}";
+        $"consent={ConsentCheck.IsChecked == true} accepted={Accepted} " +
+        $"modal={_modal} readonly={_readOnly}";
 
     /// <summary>「同意」按钮当前可不可点。验收要能证明"没勾选时点不了"。</summary>
     public bool AcceptEnabled => AcceptButton.IsEnabled;
@@ -106,9 +171,11 @@ public partial class EulaWindow : Window
         {
             _finished = true;
             Accepted = false;
-            Interop.Trace.Log("eula", ProbeMode
-                ? "probe window closed (未做选择，仅取证)"
-                : "window closed without choice → declined");
+            Interop.Trace.Log("eula", _readOnly
+                ? "read-only window closed"
+                : ProbeMode
+                    ? "probe window closed (未做选择，仅取证)"
+                    : "window closed without choice → declined");
         }
 
         base.OnClosing(e);
@@ -142,7 +209,10 @@ public partial class EulaWindow : Window
         _finished = true;
         Accepted = accepted;
 
-        Interop.Trace.Log("eula", $"window {(accepted ? "accepted" : "declined")} modal={_modal}");
+        Interop.Trace.Log("eula", _readOnly
+            ? "read-only window closed"
+            : $"window {(accepted ? "accepted" : "declined")} modal={_modal} " +
+              $"appMain={ReferenceEquals(Application.Current.MainWindow, this)}");
 
         if (_modal)
         {

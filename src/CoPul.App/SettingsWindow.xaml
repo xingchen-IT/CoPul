@@ -536,6 +536,9 @@
                             <RadioButton x:Name="NavDiag" Style="{StaticResource NavButton}"
                                          Content="传感器诊断" GroupName="nav"
                                          Tag="diag" Checked="Nav_Checked" />
+                            <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}"
+                                         Content="关于" GroupName="nav"
+                                         Tag="about" Checked="Nav_Checked" />
                         </StackPanel>
                     </DockPanel>
                 </Border>
@@ -1325,6 +1328,176 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ===================== 关于 ===================== -->
+                <Grid x:Name="AboutPage" Grid.Column="1" Visibility="Collapsed">
+                    <ScrollViewer x:Name="AboutScroll" Padding="16,6,16,16"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+
+                            <!--
+                                身份卡：图标 + 名称 + 版本 + 构建时间。
+                                构建时间取的是**程序集文件时间**，不是编译时刻 —— 排查"改了源码但
+                                部署没生效"时，这一行就是证据（M4.38 踩过：栈里行号是旧代码的）。
+                            -->
+                            <Border Style="{StaticResource BlockCard}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Image x:Name="AboutIcon" Grid.Column="0" Width="52" Height="52"
+                                           VerticalAlignment="Top"
+                                           RenderOptions.BitmapScalingMode="HighQuality" />
+
+                                    <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                        <TextBlock Text="CoPul 芯脉" FontSize="17" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                        <TextBlock x:Name="AboutVersionText" Style="{StaticResource SectionHint}"
+                                                   Margin="0,4,0,0" />
+                                        <TextBlock x:Name="AboutBuildText" Style="{StaticResource SectionHint}"
+                                                   Margin="0,2,0,0" />
+                                        <TextBlock Margin="0,9,0,0" TextWrapping="Wrap" FontSize="11.5"
+                                                   LineHeight="18" LineStackingStrategy="BlockLineHeight"
+                                                   Foreground="{DynamicResource BrushTextSecondary}"
+                                                   Text="把 CPU、GPU、内存、硬盘、网络与帧率贴在 Windows 任务栏上。三种视图可叠加，任务栏条点击穿透，进全屏游戏自动让路。" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- 许可 -->
+                            <Border Style="{StaticResource BlockCard}">
+                                <StackPanel>
+                                    <TextBlock Text="许可" Style="{StaticResource SectionTitle}" />
+
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="类型" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Grid.Column="1" x:Name="AboutLicenseKindText"
+                                                   Style="{StaticResource RowLabel}"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="协议版本" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Grid.Column="1" x:Name="AboutLicenseVersionText"
+                                                   Style="{StaticResource RowLabel}"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="同意记录" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Grid.Column="1" x:Name="AboutAcceptedText"
+                                                   Style="{StaticResource RowLabel}"
+                                                   Foreground="{DynamicResource BrushTextPrimary}" />
+                                    </Grid>
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                        <Button Style="{StaticResource MiniButton}" Content="查看完整协议"
+                                                Padding="12,5" Click="ViewLicense_Click"
+                                                ToolTip="以只读方式打开同意过的条款全文" />
+                                        <Button Style="{StaticResource MiniButton}" Content="打开 LICENSE.txt"
+                                                Margin="8,0,0,0" Padding="12,5" Click="OpenLicenseFile_Click" />
+                                    </StackPanel>
+
+                                    <TextBlock Style="{StaticResource SectionHint}"
+                                               Text="CoPul 为专有软件，保留所有权利。允许在自有设备上个人非商业使用，禁止二次分发与发布修改版 —— 完整条款见上面的协议全文与随包的 LICENSE.txt。" />
+                                </StackPanel>
+                            </Border>
+
+                            <!--
+                                第三方组件：MPL-2.0 §3.2 要求以可执行形式分发时告知源码获取方式。
+                                关于页把这件义务摆到用户眼前，而不是只塞一个 txt 在安装目录里
+                                —— 没人会去翻。正文读嵌入资源，文件删了也仍然显示得出。
+                            -->
+                            <Border Style="{StaticResource BlockCard}">
+                                <StackPanel>
+                                    <TextBlock Text="第三方组件" Style="{StaticResource SectionTitle}" />
+                                    <TextBlock Style="{StaticResource SectionHint}"
+                                               Text="以下组件随包分发或运行时依赖，各自遵循其原始许可，CoPul 未修改其中任何一份源码。清单与随包的 THIRD-PARTY-NOTICES.txt 同源。" />
+
+                                    <Border Margin="0,10,0,0" CornerRadius="6"
+                                            Background="{DynamicResource BrushBg}"
+                                            BorderBrush="{DynamicResource BrushStroke}" BorderThickness="1">
+                                        <ScrollViewer Height="176" VerticalScrollBarVisibility="Auto"
+                                                      Padding="12,10,6,10">
+                                            <TextBlock x:Name="NoticesText" TextWrapping="Wrap"
+                                                       FontFamily="{StaticResource FontMono}" FontSize="10.5"
+                                                       LineHeight="17" LineStackingStrategy="BlockLineHeight"
+                                                       Foreground="{DynamicResource BrushTextSecondary}" />
+                                        </ScrollViewer>
+                                    </Border>
+
+                                    <Button Style="{StaticResource MiniButton}" Content="打开 THIRD-PARTY-NOTICES.txt"
+                                            HorizontalAlignment="Left" Margin="0,10,0,0" Padding="12,5"
+                                            Click="OpenNoticesFile_Click" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 文件位置 -->
+                            <Border Style="{StaticResource BlockCard}">
+                                <StackPanel>
+                                    <TextBlock Text="文件位置" Style="{StaticResource SectionTitle}" />
+
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="配置" Style="{StaticResource RowLabel}" />
+                                        <TextBox Grid.Column="1" x:Name="AboutConfigPath" Style="{StaticResource Input}"
+                                                 IsReadOnly="True" IsReadOnlyCaretVisible="False" FontSize="11" />
+                                        <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="打开"
+                                                Margin="8,0,0,0" Padding="10,3" Click="OpenConfigDir_Click" />
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="崩溃日志" Style="{StaticResource RowLabel}" />
+                                        <TextBox Grid.Column="1" x:Name="AboutCrashPath" Style="{StaticResource Input}"
+                                                 IsReadOnly="True" IsReadOnlyCaretVisible="False" FontSize="11" />
+                                        <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="打开"
+                                                Margin="8,0,0,0" Padding="10,3" Click="OpenCrashDir_Click" />
+                                    </Grid>
+
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="108" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="程序目录" Style="{StaticResource RowLabel}" />
+                                        <TextBox Grid.Column="1" x:Name="AboutAppPath" Style="{StaticResource Input}"
+                                                 IsReadOnly="True" IsReadOnlyCaretVisible="False" FontSize="11" />
+                                        <Button Grid.Column="2" Style="{StaticResource MiniButton}" Content="打开"
+                                                Margin="8,0,0,0" Padding="10,3" Click="OpenAppDir_Click" />
+                                    </Grid>
+
+                                    <TextBlock Style="{StaticResource SectionHint}"
+                                               Text="反馈问题时请附上版本号与崩溃日志文件 —— 没有这两样基本无法定位。若有崩溃日志，说明程序上次异常退出过。" />
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
                     </ScrollViewer>
                 </Grid>
             </Grid>

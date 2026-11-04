@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;   // ToggleButton（字段开关，M4.
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;   // BitmapDecoder（关于页从 ico 里挑最大帧）
 using CoPul.App.Interop;
 using CoPul.App.Sdk;
 using CoPul.Collector.Providers;
@@ -185,6 +186,7 @@ public partial class SettingsWindow : Window
         LoadDiag();
 
         VersionText.Text = string.IsNullOrWhiteSpace(ctx.Version) ? "版本未知" : ctx.Version;
+        LoadAbout();
 
         // 底栏常驻"刚刚做了什么"的反馈，配置文件路径挪到按钮的 ToolTip ——
         // 一行里塞不下两样，而路径绝大多数时候只是"我想知道它在哪"，悬停一次就够。
@@ -1190,9 +1192,34 @@ public partial class SettingsWindow : Window
                     break;
 
                 case "scroll":
-                    // 只给截图用：常规页比窗口高，下半部分（采集与网络 / 启动）不看一眼就没验过
+                    // 只给截图用：常规页与关于页都比窗口高，下半部分（采集与网络 / 启动 /
+                    // 第三方组件与文件位置）不看一眼就没验过。按**当前页**选滚动容器 ——
+                    // 写死 GeneralPage 的话，切到关于页再 scroll 会静默无效（还看不出原因）。
                     if (double.TryParse(value, out double offset))
-                        GeneralPage.ScrollToVerticalOffset(offset);
+                    {
+                        if (NavAbout.IsChecked == true) AboutScroll.ScrollToVerticalOffset(offset);
+                        else GeneralPage.ScrollToVerticalOffset(offset);
+                    }
+                    break;
+
+                case "nav":
+                    // 截图用：切左侧导航（general / diag / about）。走 IsChecked 而不是直接改
+                    // Visibility —— 只有这样才和用户点击是同一条 Nav_Checked 路径。
+                    if (value == "diag") NavDiag.IsChecked = true;
+                    else if (value == "about") NavAbout.IsChecked = true;
+                    else NavGeneral.IsChecked = true;
+                    break;
+
+                case "about":
+                    // 关于页最容易出的错是"界面写着某个版本、实际跑的是另一个 dll"，
+                    // 所以诊断串与界面读同一份 AboutInfo；三页的可见性一起打，
+                    // 才能证明 nav 真的切过去了而不只是导航项亮了。
+                    System.Console.WriteLine(
+                        $"about: version={AboutInfo.Version} build={AboutInfo.BuildTime} " +
+                        $"license=v{Eula.Version} acceptedAt='{_config.LicenseAcceptedAt}' " +
+                        $"noticesChars={NoticesText.Text.Length} icon={(AboutIcon.Source is null ? "none" : "ok")} " +
+                        $"pages=[general={GeneralPage.Visibility},diag={DiagPage.Visibility}," +
+                        $"about={AboutPage.Visibility}]");
                     break;
             }
 
@@ -1204,13 +1231,19 @@ public partial class SettingsWindow : Window
     {
         if (GeneralPage is null || DiagPage is null) return;
 
-        bool diag = sender is RadioButton { Tag: "diag" };
-        GeneralPage.Visibility = diag ? Visibility.Collapsed : Visibility.Visible;
-        DiagPage.Visibility = diag ? Visibility.Visible : Visibility.Collapsed;
+        string tag = (sender as RadioButton)?.Tag as string ?? "general";
+
+        GeneralPage.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
+        DiagPage.Visibility = tag == "diag" ? Visibility.Visible : Visibility.Collapsed;
+
+        // 关于页可能还不存在（XAML 加载顺序）：用 null 判断而不是把它并进上面那行的条件，
+        // 免得以后加第四页时要回头改这个早退。
+        if (AboutPage is not null)
+            AboutPage.Visibility = tag == "about" ? Visibility.Visible : Visibility.Collapsed;
 
         // 切到诊断页时重读一次：Providers 的状态是采集线程在改的，
         // 打开设置页那一刻的快照不该一直留着（FPS 往往要几秒才接上）。
-        if (diag && _loaded) LoadDiag();
+        if (tag == "diag" && _loaded) LoadDiag();
     }
 
     /// <summary>
@@ -2563,6 +2596,138 @@ public partial class SettingsWindow : Window
         catch (Exception ex)
         {
             Hint("打开目录失败：" + ex.Message);
+        }
+    }
+
+    // =================================================================
+    // 关于（发布准备，2026-11-04）
+    // =================================================================
+
+    /// <summary>
+    /// 把关于页的事实填一遍。只在构造时调一次 —— 这里的东西除"有没有同意记录"外都不会变，
+    /// 每次切页重读只会让"版本号"这种本该稳定的显示来回跳。
+    /// </summary>
+    private void LoadAbout()
+    {
+        AboutVersionText.Text = $"版本 {AboutInfo.Version}";
+        // 只写构建时间：安装目录在下面「文件位置」里已经有一行，同一屏出现两次只是噪音。
+        AboutBuildText.Text = $"构建于 {AboutInfo.BuildTime}";
+
+        AboutLicenseKindText.Text = "专有软件，保留所有权利（禁止二次分发）";
+        AboutLicenseVersionText.Text = $"CoPul 最终用户许可协议 v{Eula.Version} · {Eula.EffectiveDate} 生效";
+
+        // 同意记录是**证据**，所以原样显示存下来的时间串，不做本地化润色：
+        // 一旦被改写过，它就不再是"当时记下的那个值"了。
+        AboutAcceptedText.Text = string.IsNullOrWhiteSpace(_config.LicenseAcceptedAt)
+            ? "未记录（下次启动会重新询问）"
+            : _config.LicenseAcceptedAt;
+
+        NoticesText.Text = AboutInfo.Notices;
+
+        AboutConfigPath.Text = _ctx.ConfigPath;
+        AboutCrashPath.Text = CrashDirectory();
+        AboutAppPath.Text = AboutInfo.AppDirectory;
+
+        LoadAboutIcon();
+    }
+
+    /// <summary>
+    /// 从 ico 里挑像素最大的那帧当图标。直接给 <see cref="Image.Source"/> 一个 ico 路径
+    /// 只会拿到第一帧（16px），拉到 52px 是糊的。
+    /// </summary>
+    private void LoadAboutIcon()
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(AboutInfo.AppDirectory, "assets", "copul.ico");
+            if (!System.IO.File.Exists(path)) return;
+
+            BitmapDecoder decoder = BitmapDecoder.Create(
+                new Uri(path), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+
+            BitmapFrame best = decoder.Frames[0];
+            foreach (BitmapFrame frame in decoder.Frames)
+                if (frame.PixelWidth > best.PixelWidth) best = frame;
+
+            AboutIcon.Source = best;
+        }
+        catch (Exception ex)
+        {
+            // 图标是装饰，加载失败不该影响关于页其余信息
+            Interop.Trace.Log("about", "图标加载失败: " + ex.Message);
+        }
+    }
+
+    /// <summary>崩溃日志目录。路径与 <c>App.WriteCrash</c> 必须一致，改一处就得同步另一处。</summary>
+    private static string CrashDirectory()
+        => System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CoPul");
+
+    /// <summary>
+    /// 只读方式回看条款。**另开一个窗口实例**：首启那个是模态的、早就关了，
+    /// 而且"征求同意"和"回看条款"不是同一件事（后者不该再出现勾选框）。
+    /// </summary>
+    private void ViewLicense_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new EulaWindow { ReadOnly = true, Owner = this };
+        window.ShowDialog();
+    }
+
+    private void OpenLicenseFile_Click(object sender, RoutedEventArgs e)
+        => OpenInExplorer(System.IO.Path.Combine(AboutInfo.AppDirectory, "LICENSE.txt"),
+                          "打开许可文件失败：");
+
+    private void OpenNoticesFile_Click(object sender, RoutedEventArgs e)
+        => OpenInExplorer(System.IO.Path.Combine(AboutInfo.AppDirectory, "THIRD-PARTY-NOTICES.txt"),
+                          "打开组件清单失败：");
+
+    private void OpenAppDir_Click(object sender, RoutedEventArgs e)
+        => OpenInExplorer(AboutInfo.AppDirectory, "打开程序目录失败：");
+
+    private void OpenCrashDir_Click(object sender, RoutedEventArgs e)
+    {
+        string dir = CrashDirectory();
+        if (!System.IO.Directory.Exists(dir))
+        {
+            Hint("还没有崩溃日志 —— 这是好事");
+            return;
+        }
+
+        OpenInExplorer(dir, "打开目录失败：");
+    }
+
+    /// <summary>用资源管理器打开目录，或在目录里选中一个文件。两条路径的 explorer 参数不同。</summary>
+    private void OpenInExplorer(string path, string failure)
+    {
+        try
+        {
+            if (System.IO.Directory.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true,
+                });
+                return;
+            }
+
+            if (System.IO.File.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = true,
+                });
+                return;
+            }
+
+            Hint("找不到：" + path);
+        }
+        catch (Exception ex)
+        {
+            Hint(failure + ex.Message);
         }
     }
 

@@ -36,6 +36,10 @@ public partial class App : Application
         _tray?.Dispose();
         _tray = null;
 
+        // M4.45：进程收尾时留一条。协议窗若被当成"主窗口"，退出会发生在 OnStartup 中途，
+        // 日志里只有这一行能证明"不是我主动 Quit 的"。
+        Interop.Trace.Log("app", $"exit code={e.ApplicationExitCode}");
+
         // G-05：释放互斥体，否则下次启动会误判"已经有一个在跑"
         SingleInstance.Release();
 
@@ -173,9 +177,14 @@ public partial class App : Application
         bool measurement = e.Args.Contains("--shot") || e.Args.Contains("--shot-screen")
                            || e.Args.Contains("--stats") || e.Args.Contains("--hidden");
 
+        // --eula-auto-accept 是"自动点同意"的回归探针（M4.45）：要跑完整启动流程，
+        // 但用户实例通常正开着 —— 被单实例拦下就永远测不到协议闸门。所以它单独放行：
+        // 不占互斥体，也不发激活广播（否则会把用户正在看的窗口弹到前面）。
+        bool eulaRegression = e.Args.Contains("--eula-auto-accept");
+
         if (!measurement)
         {
-            if (!SingleInstance.TryAcquire())
+            if (!eulaRegression && !SingleInstance.TryAcquire())
             {
                 // 已有实例：发广播让它现身，自己立刻退。注意此时**不能**建主窗口，
                 // 否则会先闪一下再消失（表现像"点了两次图标，弹了两个窗口")
@@ -187,7 +196,7 @@ public partial class App : Application
 
             // 开始监听"第二次启动"的广播。收到后要做什么在下面接线
             // （必须等 ShowView 与几个视图变量都就绪才能订阅，否则编译器会报未赋值）。
-            SingleInstance.Listen();
+            if (!eulaRegression) SingleInstance.Listen();
         }
 
         // =====================================================================
@@ -200,6 +209,7 @@ public partial class App : Application
         //
         // 探针/测量模式一律放行，否则所有截图与性能取证都会被弹窗挡住：
         //   --eula               强制把窗口摆出来（取证用，通常配 --shot 拍这张窗）
+        //   --eula-ro            只读查看形态（关于页的「查看完整协议」）
         //   --eula-pick accept|decline  不弹窗直接给结论，验两条收尾路径
         // =====================================================================
         bool eulaForced = e.Args.Contains("--eula");
@@ -211,6 +221,35 @@ public partial class App : Application
 
         // 截图定时器要能挑到这张窗，所以声明在方法作用域里（不能塞进 if 块）。
         EulaWindow? eulaWindow = null;
+
+        // ---------------------------------------------------------------------
+        // 【M4.45 修复】协议阶段必须先把 ShutdownMode 换成 OnExplicitShutdown。
+        //
+        // 症状：首次启动 → 弹出协议 → 勾选 → 点「同意并继续」→ 程序自己退出，
+        //       必须再手动双击一次图标才能用。
+        //
+        // 原因（trace 实证）：App.xaml 写的是 ShutdownMode="OnMainWindowClose"，而 WPF 会把
+        //   **第一个 Show 出来的窗口**自动认成 Application.MainWindow（这就是为什么
+        //   `[eula] window accepted appMain=True`）。于是协议窗一关 = "主窗口关了"，
+        //   WPF 把 Shutdown() 排进调度队列；OnStartup 还会继续往下跑（建主窗口、挂托盘、
+        //   起全屏检测），日志看着一切正常，可下一拍就收摊 —— `[app] exit code=0`，
+        //   窗口一个都没留下。用户侧看到的就是"同意完程序没了"，而且同意已经落盘，
+        //   所以第二次启动直接进主界面，更像"第一次装了没生效"。
+        //
+        // 修法：协议阶段切到 OnExplicitShutdown（退出只走 Quit()），等真正的主窗口
+        //   挂上 Application.MainWindow 之后再切回来。不靠"把 MainWindow 置空"绕：
+        //   WindowClosing 的判断先于它，置空也拦不住这次退出。
+        // ---------------------------------------------------------------------
+        ShutdownMode shutdownModeBeforeEula = ShutdownMode;
+        bool eulaStageActive = false;
+
+        void EnterEulaStage()
+        {
+            if (eulaStageActive) return;
+            eulaStageActive = true;
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Interop.Trace.Log("eula", $"协议阶段 shutdownMode={shutdownModeBeforeEula} → OnExplicitShutdown");
+        }
 
         if (eulaPick is { } pick)
         {
@@ -231,7 +270,12 @@ public partial class App : Application
             // 后面注册的截图定时器永远等不到（M4.30 踩过同类坑）。
             if (eulaForced)
             {
+                EnterEulaStage();
                 eulaWindow = new EulaWindow { ProbeMode = true };
+
+                // --eula-ro：只读查看模式（关于页「查看完整协议」用的那个形态），拍它验排版 ——
+                // 勾选框与主按钮隐藏后，底部不该留出一片空白。
+                if (e.Args.Contains("--eula-ro")) eulaWindow.ReadOnly = true;
 
                 // --eula-consent：把勾选框摆成已勾选，拍"主按钮可用"的样子（验收用）。
                 if (e.Args.Contains("--eula-consent")) eulaWindow.SetConsentForProbe(true);
@@ -242,9 +286,21 @@ public partial class App : Application
         }
         else if (eulaForced || !Eula.IsAccepted(ConfigStore.Current))
         {
+            EnterEulaStage();
             var dialog = new EulaWindow();
+
+            // 【M4.45 回归探针】--eula-auto-accept：不用手点，1.2 秒后自动勾选并同意。
+            // 走的是**生产路径**（模态 ShowDialog），复现的正是"协议窗是第一个被创建的窗口"。
+            if (e.Args.Contains("--eula-auto-accept")) dialog.AutoAcceptMs = 1200;
+
             bool accepted = dialog.RunModal();
             System.Console.WriteLine(dialog.Diag);
+
+            // M4.45：关掉协议窗那一刻 WPF 有没有开始收摊。false = 后面建主窗口是安全的；
+            // true = 进程已经在退出，OnStartup 继续跑只是"来不及了"。
+            Interop.Trace.Log("app",
+                $"after eula: shutdownStarted={Dispatcher.HasShutdownStarted} " +
+                $"MainWindow={MainWindow?.GetType().Name ?? "(null)"}");
 
             if (!accepted)
             {
@@ -257,8 +313,22 @@ public partial class App : Application
             Interop.Trace.Log("eula", $"accepted v{Eula.Version} at {ConfigStore.Current.LicenseAcceptedAt}");
         }
 
+        // 证伪用证据（M4.45）：走到这里时 WPF 认定的 MainWindow 是谁、退出模式是什么。
+        // 协议窗如果被认成 MainWindow，且模式是 OnMainWindowClose，那么它一关就等于
+        // "主窗口关了" —— 进程随后退出，但 OnStartup 仍然照常往下跑完，看起来毫无异常。
+        Interop.Trace.Log("app",
+            $"before main window: MainWindow={MainWindow?.GetType().Name ?? "(null)"} shutdownMode={ShutdownMode}");
+
         var window = new MainWindow();
         MainWindow = window;
+
+        // 真主窗口已经挂上了，把退出模式还原（见上面 M4.45 那段）。
+        // 顺序不能反：先还原再挂 MainWindow 的话，挂的那一刻中间还夹着"没有主窗口"的状态。
+        if (eulaStageActive)
+        {
+            ShutdownMode = shutdownModeBeforeEula;
+            Interop.Trace.Log("eula", $"协议阶段结束 shutdownMode → {ShutdownMode} mainWindow={MainWindow.GetType().Name}");
+        }
 
 
 

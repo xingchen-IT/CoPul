@@ -115,6 +115,17 @@
       <LogicalName>CoPul.App.EULA.txt</LogicalName>
       <Visible>false</Visible>
     </EmbeddedResource>
+    <!--
+      第三方组件清单也嵌一份（关于页读它）。同样不复制正文，仍取自仓库根的同一个文件。
+
+      为什么清单要嵌而不是运行时读那份 txt：MPL-2.0 §3.2 要求以可执行形式分发时**告知接收者
+      如何取得源码**。文件在精简部署里可能不存在，那时关于页会空一块 —— 而"清单读不到"
+      恰恰是最不能沉默的情形。落盘的 THIRD-PARTY-NOTICES.txt 照旧保留，给人读、给工具核对。
+    -->
+    <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.txt">
+      <LogicalName>CoPul.App.THIRD-PARTY-NOTICES.txt</LogicalName>
+      <Visible>false</Visible>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

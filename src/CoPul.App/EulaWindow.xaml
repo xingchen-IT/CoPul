@@ -164,7 +164,7 @@
             </Border>
 
             <!-- 底部：勾选 + 两个动作 -->
-            <Grid Grid.Row="2" Margin="20,14,20,18">
+            <Grid x:Name="FooterRow" Grid.Row="2" Margin="20,14,20,18">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -181,7 +181,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
+                    <TextBlock x:Name="FootNote" Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
                                FontSize="11" Foreground="{DynamicResource BrushTextTertiary}"
                                Text="不同意将退出程序，不会采集任何数据。完整条款见随包的 LICENSE.txt。" />
 
