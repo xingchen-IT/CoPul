@@ -2,7 +2,7 @@
 
 > 把 CPU、GPU、内存、硬盘、网络、帧率贴在 Windows 任务栏上。三种视图、点击穿透、全屏游戏自动让路。
 
-<sub>v0.1.0 · 尚未发布，当前只能从源码构建 · 专有软件，保留所有权利（见 <a href="#许可">许可</a>）</sub>
+<sub>v0.1.0 · 尚未公开发布（仓库暂时私有） · 专有软件，保留所有权利（见 <a href="#许可">许可</a>）</sub>
 
 <img src="docs/screenshots/main.png" width="640" alt="CoPul 大窗口">
 
@@ -105,19 +105,22 @@ dotnet build CoPul.sln -c Release
 dotnet publish src/CoPul.App/CoPul.App.csproj -c Release -r win-x64 --self-contained true -o publish
 ```
 
-自包含产物约 166 MB / 480 余个文件（WPF 运行时占大头），整个目录一起拷走即可运行。
+自包含产物约 170 MB / 484 个文件（WPF 运行时占大头），整个目录一起拷走即可运行。
 
 > 打包走 `tools\publish.ps1`，一条命令出自包含 zip + SHA-256，并校验 12 项必备文件。
-> **安装包、代码签名、自动更新都还没做。**
+> 安装包走 `tools\build-installer.ps1`（Inno Setup 7）：装到 `%LOCALAPPDATA%\Programs\CoPul`，
+> 全程不弹 UAC，协议在首启时弹一次，卸载时会问要不要连配置一起删。
+> **代码签名、自动更新还没做**，首次运行会被 SmartScreen 提示"未知发布者"。
 
 ## 项目结构
 
 ```
 src/CoPul.App        WPF 界面：三视图、设置页、托盘、全屏状态机
 src/CoPul.Collector  采集层：各指标 Provider + 分级调度
+installer/           Inno Setup 安装脚本（用户级安装）
 docs/                里程碑报告（M0 ~ M4，60+ 篇实测记录）
 docs/spec/           需求规格说明书历史版本（v0.13 ~ v0.18）
-tools/               图标生成、取证与压测脚本
+tools/               图标生成、打包、取证与压测脚本
 ```
 
 采集层刻意与界面分离：`CoPul.Collector.dll` 可单独替换，调度按 T0/T1/T2 分级给了不同频率下限。实测不显示任何窗口时整机 CPU 占用约 1%（60 秒窗口），成本主要花在"更新那一帧"而不是常驻采集。
