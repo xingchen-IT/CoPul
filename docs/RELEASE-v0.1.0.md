@@ -12,6 +12,8 @@
 
 三个视图共用同一份采集与配置，可以同时开着，也可以随时全部收起（`Ctrl + Alt + C`）。
 
+![CoPul 大窗口](https://gitee.com/stardust-xingchenya/corevessel-co-pul/raw/main/docs/screenshots/main.png)
+
 ---
 
 ## 下载哪个
