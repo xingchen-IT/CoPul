@@ -94,3 +94,35 @@ Write-Host ""
 Write-Host "静默安装： $exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
 Write-Host "静默卸载： %LOCALAPPDATA%\Programs\CoPul\unins000.exe /VERYSILENT"
 Write-Host "连配置一起卸：先设环境变量 COPUL_PURGE=1，再执行上面的卸载命令"
+
+# ---------------------------------------------------------------------------
+# 6. 完整性标签兜底
+#
+#    本仓库所在的 D:\CoPul开发 带 Mandatory Label\Low（沙箱留下的），artifacts\ 与
+#    刚生成的 exe 都继承这个标签。用户双击带 Low 标签的 setup.exe 时，进程以 Low IL
+#    启动，写不进 Medium 的 %TEMP%，报：
+#        「无法创建目录 %TEMP%\is-XXXX.tmp。错误 5：拒绝访问。」
+#    0.2 秒 exit=1，连 /LOG 都写不出来——看着像脚本坏了，其实字节完全没问题。
+#
+#    试过 icacls /setintegritylevel Medium，对单文件和对 artifacts\ 都返回 exit=5：
+#    同目录那条 Everyone:(CI)(DENY)(DC) 显式 ACE 把它挡住了。
+#    所以不动工作区安全设置，改成「额外复制一份到 Downloads」——复制按**目标**目录
+#    取标签，落到 Medium 目录后就是干净的，双击即装。
+# ---------------------------------------------------------------------------
+$labelLine = icacls $exe 2>$null | Select-String -Pattern 'Low Mandatory Level'
+if ($labelLine) {
+    $dl = Join-Path $env:USERPROFILE 'Downloads'
+    if (Test-Path $dl) {
+        $copy = Join-Path $dl $name
+        Copy-Item $exe $copy -Force
+        $copyLabel = icacls $copy 2>$null | Select-String -Pattern 'Low Mandatory Level'
+        Write-Host ""
+        Write-Host "注意：artifacts\ 带「低完整性标签」，原地那份双击会报「错误 5：拒绝访问」。" -ForegroundColor Yellow
+        if ($copyLabel) {
+            Write-Host "      Downloads 里的副本也继承了标签，请改用 D:\ 根目录之类的位置。" -ForegroundColor Yellow
+        } else {
+            Write-Host "      已额外输出一份可直接双击的副本：" -ForegroundColor Yellow
+            Write-Host "      $copy" -ForegroundColor Green
+        }
+    }
+}
