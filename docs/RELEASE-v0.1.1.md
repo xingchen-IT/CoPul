@@ -1,4 +1,4 @@
-# CoPul 芯脉 v0.1.0
+# CoPul 芯脉 v0.1.1
 
 > 把 CPU、GPU、内存、硬盘、网络、帧率贴在 Windows 任务栏上。三种视图、点击穿透、全屏游戏自动让路。
 
@@ -16,12 +16,26 @@
 
 ---
 
+## v0.1.1 改了什么
+
+本版没有新功能，只改授权与合规：
+
+- **许可协议改为 GPL-3.0**。源码随便看、随便改、随便分发（含商业用途）；再分发时保留许可全文、
+  标明改动，衍生作品同样以 GPL-3.0 发布并提供完整源码。详见文末「许可」。
+- **首次启动的协议窗改为展示 GPL-3.0 全文**。它现在是一次**告知**而不是点击合同 ——
+  GPL-3.0 第 9 条明确「运行本程序不需要接受本许可」，所以勾选框只表示"已阅读"，点「继续」即可。
+  已经装过旧版的用户升级后仍会看到一次。
+- **补上 HidSharp 的 Apache-2.0 许可副本**（`licenses/HidSharp-LICENSE.txt`）。
+  它由 LibreHardwareMonitor 传递引入并随包分发，Apache-2.0 §4(a) 要求提供许可副本。
+
+从 0.1.0 升级不需要卸载，安装包会覆盖安装并保留配置。
+
 ## 下载哪个
 
 | 文件 | 体积 | 说明 |
 | --- | --- | --- |
-| **`CoPul-0.1.0-setup-x64.exe`** | 47.4 MB | 安装版，**推荐**。装到开始菜单与「应用」列表，可自定义安装路径，卸载干净 |
-| `CoPul-0.1.0-win-x64.zip` | 60.5 MB | 免安装版，解压即用，适合放 U 盘或不想写入注册表 |
+| **`CoPul-0.1.1-setup-x64.exe`** | 47.4 MB | 安装版，**推荐**。装到开始菜单与「应用」列表，可自定义安装路径，卸载干净 |
+| `CoPul-0.1.1-win-x64.zip` | 60.5 MB | 免安装版，解压即用，适合放 U 盘或不想写入注册表 |
 
 安装版是**用户级安装**：默认装到 `%LOCALAPPDATA%\Programs\CoPul`，**不弹 UAC**，不需要管理员权限。
 
@@ -29,8 +43,8 @@
 
 1. **「Windows 已保护你的电脑」** —— 本程序**没有代码签名证书**（个人开发者买不起 EV 证书），SmartScreen 会拦一下。
    点「更多信息」→「仍要运行」即可。这不是病毒提示，只是"没见过这个发布者"。
-2. **许可协议** —— 首次启动弹一次，条款可滚动，勾选同意才能继续。不同意则退出，不采集任何数据。
-   同意结果（版本 + 时间）记在配置里，之后不再询问。
+2. **许可协议** —— 首次启动显示一次 GPL-3.0 全文，可滚动；勾选「我已阅读上述条款」后点「继续」进入。
+   阅读记录（版本 + 时间）记在配置里，协议改版前不再打扰。
 3. 手动启动会直接打开大窗口；开机自启则以任务栏条出现。点 `×` 只是隐藏，真退出用托盘菜单 →「退出」。
 4. 托盘图标可能被折进任务栏的 `^` 里，拖出来更顺手。
 
@@ -79,11 +93,11 @@ PawnIO 是开源、带签名的通用驱动（LibreHardwareMonitor 生态同款�
 
 ## 安装与卸载
 
-**安装**：双击 `CoPul-0.1.0-setup-x64.exe` → 选路径（默认 `%LOCALAPPDATA%\Programs\CoPul`）→ 完成。
+**安装**：双击 `CoPul-0.1.1-setup-x64.exe` → 选路径（默认 `%LOCALAPPDATA%\Programs\CoPul`）→ 完成。
 可用 `/DIR=` 指定路径，例如：
 
 ```
-CoPul-0.1.0-setup-x64.exe /VERYSILENT /DIR="D:\Apps\CoPul"
+CoPul-0.1.1-setup-x64.exe /VERYSILENT /DIR="D:\Apps\CoPul"
 ```
 
 **卸载**：设置 →「应用」→ CoPul → 卸载；或开始菜单 → CoPul → 卸载。
@@ -101,11 +115,11 @@ CoPul-0.1.0-setup-x64.exe /VERYSILENT /DIR="D:\Apps\CoPul"
 ## 校验和
 
 ```
-3E1CE64123A152F2D5E01B910204DF84AC10FD6E257961517270A14531378CD8  CoPul-0.1.0-setup-x64.exe
-D1C4A956A092D32F76891205196849E542D5C24F73A40BEA5D99698149EF205D  CoPul-0.1.0-win-x64.zip
+23E9248FA5DDD7DA04A1F74C8CAD5B8DCA9759EF7E2B17F51940C2A61F31306D  CoPul-0.1.1-setup-x64.exe
+2A9F6758EDE7EDF31DEFA6EB7A2D9A948CF9EFA54C12E1E5EDF433AC6E0AAD0B  CoPul-0.1.1-win-x64.zip
 ```
 
-PowerShell 校验：`Get-FileHash .\CoPul-0.1.0-setup-x64.exe -Algorithm SHA256`
+PowerShell 校验：`Get-FileHash .\CoPul-0.1.1-setup-x64.exe -Algorithm SHA256`
 
 ## 许可
 

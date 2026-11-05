@@ -1,6 +1,6 @@
 ﻿; CoPul 芯脉 —— Inno Setup 安装脚本（M4.48）
 ;
-; 设计要点（与 0.1.0 的发布路线一致）：
+; 设计要点（与后续版本的发布路线一致）：
 ;   1. 用户级安装：装到 %LOCALAPPDATA%\Programs\CoPul，全程不弹 UAC。
 ;      绿色软件的用户不该为了装一个监控条去点"允许此应用对你的设备进行更改"。
 ;   2. 不在安装向导里显示许可协议：协议由程序首启时弹（同一份正文，出自同一份 LICENSE）。
@@ -17,7 +17,7 @@
 ; 版本号只有一个来源：csproj 的 <Version>。build-installer.ps1 读出来用 /D 传进来，
 ; 这里的默认值只是为了让 ISCC 能单独跑（不带 /D 时用）。
 #ifndef MyAppVersion
-#define MyAppVersion     "0.1.0"
+#define MyAppVersion     "0.1.1"
 #endif
 
 #define StageDir         "..\artifacts\CoPul-" + MyAppVersion + "-win-x64"

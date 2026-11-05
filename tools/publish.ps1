@@ -282,4 +282,4 @@ Write-Host ("  压缩后 {0} MB" -f [math]::Round($zip.Length / 1MB, 1))
 Write-Host ("  SHA-256 {0}" -f $hash)
 Write-Host ("  校验文件 {0}" -f $hashFile)
 Write-Host ""
-Write-Host "下一步：把 zip 与 .sha256 一起传到 Gitee Release，正文用 docs/发布说明-$Version.md"
+Write-Host "下一步：把 zip 与 .sha256 一起传到 Gitee Release，正文用 docs/RELEASE-v$Version.md（发新版时从上一版复制改名）"

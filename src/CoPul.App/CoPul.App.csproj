@@ -33,7 +33,7 @@
     <!-- 单文件产物名就是 CoPul.exe，产品名与进程名一致，方便任务管理器里认出来 -->
     <Product>CoPul 芯脉</Product>
     <AssemblyTitle>CoPul 芯脉</AssemblyTitle>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <!--
       程序集元数据（M4.46）。这些字段不是"填着好看"：
 

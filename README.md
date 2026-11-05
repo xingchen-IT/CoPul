@@ -2,7 +2,7 @@
 
 > 把 CPU、GPU、内存、硬盘、网络、帧率贴在 Windows 任务栏上。三种视图、点击穿透、全屏游戏自动让路。
 
-<sub>v0.1.0 · 尚未公开发布（仓库暂时私有） · GPL-3.0 自由软件（见 <a href="#许可">许可</a>）</sub>
+<sub>v0.1.1 · 尚未公开发布（仓库暂时私有） · GPL-3.0 自由软件（见 <a href="#许可">许可</a>）</sub>
 
 <img src="docs/screenshots/main.png" width="640" alt="CoPul 大窗口">
 
