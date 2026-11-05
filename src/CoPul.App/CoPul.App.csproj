@@ -46,7 +46,7 @@
     <Company>CoPul</Company>
     <Copyright>Copyright (c) 2026 CoPul 作者（xingchen）</Copyright>
     <Description>把 CPU、GPU、内存、硬盘、网络与帧率贴在 Windows 任务栏上的轻量监控工具</Description>
-    <RepositoryUrl>https://gitee.com/stardust-xingchenya/corevessel-co-pul</RepositoryUrl>
+    <RepositoryUrl>https://github.com/xingchen-IT/CoPul</RepositoryUrl>
     <!--
       应用图标（R-01）。同时用作 exe 图标（资源管理器里看到的就是它）。
       由 tools/make-icon.py 生成 —— 那个脚本会被旧版 make-tray-icon.py 取代，

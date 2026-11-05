@@ -52,4 +52,4 @@
 内部预览版，未公开发布、未提供下载。功能范围与 0.1.1 基本一致，区别在于许可为专有协议、
 以散装 dll 形式发布。
 
-[0.1.1]: https://gitee.com/stardust-xingchenya/corevessel-co-pul/releases/tag/v0.1.1
+[0.1.1]: https://github.com/xingchen-IT/CoPul/releases/tag/v0.1.1

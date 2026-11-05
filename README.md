@@ -28,7 +28,9 @@ CoPul 是一个**常驻托盘**的实时硬件监控小工具。它不弹大窗�
 
 ## 下载
 
-到 [Releases](https://gitee.com/stardust-xingchenya/corevessel-co-pul/releases) 取最新版：
+主仓库在 GitHub，取最新版到 [Releases](https://github.com/xingchen-IT/CoPul/releases)。
+国内访问 GitHub 慢的话，[Gitee 镜像](https://gitee.com/stardust-xingchenya/corevessel-co-pul/releases)
+上有完全相同的文件与校验和：
 
 | 文件 | 体积 | 说明 |
 | --- | --- | --- |
@@ -174,8 +176,8 @@ CoPul 用的是 **PawnIO**：开源、带数字签名的通用驱动（LibreHard
 需要 .NET SDK 8.0：
 
 ```bash
-git clone https://gitee.com/stardust-xingchenya/corevessel-co-pul.git
-cd corevessel-co-pul
+git clone https://github.com/xingchen-IT/CoPul.git
+cd CoPul
 
 # 开发构建
 dotnet build CoPul.sln -c Release
@@ -184,6 +186,8 @@ dotnet build CoPul.sln -c Release
 dotnet publish src/CoPul.App/CoPul.App.csproj -c Release -r win-x64 --self-contained true \
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
+
+> 国内网络 `git clone` 慢的话，可用镜像：`git clone https://gitee.com/stardust-xingchenya/corevessel-co-pul.git`
 
 自包含产物是 **1 个 144 MB 的 exe + 3 个 ico + PresentMon + 两份许可文本**，
 整个目录一起拷走即可运行。单文件省掉了 480 个散装 dll 的整理负担，代价是首次启动
@@ -230,7 +234,8 @@ tools/               图标生成、打包、取证与压测脚本
 | 无担保 | 按「现状」提供，作者不对使用后果负责（GPL-3.0 §15–17） |
 
 **源码获取**：本仓库即对应源码。分发二进制时（GPL-3.0 §6），源码可从本仓库对应标签取得：
-<https://gitee.com/stardust-xingchenya/corevessel-co-pul>
+<https://github.com/xingchen-IT/CoPul>
+（国内镜像：<https://gitee.com/stardust-xingchenya/corevessel-co-pul>）
 
 **名称与图标不在授权范围内。** GPL 只授权代码，不授权商标：基于本项目的衍生版本必须换掉名称与图标，不得让人误以为你发布的是官方版本。这是开源项目的通行做法 —— Firefox 的代码可以随便 fork，但 fork 只能叫别的名字。
 
@@ -240,7 +245,9 @@ tools/               图标生成、打包、取证与压测脚本
 
 ## 反馈
 
-问题与建议走 [Issues](https://gitee.com/stardust-xingchenya/corevessel-co-pul/issues)。
+问题与建议走 [GitHub Issues](https://github.com/xingchen-IT/CoPul/issues)。
+Gitee 镜像上也有 [Issues](https://gitee.com/stardust-xingchenya/corevessel-co-pul/issues)，
+但两边是分开的，**建议集中在 GitHub 提**，免得漏看。
 
 报问题时请尽量附上：Windows 版本、CPU / 显卡 / 硬盘型号、是否以**管理员身份**运行、
 以及设置页 →「传感器诊断」的截图 —— 最后一项最有帮助，能直接看出是哪一层没拿到数据。

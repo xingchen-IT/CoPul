@@ -134,5 +134,5 @@ HidSharp（Apache-2.0）、.NET（MIT），完整清单见 `THIRD-PARTY-NOTICES.
 
 ## 反馈
 
-问题与建议走 [Issues](https://gitee.com/stardust-xingchenya/corevessel-co-pul/issues)。
+问题与建议走 [Issues](https://github.com/xingchen-IT/CoPul/issues)。
 报问题时请附：Windows 版本、CPU/显卡/硬盘型号、是否以管理员运行、设置页「传感器诊断」的截图。
