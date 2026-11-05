@@ -272,8 +272,10 @@ Compress-Archive -Path $StageDir -DestinationPath $ZipPath -CompressionLevel Opt
 $zip = Get-Item $ZipPath
 $hash = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash
 $hashFile = "$ZipPath.sha256"
-# 格式与 sha256sum 一致（"hash  文件名"），Linux / Git Bash 都能直接 -c 校验
-"$hash  $($zip.Name)" | Set-Content -Path $hashFile -Encoding ASCII
+# 格式与 sha256sum 一致（"hash  文件名"），Linux / Git Bash 都能直接 -c 校验。
+# 必须自己写字节：Set-Content 在 Windows PowerShell 5.1 下按 CRLF 落盘，
+# 行尾那个 \r 会让 `sha256sum -c` 报 "No such file or directory"（踩过）。
+[System.IO.File]::WriteAllText($hashFile, "$hash  $($zip.Name)`n", (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host ""
 Write-Host "发布包" -ForegroundColor Cyan
