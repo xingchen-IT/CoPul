@@ -121,6 +121,29 @@
   </ItemGroup>
 
   <!--
+    HidSharp 的许可全文（Apache-2.0）。
+
+    2026-11-05 的依赖审计发现：HidSharp 由 LibreHardwareMonitorLib 传递引入（0.9.6 → HidSharp 2.6.4），
+    许可是 **Apache-2.0** 而不是同族其它包的 MPL-2.0 —— nuspec 里写的是 <license type="file">LICENSE.txt</license>，
+    只看 licenseUrl（aka.ms/deprecateLicenseUrl 那种空壳）会误判成"未声明"。
+
+    Apache-2.0 §4(a) 要求"向接收者提供本许可的副本"，§4(b) 要求保留修改声明。此前只在
+    THIRD-PARTY-NOTICES.txt 里写了 LHM，既没点名 HidSharp 也没附全文 —— 是本次审计唯一的实质缺口。
+
+    文件取自 NuGet 包内的 LICENSE.txt 原文（含 HidSharp 自己的版权头 + Apache-2.0 全文），不重排、
+    不删减，因为 §4 要求的是"副本"。放 assets 下而不是仓库根：根目录从 M4.47 起只留 5 个文件。
+  -->
+  <ItemGroup>
+    <None Include="assets\licenses\HidSharp-LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>licenses\HidSharp-LICENSE.txt</Link>
+      <Visible>false</Visible>
+      <!-- 同样是"要让人在目录里看得见"的文件，不能包进单文件 exe -->
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+  </ItemGroup>
+
+  <!--
     许可协议随二进制走（专有许可：保留所有权利，禁止二次分发）。
     用户拿到 exe 时就必须能看到条款 —— 只在仓库里放 LICENSE 是不够的，
     下载站/网盘转手一趟，仓库就不在原地了。

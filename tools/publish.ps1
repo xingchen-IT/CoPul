@@ -149,6 +149,7 @@ $required = @(
     @{ Path = "THIRD-PARTY-NOTICES.txt";                Why = "MPL-2.0 / MIT 的告知义务" },
     @{ Path = "presentmon\PresentMon.exe";              Why = "FPS 唯一来源（独立进程，不能进 bundle）" },
     @{ Path = "presentmon\LICENSE.txt";                 Why = "MIT 要求所有副本保留声明" },
+    @{ Path = "licenses\HidSharp-LICENSE.txt";          Why = "Apache-2.0 §4(a) 要求随包提供许可副本" },
     @{ Path = "assets\copul.ico";                       Why = "exe / 关于页图标" },
     @{ Path = "assets\copul-tray-dark.ico";             Why = "深色任务栏托盘图标" },
     @{ Path = "assets\copul-tray-light.ico";            Why = "浅色任务栏托盘图标" }

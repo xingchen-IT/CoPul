@@ -28,8 +28,40 @@ CoPul 第三方组件声明（Third-Party Notices）
    说明：MPL-2.0 为文件级弱著佐权。本程序未修改该项目的任何文件，因此没有需要
          公开的修改；接收者可随时通过上面的地址取得其完整源码。
 
+2.1 LibreHardwareMonitorLib 的传递依赖（均为 MPL-2.0，均未修改）
+   MPL-2.0 §3.1 要求告知接收者源码以本许可提供，故逐一定名并给出各自源码地址 ——
+   它们是独立仓库，只指向 LHM 会让人找不到。
 
-3. PawnIO
+   - DiskInfoToolkit 1.1.2     源码：https://github.com/Blacktempel/DiskInfoToolkit
+     用途：读取硬盘 SMART 与温度
+   - RAMSPDToolkit-NDD 1.4.2   源码：https://github.com/Blacktempel/RAMSPDToolkit
+     用途：读取内存条 SPD 与温度
+   - BlackSharp.Core 1.0.7     源码：https://github.com/Blacktempel/BlackSharp
+     用途：上述两个库共用的底层封装
+
+
+3. HidSharp
+   版本：2.6.4
+   版权：Copyright 2010-2025 James F. Bellinger
+   许可：**Apache License 2.0**（注意：与上面几个 MPL-2.0 的包不同）
+   用途：访问 USB HID 设备（部分水冷、风扇控制器、电源的传感器走 HID）
+   分发形式：随包，HidSharp.dll 由 LibreHardwareMonitorLib 传递引入（未修改）
+   许可全文：licenses\HidSharp-LICENSE.txt（随包，含完整 Apache-2.0 条款）
+   源码地址：https://github.com/zeroKilo/HidSharp
+   说明：Apache-2.0 §4 要求向接收者提供许可副本并保留声明；本程序未修改其源码，
+         故无需附带修改声明。
+
+
+4. Mono.Posix.NETStandard
+   版本：1.0.0
+   版权：Copyright (c) Microsoft Corporation
+   许可：MIT（Mono 项目许可，见 https://github.com/mono/mono/blob/master/LICENSE）
+   用途：跨平台文件权限与路径处理（Windows 上基本不走这条路径）
+   分发形式：随包，Mono.Posix.NETStandard.dll 与 MonoPosixHelper.dll（未修改）
+   说明：由 LibreHardwareMonitorLib 传递引入。
+
+
+5. PawnIO
    许可：遵循 PawnIO 项目自身许可
    用途：在用户机器上提供 Ring0 传感器访问能力（CPU 温度、功耗等）
    **不随包分发**：本程序不附带、不下载、不静默安装该驱动，仅在检测到缺失时提示
@@ -37,13 +69,15 @@ CoPul 第三方组件声明（Third-Party Notices）
    官方地址：https://pawnio.eu/
 
 
-4. .NET 8 运行时（仅在自包含发布版中随包）
+6. .NET 8 运行时（仅在自包含发布版中随包）
    版权：Copyright (c) .NET Foundation and Contributors
    许可：MIT
    用途：运行本程序所需的运行时与 WPF 组件
    分发形式：自包含发布时随包（win-x64）
    许可全文：https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
    说明：若使用依赖框架（framework-dependent）方式发布，则由用户自行安装，不随包。
+         随包的其他 Microsoft 程序集（System.Management、System.IO.Ports、System.CodeDom、
+         System.Threading.AccessControl）同属 MIT，归入本条。
 
 
 补充说明
