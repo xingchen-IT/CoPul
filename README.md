@@ -2,7 +2,7 @@
 
 > 把 CPU、GPU、内存、硬盘、网络、帧率贴在 Windows 任务栏上。三种视图、点击穿透、全屏游戏自动让路。
 
-<sub>v0.1.1 · GPL-3.0 自由软件（见 <a href="#许可">许可</a>）</sub>
+<sub><b>0.1.1</b> · <a href="LICENSE">GPL-3.0</a> 自由软件 · Windows 10 / 11 x64 · <a href="CHANGELOG.md">更新记录</a></sub>
 
 <img src="docs/screenshots/main.png" width="640" alt="CoPul 大窗口（管理员模式：CPU / GPU 占用、温度、功耗、帧率、趋势）">
 
@@ -208,6 +208,8 @@ tools/               图标生成、打包、取证与压测脚本
 采集层刻意与界面分离：`CoPul.Collector.dll` 可单独替换，调度按 T0/T1/T2 分级给了不同频率下限。各项开销的实测数字见上文 [资源占用](#资源占用)。
 
 ## 文档
+
+对外变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 `docs/` 里是开发过程记录，按里程碑编号，每个技术决策都有对应的实测数据。想了解某个行为为什么是这样，通常能在里面找到当时的对照实验。
 
