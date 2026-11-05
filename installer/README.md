@@ -52,7 +52,9 @@ set COPUL_PURGE=1
 
 - **`SolidCompression` 必须是 `no`**。实测 `yes` 时安装器启动 37 秒后 `exit=1`、目标目录一个文件都没有、
   连 `/LOG` 指定的日志都没创建。关掉后 11.7 秒装完，代价只是产物大 6 MB。
-- **从带 ACL Deny 的目录运行 `setup.exe` 会失败**。本仓库的源码目录就是这种（见 `docs/M4.48`），
-  打包产物一律拷到普通目录再执行。
+- **产物所在的目录带「低完整性标签」时，双击会报「错误 5：拒绝访问」**。本仓库的工作目录就是这种：
+  `icacls` 里能看到 `Mandatory Label\Low Mandatory Level`，里面生成的 exe 会继承它，双击出来的进程是
+  Low IL，写不进 `%TEMP%`。打包产物一律**拷到普通目录再运行**（复制会按目标目录重新取标签），
+  或者对工作目录执行 `icacls <目录> /setintegritylevel (OI)(CI)M`。细节见 `docs/M4.48`。
 
 验证记录（四条卸载路径、耗时、残留）见 `docs/M4.48-安装器与卸载器.md`。
