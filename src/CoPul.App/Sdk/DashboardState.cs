@@ -709,14 +709,29 @@ public sealed class DashboardState : INotifyPropertyChanged
     /// </summary>
     public void ApplyProviders(IReadOnlyList<IMetricProvider> providers)
     {
-        var degraded = providers
-            .Where(p => p.Status != ProviderStatus.Ready)
+        // 两类"没准备好"必须分开，否则状态灯永远橙：
+        //   Failed      —— 硬件在、但读不到（没提权、驱动被拦、PresentMon 起不来）。真降级。
+        //   Unsupported —— 本机压根没有这块硬件（非 NVIDIA 卡、没装 PawnIO、SATA 盘）。
+        //                  ProviderStatus 的注释写的就是「不算错误」，那就不能点亮降级灯。
+        // 实测场景：AMD/Intel 显卡 + 没装 PawnIO 的机器，4/6 就绪，从装上第一天起就一直
+        // 「降级运行」—— 用户分不清「这台机器就这样」和「我配错了」，橙灯因此失去意义。
+        // 所以 Unsupported 只写进状态栏（灰字），不参与 RunState。
+        var failed = providers
+            .Where(p => p.Status == ProviderStatus.Failed)
             .Select(p => $"{p.Name}：{(p.UnavailableReason ?? "不可用").TrimEnd('。', '；', '，')}")
             .ToList();
 
-        _statusWarn = degraded.Count > 0;
-        SetRunState(degraded.Count > 0 ? RunState.Degraded : RunState.Running);
-        StatusText = JoinNotes(_infoNote, degraded.Count > 0 ? "降级 " + string.Join("；", degraded) : "");
+        var absent = providers
+            .Where(p => p.Status == ProviderStatus.Unsupported)
+            .Select(p => p.Name)
+            .ToList();
+
+        _statusWarn = failed.Count > 0;
+        SetRunState(failed.Count > 0 ? RunState.Degraded : RunState.Running);
+        StatusText = JoinNotes(
+            _infoNote,
+            failed.Count > 0 ? "降级 " + string.Join("；", failed) : "",
+            absent.Count > 0 ? "未启用 " + string.Join("、", absent) : "");
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusBrush)));
     }
 

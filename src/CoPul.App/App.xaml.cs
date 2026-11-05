@@ -2286,6 +2286,9 @@ public partial class App : Application
                 $"time        : {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
                 $"window      : {window.ActualWidth:F0}×{window.ActualHeight:F0}  state={window.WindowState}",
                 $"admin       : {IsAdministrator()}",
+                // 状态灯口径（M4.51）：Failed 才算降级，Unsupported 只进状态栏。
+                // 没有这一行就只能靠截图判灯色，而"哪一条被算成降级"根本看不出来。
+                $"runstate    : {window.State.RunStateText}  |  {window.State.StatusText}",
                 $"warmup(s)   : {warmupSec}  期间 CPU {warmupNote}",
                 $"window(s)   : {wallMs / 1000.0:F1}",
                 $"cpu time    : {cpuMs:F0} ms",
