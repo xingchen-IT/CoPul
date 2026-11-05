@@ -2,9 +2,11 @@
 
 > 把 CPU、GPU、内存、硬盘、网络、帧率贴在 Windows 任务栏上。三种视图、点击穿透、全屏游戏自动让路。
 
-<sub>v0.1.1 · 尚未公开发布（仓库暂时私有） · GPL-3.0 自由软件（见 <a href="#许可">许可</a>）</sub>
+<sub>v0.1.1 · GPL-3.0 自由软件（见 <a href="#许可">许可</a>）</sub>
 
-<img src="docs/screenshots/main.png" width="640" alt="CoPul 大窗口">
+<img src="docs/screenshots/main.png" width="640" alt="CoPul 大窗口（管理员模式：CPU / GPU 占用、温度、功耗、帧率、趋势）">
+
+<sub>上图为管理员身份下的完整形态：CPU 封装温度 67 ℃、封装功耗 16 W、GPU 核心温度 47 ℃ 均来自内核态读数；普通权限下这几项显示 —，其余指标不受影响。</sub>
 
 ---
 
