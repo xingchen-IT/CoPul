@@ -1,7 +1,7 @@
 <Window x:Class="CoPul.App.EulaWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="CoPul 许可协议" Width="720" Height="660"
+        Title="CoPul 许可协议 · GPL-3.0" Width="720" Height="660"
         WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="NoResize"
         Topmost="True"
         Background="{DynamicResource BrushBg}" FontFamily="{StaticResource FontUi}"
@@ -9,18 +9,18 @@
         TextOptions.TextFormattingMode="Display">
 
     <!--
-        首次启动的许可协议同意窗（2026-11-04，发布合规项）。
+        首次启动的许可协议窗（2026-11-04 立；2026-11-05 切换 GPL-3.0 后改语义）。
 
-        为什么不是一个 MessageBox：条款有 5000 多字，必须可滚动、可回看、可复制；
-        MessageBox 里既滚不了也选不中，等于"给了一个看不见的条款"。
-        法院认可点击合同的前提正是「条款可获取 + 同意有记录」。
+        为什么不是一个 MessageBox：条款全文（GPL-3.0 正文 674 行）必须可滚动、可回看、
+        可复制；MessageBox 里既滚不了也选不中，等于"给了一个看不见的条款"。
 
-        为什么必须勾选才让点「同意」：只有一个按钮的话，误点一下就"同意"了，
-        举证时对方会说"我根本没看"。勾选框把动作拆成两步，是这类弹窗的通行做法。
+        为什么还留着这个窗：GPL-3.0 第 9 条写明运行程序不需要接受许可，所以它不再是
+        点击合同，只是**一次性的告知** —— 让用户知道拿到的是自由软件、可以再分发。
+        勾选框保留，但措辞是"我已阅读"而非"我同意"，不构成对 GPL 授予权利的任何限缩。
 
         Topmost：实测在全屏游戏正在跑时启动本程序，ShowDialog 抢不到前台，窗口被压在
-        游戏后面 —— 用户看到的是"点了图标什么都没发生"，进程却一直停在这里等同意。
-        这是一次性的法务弹窗（装完只出现一次），压过别人比静默卡住更可接受。
+        游戏后面 —— 用户看到的是"点了图标什么都没发生"，进程却一直停在这里等确认。
+        这是一次性的告知窗（装完只出现一次），压过别人比静默卡住更可接受。
     -->
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="0" GlassFrameThickness="0"
@@ -139,12 +139,12 @@
                     <TextBlock Text="许可协议" Style="{StaticResource TextBrandSub}" />
                     <Border Width="1" Height="12" Margin="12,0" VerticalAlignment="Center"
                             Background="{DynamicResource BrushDivider}" />
-                    <TextBlock x:Name="VersionText" Text="版本 1 · 2026-11-04 生效"
+                    <TextBlock x:Name="VersionText" Text="版本 2 · 2026-11-05 生效"
                                FontSize="11" VerticalAlignment="Center"
                                Foreground="{DynamicResource BrushTextTertiary}" />
                 </StackPanel>
                 <Button Style="{StaticResource TitleBarCloseButton}" Content="✕"
-                        ToolTip="不同意并退出" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        ToolTip="关闭并退出" HorizontalAlignment="Right" VerticalAlignment="Center"
                         Margin="0,0,10,0" Click="Decline_Click" />
                 <Border Height="1" VerticalAlignment="Bottom"
                         Background="{DynamicResource BrushDivider}" />
@@ -171,7 +171,7 @@
                 </Grid.RowDefinitions>
 
                 <CheckBox x:Name="ConsentCheck" Grid.Row="0" Style="{StaticResource EulaCheck}"
-                          Content="我已阅读并同意上述全部条款"
+                          Content="我已阅读上述条款"
                           Checked="Consent_Changed" Unchecked="Consent_Changed" />
 
                 <Grid Grid.Row="1" Margin="0,14,0,0">
@@ -183,13 +183,13 @@
 
                     <TextBlock x:Name="FootNote" Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap"
                                FontSize="11" Foreground="{DynamicResource BrushTextTertiary}"
-                               Text="不同意将退出程序，不会采集任何数据。完整条款见随包的 LICENSE.txt。" />
+                               Text="GPL-3.0 已直接授予你运行、修改与再分发的权利；这里的勾选只表示已阅读。完整条款见随包的 LICENSE.txt。" />
 
                     <Button Grid.Column="1" x:Name="DeclineButton" Style="{StaticResource EulaButton}"
                             Content="退出" MinWidth="88" Margin="12,0,0,0" Click="Decline_Click" />
 
                     <Button Grid.Column="2" x:Name="AcceptButton" Style="{StaticResource EulaPrimary}"
-                            Content="同意并继续" MinWidth="112" Margin="10,0,0,0"
+                            Content="继续" MinWidth="112" Margin="10,0,0,0"
                             IsEnabled="False" IsDefault="True" Click="Accept_Click" />
                 </Grid>
             </Grid>

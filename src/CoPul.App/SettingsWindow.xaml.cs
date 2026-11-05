@@ -2604,7 +2604,7 @@ public partial class SettingsWindow : Window
     // =================================================================
 
     /// <summary>
-    /// 把关于页的事实填一遍。只在构造时调一次 —— 这里的东西除"有没有同意记录"外都不会变，
+    /// 把关于页的事实填一遍。只在构造时调一次 —— 这里的东西除"有没有阅读记录"外都不会变，
     /// 每次切页重读只会让"版本号"这种本该稳定的显示来回跳。
     /// </summary>
     private void LoadAbout()
@@ -2613,13 +2613,13 @@ public partial class SettingsWindow : Window
         // 只写构建时间：安装目录在下面「文件位置」里已经有一行，同一屏出现两次只是噪音。
         AboutBuildText.Text = $"构建于 {AboutInfo.BuildTime}";
 
-        AboutLicenseKindText.Text = "专有软件，保留所有权利（禁止二次分发）";
-        AboutLicenseVersionText.Text = $"CoPul 最终用户许可协议 v{Eula.Version} · {Eula.EffectiveDate} 生效";
+        AboutLicenseKindText.Text = "GNU 通用公共许可证第 3 版（GPL-3.0）· 自由软件";
+        AboutLicenseVersionText.Text = $"CoPul 许可协议 v{Eula.Version} · {Eula.EffectiveDate} 生效";
 
-        // 同意记录是**证据**，所以原样显示存下来的时间串，不做本地化润色：
+        // 阅读记录是**证据**，所以原样显示存下来的时间串，不做本地化润色：
         // 一旦被改写过，它就不再是"当时记下的那个值"了。
         AboutAcceptedText.Text = string.IsNullOrWhiteSpace(_config.LicenseAcceptedAt)
-            ? "未记录（下次启动会重新询问）"
+            ? "未记录（下次启动会再显示一次）"
             : _config.LicenseAcceptedAt;
 
         NoticesText.Text = AboutInfo.Notices;

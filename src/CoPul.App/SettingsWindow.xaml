@@ -1400,7 +1400,7 @@
                                             <ColumnDefinition Width="108" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="同意记录" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Grid.Column="0" Text="阅读记录" Style="{StaticResource RowLabel}" />
                                         <TextBlock Grid.Column="1" x:Name="AboutAcceptedText"
                                                    Style="{StaticResource RowLabel}"
                                                    Foreground="{DynamicResource BrushTextPrimary}" />
@@ -1415,7 +1415,7 @@
                                     </StackPanel>
 
                                     <TextBlock Style="{StaticResource SectionHint}"
-                                               Text="CoPul 为专有软件，保留所有权利。允许在自有设备上个人非商业使用，禁止二次分发与发布修改版 —— 完整条款见上面的协议全文与随包的 LICENSE.txt。" />
+                                               Text="CoPul 以 GPL-3.0 发布：可以自由使用、修改和再分发（含商业用途），再分发时须保留许可全文并提供对应源码。「CoPul」名称与图标不在授权范围内。完整条款见上面的协议全文与随包的 LICENSE.txt；源码见仓库 gitee.com/stardust-xingchenya/corevessel-co-pul。" />
                                 </StackPanel>
                             </Border>
 

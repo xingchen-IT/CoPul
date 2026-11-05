@@ -145,7 +145,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败，退出码 $LASTEXITCOD
 # ---------------------------------------------------------------------------
 $required = @(
     @{ Path = "CoPul.exe";                              Why = "入口（自包含运行时全在它里面）" },
-    @{ Path = "LICENSE.txt";                            Why = "专有许可必须随二进制走" },
+    @{ Path = "LICENSE.txt";                            Why = "GPL-3.0 §6 要求随二进制提供许可全文" },
     @{ Path = "THIRD-PARTY-NOTICES.txt";                Why = "MPL-2.0 / MIT 的告知义务" },
     @{ Path = "presentmon\PresentMon.exe";              Why = "FPS 唯一来源（独立进程，不能进 bundle）" },
     @{ Path = "presentmon\LICENSE.txt";                 Why = "MIT 要求所有副本保留声明" },
@@ -206,7 +206,7 @@ $readme = @(
     "CoPul 芯脉 $Version 使用说明",
     "",
     "1. 双击 CoPul.exe 启动。绿色免安装：不写注册表、不建服务、不装驱动。",
-    "2. 首次启动会要求阅读并同意许可协议；不同意会直接退出（不会开始采集）。",
+    "2. 首次启动会显示 GPL-3.0 许可全文，勾选「我已阅读」后点「继续」进入。",
     "3. 启动后默认显示大窗口。点窗口的关闭按钮只是收起，程序仍在托盘；",
     "   要真正退出请用托盘图标的右键菜单 →「退出」。",
     "4. 建议右键「以管理员身份运行」。普通权限下 CPU 温度、硬盘温度、帧率会显示 —，",
@@ -216,7 +216,7 @@ $readme = @(
     "6. 完整条款见 LICENSE.txt；第三方组件及各自许可见 THIRD-PARTY-NOTICES.txt。",
     "7. 本程序不联网、不上传任何数据，全部指标在本机采集与显示。",
     "",
-    "许可：专有软件，保留所有权利，禁止二次分发。"
+    "许可：GNU GPL-3.0 自由软件 —— 可自由使用、修改与再分发（含商业用途）。"
 )
 $readmePath = Join-Path $StageDir "使用说明.txt"
 [System.IO.File]::WriteAllLines($readmePath, $readme, (New-Object System.Text.UTF8Encoding($true)))
@@ -244,7 +244,7 @@ $info = @(
     "解压体积 : $([math]::Round($bytes / 1MB, 1)) MB",
     "启动缓存 : 首次运行会把原生库解到 %TEMP%\.net\CoPul\（约 10 MB，删了不影响）",
     "",
-    "许可：专有软件，保留所有权利，禁止二次分发。完整条款见 LICENSE.txt。",
+    "许可：GNU GPL-3.0。完整条款见 LICENSE.txt；对应源码见仓库 gitee.com/stardust-xingchenya/corevessel-co-pul。",
     "第三方组件及各自许可见 THIRD-PARTY-NOTICES.txt。"
 )
 $infoPath = Join-Path $StageDir "BUILD-INFO.txt"

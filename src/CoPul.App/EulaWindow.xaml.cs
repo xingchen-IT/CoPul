@@ -7,7 +7,8 @@ using CoPul.App.Sdk;
 namespace CoPul.App;
 
 /// <summary>
-/// 首次启动的许可协议同意窗（2026-11-04）。见 <see cref="EulaWindow.xaml"/> 顶部的说明。
+/// 首次启动的许可协议窗（2026-11-04；2026-11-05 切换 GPL-3.0 后由"同意窗"改为"告知窗"）。
+/// 见 <see cref="EulaWindow.xaml"/> 顶部的说明。
 ///
 /// <para>
 /// 两种用法：<see cref="RunModal"/> 走 <c>ShowDialog</c>（生产路径），
@@ -20,7 +21,7 @@ public partial class EulaWindow : Window
     /// <summary>是否以模态方式打开。决定收尾时用 <see cref="Window.DialogResult"/> 还是 <see cref="Window.Close"/>。</summary>
     private bool _modal;
 
-    /// <summary>已经给出结论（同意 / 退出）。防止「点同意 → Closing 又记一次不同意」。</summary>
+    /// <summary>已经给出结论（确认 / 退出）。防止「点继续 → Closing 又记一次未确认」。</summary>
     private bool _finished;
 
     private IntPtr _hwnd;
@@ -33,7 +34,7 @@ public partial class EulaWindow : Window
         VersionText.Text = $"版本 {Eula.Version} · {Eula.EffectiveDate} 生效";
         AcceptButton.IsEnabled = false;
 
-        // 打开时回到顶部：正文 5000+ 字，停在中间会让人误以为"只有这么点条款"。
+        // 打开时回到顶部：正文 700 行（GPL-3.0 全文），停在中间会让人误以为"只有这么点条款"。
         Loaded += (_, _) =>
         {
             BodyScroll.ScrollToHome();
@@ -53,7 +54,7 @@ public partial class EulaWindow : Window
     ///
     /// <para>
     /// 必须是**另一个窗口实例**而不是"把首启那个窗再 Show 一次"：首启窗是 <c>ShowDialog</c>
-    /// 模态，早就关掉了，而且它的语义是"征求同意"，与"回看条款"不是一回事。
+    /// 模态，早就关掉了，而且它的语义是"首次启动告知"，与"回看条款"不是一回事。
     /// </para>
     /// </summary>
     public bool ReadOnly
@@ -68,14 +69,14 @@ public partial class EulaWindow : Window
             AcceptButton.Visibility = Visibility.Collapsed;
             DeclineButton.Content = "关闭";
             DeclineButton.IsCancel = true;
-            FootNote.Text = "这是曾经同意过的条款，仅供查阅 —— 关闭本窗口不影响继续使用。";
+            FootNote.Text = "这是当前版本的许可全文，仅供查阅 —— 关闭本窗口不影响继续使用。";
             FooterRow.Margin = new Thickness(0, 0, 0, 0);
         }
     }
 
     private bool _readOnly;
 
-    /// <summary>同意结果。仅在窗口关闭后有意义。</summary>
+    /// <summary>确认结果（是否点了「继续」）。仅在窗口关闭后有意义。</summary>
     public bool Accepted { get; private set; }
 
     /// <summary>
@@ -162,7 +163,7 @@ public partial class EulaWindow : Window
         }
     }
 
-    /// <summary>右上角 ✕ 与「退出」按钮同一个语义：不同意。</summary>
+    /// <summary>右上角 ✕ 与「退出」按钮同一个语义：未确认，退出程序。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         // 标题栏 ✕ 走的是关闭而不是按钮，这里兜住"直接关窗"的路径 ——

@@ -109,10 +109,14 @@ PowerShell 校验：`Get-FileHash .\CoPul-0.1.0-setup-x64.exe -Algorithm SHA256`
 
 ## 许可
 
-**专有软件，保留所有权利。** 本仓库不是开源项目，未授予再分发、修改或商用许可，详见 `LICENSE`。
+**GNU 通用公共许可证第 3 版（GPL-3.0），自由软件。** 你可以自由使用、修改和再分发，
+包括商业用途。再分发时须保留许可全文、标明改动，并让衍生作品同样以 GPL-3.0 发布并提供
+完整对应源码。完整条款见 `LICENSE`，源码见仓库对应标签。
 
-第三方组件各自保留原许可：PresentMon（MIT）、LibreHardwareMonitor（MPL-2.0）、.NET（MIT），
-完整清单见 `THIRD-PARTY-NOTICES.txt`（随安装包分发）。
+「CoPul」名称与图标不在授权范围内：衍生版本请换名换标，避免用户误认官方版本。
+
+第三方组件各自保留原许可：PresentMon（MIT）、LibreHardwareMonitor（MPL-2.0）、
+HidSharp（Apache-2.0）、.NET（MIT），完整清单见 `THIRD-PARTY-NOTICES.txt`（随安装包分发）。
 
 ## 反馈
 
