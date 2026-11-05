@@ -57,8 +57,28 @@ if (-not (Test-Path (Join-Path $stage "CoPul.exe"))) {
 }
 
 $fileCount = (Get-ChildItem $stage -Recurse -File).Count
-if ($fileCount -lt 400) {
-    throw "发布目录只有 $fileCount 个文件，明显不完整（正常 480+）。先重跑 publish.ps1。"
+
+# ---------------------------------------------------------------------------
+# 产物形态校验（M4.50 起是单文件布局，这里从"数文件个数"改成"看形态"）
+#
+# 原来是 `文件数 -lt 400 → 报错`，因为多文件发布正常有 480+ 个。单文件之后整个目录
+# 只剩 8 个文件，那条判据会把**正常产物**判成半份包。改成两条各自能说明问题的：
+#   · exe 太小 → 自包含运行时没打进去（装上必崩）；
+#   · 外部文件缺 → 这些是 ExcludeFromSingleFile 的，运行时按路径去找，缺了图标就空白。
+# ---------------------------------------------------------------------------
+$exeMB = [math]::Round((Get-Item (Join-Path $stage "CoPul.exe")).Length / 1MB, 1)
+if ($exeMB -lt 100) {
+    throw "发布目录里的 CoPul.exe 只有 $exeMB MB，自包含运行时没打进去（正常 140+）。先重跑 publish.ps1。"
+}
+
+$mustExist = @(
+    "LICENSE.txt", "THIRD-PARTY-NOTICES.txt",
+    "presentmon\PresentMon.exe", "presentmon\LICENSE.txt",
+    "assets\copul.ico", "assets\copul-tray-dark.ico", "assets\copul-tray-light.ico"
+)
+$missing = @($mustExist | Where-Object { -not (Test-Path (Join-Path $stage $_)) })
+if ($missing.Count -gt 0) {
+    throw "发布目录缺外部文件：$($missing -join '、')。先重跑 publish.ps1。"
 }
 
 # ---------------------------------------------------------------------------

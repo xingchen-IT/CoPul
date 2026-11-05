@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Security.Principal;
 using Microsoft.Win32;
 
@@ -51,11 +50,26 @@ public static class AutoStart
 
     private static bool? _cached;
 
+    /// <summary>
+    /// 框架依赖模式（<c>dotnet CoPul.dll</c>）下需要 dll 的磁盘路径；自包含与单文件下不需要。
+    ///
+    /// <para>
+    /// 不问 <c>Assembly.GetEntryAssembly()?.Location</c>：单文件发布时它恒为空字符串，
+    /// 编译器会为每一处引用报 IL3000，而"0 警告"是发版门槛。改用 BaseDirectory + 文件名 +
+    /// File.Exists 判断，两种模式行为完全一致 —— 单文件里那个 dll 本来就不在磁盘上。
+    /// </para>
+    /// </summary>
+    private static string EntryDllPath()
+    {
+        string candidate = Path.Combine(AppContext.BaseDirectory, "CoPul.dll");
+        return File.Exists(candidate) ? candidate : string.Empty;
+    }
+
     /// <summary>自启时该执行的可执行文件与参数（拆开给任务动作用）。</summary>
     public static (string Path, string Arguments) SplitCommand()
     {
         string host = Environment.ProcessPath ?? string.Empty;
-        string dll = Assembly.GetEntryAssembly()?.Location ?? string.Empty;
+        string dll = EntryDllPath();
 
         bool hostIsDotnet = Path.GetFileName(host)
             .StartsWith("dotnet", StringComparison.OrdinalIgnoreCase);
@@ -245,7 +259,7 @@ public static class AutoStart
     private static bool RunElevated(string verb)
     {
         string host = Environment.ProcessPath ?? string.Empty;
-        string dll = Assembly.GetEntryAssembly()?.Location ?? string.Empty;
+        string dll = EntryDllPath();
 
         bool hostIsDotnet = Path.GetFileName(host)
             .StartsWith("dotnet", StringComparison.OrdinalIgnoreCase);

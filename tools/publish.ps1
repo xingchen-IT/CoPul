@@ -115,7 +115,24 @@ $publishArgs = @(
     "--self-contained", "true",
     "-o", $StageDir,
     "-warnaserror",
-    "--nologo"
+    "--nologo",
+    # -----------------------------------------------------------------------
+    # 单文件布局（M4.50）
+    #
+    # 目标只有一个：安装目录别再把 485 个文件摊在根下。
+    #
+    # 为什么不能靠"把 dll 挪进 lib 子目录"：根目录那 249 个 dll 里绝大部分是
+    # .NET 运行时本身，hostpolicy 按 deps.json 在**程序目录**里找它们，挪走就
+    # 直接起不来（不是加载慢，是 host 阶段就失败）。所以只有打包这一条路。
+    # -----------------------------------------------------------------------
+    "-p:PublishSingleFile=true",
+    # 原生库（coreclr / hostfxr / D3DCompiler / LHM 的 dll）也必须进 bundle，
+    # 否则它们还散在根目录，等于白做。代价是首次启动要解压到
+    # %TEMP%\.net\<app>\<hash>\ —— 实测 9.6 MB（托管 dll 直接从 exe 内存映射，不落盘）。
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    # 不开 bundle 压缩：开了以后**每次启动**都要把 144 MB 解到内存，冷热启动都变慢
+    # （实测热启动 +0.4s）；省下的体积由 Inno 的 LZMA 补回来。
+    "-p:EnableCompressionInSingleFile=false"
 )
 
 & $Dotnet @publishArgs
@@ -127,21 +144,20 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败，退出码 $LASTEXITCOD
 #    不是形式主义 —— 备注里写清坏在哪，以后加文件才知道该不该进清单。
 # ---------------------------------------------------------------------------
 $required = @(
-    @{ Path = "CoPul.exe";                              Why = "入口" },
-    @{ Path = "CoPul.dll";                              Why = "主程序" },
-    @{ Path = "CoPul.Collector.dll";                    Why = "采集层（缺了启动就抛）" },
+    @{ Path = "CoPul.exe";                              Why = "入口（自包含运行时全在它里面）" },
     @{ Path = "LICENSE.txt";                            Why = "专有许可必须随二进制走" },
     @{ Path = "THIRD-PARTY-NOTICES.txt";                Why = "MPL-2.0 / MIT 的告知义务" },
-    @{ Path = "presentmon\PresentMon.exe";              Why = "FPS 唯一来源" },
+    @{ Path = "presentmon\PresentMon.exe";              Why = "FPS 唯一来源（独立进程，不能进 bundle）" },
     @{ Path = "presentmon\LICENSE.txt";                 Why = "MIT 要求所有副本保留声明" },
-    # 自包含 + RID 发布时原生库会被**摊平到根目录**，没有 runtimes\ 子目录
-    # （框架依赖发布才有）。所以这里查的是库本身，不是它曾经的所在目录。
-    @{ Path = "LibreHardwareMonitorLib.dll";            Why = "硬件采集主库" },
-    @{ Path = "libMonoPosixHelper.dll";                 Why = "LHM 的原生依赖，缺了读硬件崩（M4.41）" },
-    @{ Path = "RAMSPDToolkit-NDD.dll";                  Why = "内存 SPD 读取" },
     @{ Path = "assets\copul.ico";                       Why = "exe / 关于页图标" },
     @{ Path = "assets\copul-tray-dark.ico";             Why = "深色任务栏托盘图标" },
     @{ Path = "assets\copul-tray-light.ico";            Why = "浅色任务栏托盘图标" }
+    # 单文件布局（M4.50）之后**不再**逐个校验 dll：CoPul.dll / CoPul.Collector.dll /
+    # LibreHardwareMonitorLib.dll / libMonoPosixHelper.dll / RAMSPDToolkit-NDD.dll
+    # 全在 exe 的 bundle 里，磁盘上根本没有这些文件。
+    #
+    # 它们"缺了会崩"的检测意义改由下面两条形态校验承担 —— 一条查 exe 体积
+    # （运行时没打进去就会明显偏小），一条查布局（参数没生效会退回散装 dll）。
 )
 
 $missing = @()
@@ -154,6 +170,26 @@ if ($missing.Count -gt 0) {
     Write-Host "发布产物缺文件：" -ForegroundColor Red
     foreach ($item in $missing) { Write-Host ("  - {0}  ({1})" -f $item.Path, $item.Why) -ForegroundColor Red }
     throw "产物校验失败，共缺 $($missing.Count) 项。"
+}
+
+# ---------------------------------------------------------------------------
+# 3.5 形态校验：产物到底是不是"单文件布局"
+#
+#    单文件参数一旦没生效（漏传 / 被别的属性覆盖 / SDK 行为变化），产物会**安静地**
+#    退回 480 个散装 dll —— 程序照常能跑，所以"启动一下看看"永远发现不了，只有
+#    用户打开安装目录才看得出。两条判据各管一头：
+#
+#    · 根目录出现 System.Private.CoreLib.dll = 托管程序集没进 bundle（布局没生效）；
+#    · exe 小于 100 MB = 自包含运行时没打进去（半份包，装上就崩）。
+# ---------------------------------------------------------------------------
+$corelib = Join-Path $StageDir "System.Private.CoreLib.dll"
+if (Test-Path $corelib) {
+    throw "产物不是单文件布局：根目录出现了 System.Private.CoreLib.dll（PublishSingleFile 未生效）。"
+}
+
+$exeMB = [math]::Round((Get-Item (Join-Path $StageDir "CoPul.exe")).Length / 1MB, 1)
+if ($exeMB -lt 100) {
+    throw "CoPul.exe 只有 $exeMB MB，自包含运行时没打进去（正常 140+）。"
 }
 
 # 调试符号不进包：用户拿到也没用，还多几百 MB 的误判面（有人会以为要装什么）
@@ -202,9 +238,10 @@ $info = @(
     "构建时间 : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')",
     "源码提交 : $gitSha$(if ($gitDirty) { '（工作区有未提交改动）' } else { '' })",
     "SDK      : $(& $Dotnet --version)",
-    "运行时   : win-x64 / self-contained（无需安装 .NET）",
+    "运行时   : win-x64 / self-contained / single-file（无需安装 .NET）",
     "文件数   : $($files.Count)（不含本文件）",
     "解压体积 : $([math]::Round($bytes / 1MB, 1)) MB",
+    "启动缓存 : 首次运行会把原生库解到 %TEMP%\.net\CoPul\（约 10 MB，删了不影响）",
     "",
     "许可：专有软件，保留所有权利，禁止二次分发。完整条款见 LICENSE.txt。",
     "第三方组件及各自许可见 THIRD-PARTY-NOTICES.txt。"

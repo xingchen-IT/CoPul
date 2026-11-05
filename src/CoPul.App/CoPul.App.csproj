@@ -13,6 +13,18 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!--
+      只保留简体中文的卫星资源。
+
+      自包含发布默认会把 WPF / WinForms 的 13 套语言资源全带上（cs de es fr it ja ko pl pt-BR
+      ru tr zh-Hans zh-Hant），每个目录 17 个 resources.dll —— 合计 221 个文件，占全部文件的
+      45%，而其中 12 套是用不上的翻译。裁掉后只剩 zh-Hans。
+
+      风险可控：缺某语言的卫星程序集只会让框架内置字符串回退到中立资源（英文），不会崩 ——
+      这些 dll 里没有任何功能代码。本项目界面文案全部自己写，本来也不依赖它们。
+      要加语言就改成 <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>。
+    -->
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <!--
       注意：这里**不能**设 InvariantGlobalization。WPF 的 Binding 会调
       XmlLanguage.GetSpecificCulture()，一旦全球化被裁掉就直接抛
       "Cannot find non-neutral culture related to 'en-us'"，窗口连 Show() 都过不去。
@@ -55,20 +67,30 @@
       整块图标溶解成一个黑方块 —— 用户认不出。深色版干脆不要底盘，裸环最清楚。
       见 App.xaml.cs 的 ResolveTrayIcon。
     -->
+    <!--
+      ExcludeFromSingleFile="true" 的理由（M4.50）：单文件发布默认把 CopyToOutputDirectory
+      的内容**一起塞进 exe**，而运行时是按 AppContext.BaseDirectory + "assets" 去磁盘找图标的
+      —— 塞进去反而找不到。这个属性只在单文件发布时生效，多文件发布忽略，无副作用。
+
+      图标同理必须留在磁盘：托盘 LoadImage 走的是文件路径，不是资源流。
+    -->
     <None Include="assets\copul.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\copul.ico</Link>
       <Visible>false</Visible>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
     <None Include="assets\copul-tray-dark.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\copul-tray-dark.ico</Link>
       <Visible>false</Visible>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
     <None Include="assets\copul-tray-light.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\copul-tray-light.ico</Link>
       <Visible>false</Visible>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
   </ItemGroup>
 
@@ -87,11 +109,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>presentmon\PresentMon.exe</Link>
       <Visible>false</Visible>
+      <!-- 它是**独立进程**，由 FpsProvider 用 Process.Start 拉起，绝不能进 bundle -->
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
     <None Include="assets\presentmon\LICENSE.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>presentmon\LICENSE.txt</Link>
       <Visible>false</Visible>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
   </ItemGroup>
 
@@ -106,12 +131,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>LICENSE.txt</Link>
       <Visible>false</Visible>
+      <!-- 协议必须是"用户能在目录里看见的文件"，包进 exe 就违背了随二进制走的本意 -->
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
     <!-- 第三方组件清单：MPL-2.0 要求告知接收者如何取得源码，MIT 要求保留声明 -->
     <None Include="..\..\THIRD-PARTY-NOTICES.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>THIRD-PARTY-NOTICES.txt</Link>
       <Visible>false</Visible>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </None>
   </ItemGroup>
 

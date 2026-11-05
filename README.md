@@ -101,13 +101,16 @@ cd corevessel-co-pul
 # 开发构建
 dotnet build CoPul.sln -c Release
 
-# 自包含发布（给没有装 .NET 的机器）
-dotnet publish src/CoPul.App/CoPul.App.csproj -c Release -r win-x64 --self-contained true -o publish
+# 自包含单文件发布（给没有装 .NET 的机器）
+dotnet publish src/CoPul.App/CoPul.App.csproj -c Release -r win-x64 --self-contained true \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
-自包含产物约 170 MB / 484 个文件（WPF 运行时占大头），整个目录一起拷走即可运行。
+自包含产物是 **1 个 144 MB 的 exe + 3 个 ico + PresentMon + 两份许可文本**，
+整个目录一起拷走即可运行。单文件省掉了 480 个散装 dll 的整理负担，代价是首次启动
+往 `%TEMP%\.net\CoPul\` 解压约 10 MB 原生库（删掉不影响，下次自动重建）。
 
-> 打包走 `tools\publish.ps1`，一条命令出自包含 zip + SHA-256，并校验 12 项必备文件。
+> 打包走 `tools\publish.ps1`，一条命令出自包含 zip + SHA-256，并校验必备文件与布局形态。
 > 安装包走 `tools\build-installer.ps1`（Inno Setup 7）：装到 `%LOCALAPPDATA%\Programs\CoPul`，
 > 全程不弹 UAC，协议在首启时弹一次，卸载时会问要不要连配置一起删。
 > **代码签名、自动更新还没做**，首次运行会被 SmartScreen 提示"未知发布者"。

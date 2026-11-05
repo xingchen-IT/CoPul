@@ -57,8 +57,14 @@ public static class AboutInfo
     }
 
     /// <summary>
-    /// 程序集写盘时间，当作构建时间。**不是**编译时刻：换过 dll 之后它就是那份 dll 的时间，
+    /// 产物写盘时间，当作构建时间。**不是**编译时刻：换过二进制之后它就是那一份的时间，
     /// 而这恰好是排查"改了源码但部署没生效"时该看的东西。
+    ///
+    /// <para>
+    /// 不问 <c>Assembly.Location</c>：单文件发布时它恒为空（IL3000 警告），
+    /// 退到 <c>Environment.ProcessPath</c> —— 单文件下 exe 的写盘时间就是打包完成时刻，
+    /// 比 dll 时间更贴近"这份产物何时出的"。多文件模式仍优先取 dll，语义不变。
+    /// </para>
     /// </summary>
     public static string BuildTime
     {
@@ -66,10 +72,10 @@ public static class AboutInfo
         {
             try
             {
-                string? path = typeof(AboutInfo).Assembly.Location;
-                return string.IsNullOrEmpty(path)
-                    ? "未知（单文件发布）"
-                    : File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+                string dll = Path.Combine(AppContext.BaseDirectory, "CoPul.dll");
+                string? path = File.Exists(dll) ? dll : Environment.ProcessPath;
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return "未知";
+                return File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
             }
             catch (Exception ex)
             {
