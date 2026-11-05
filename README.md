@@ -26,6 +26,22 @@ CoPul 是一个**常驻托盘**的实时硬件监控小工具。它不弹大窗�
 <br>
 <img src="docs/screenshots/float.png" height="280" alt="悬浮窗">
 
+## 下载
+
+到 [Releases](https://gitee.com/stardust-xingchenya/corevessel-co-pul/releases) 取最新版：
+
+| 文件 | 体积 | 说明 |
+| --- | --- | --- |
+| `CoPul-0.1.1-setup-x64.exe` | 47.4 MB | 安装版，**推荐**。进开始菜单与「应用」列表，可自定义安装路径，卸载干净 |
+| `CoPul-0.1.1-win-x64.zip` | 60.5 MB | 免安装版，解压即用，适合放 U 盘或不想写注册表 |
+
+两个包都是自包含的，**不需要预装 .NET 运行时**；安装包是用户级安装（装到
+`%LOCALAPPDATA%\Programs\CoPul`），**不弹 UAC**。完整说明见
+[RELEASE-v0.1.1.md](docs/RELEASE-v0.1.1.md)。
+
+> 首次运行会被 SmartScreen 拦一下 —— 本程序没有代码签名证书，Windows 只是没见过这个发布者。
+> 点「更多信息」→「仍要运行」即可。附件旁边的 `.sha256` 可自行校验。
+
 ## 指标
 
 九项，按需勾选（只剩一项时禁止再关，免得条子缩成一条线）：
@@ -215,4 +231,12 @@ tools/               图标生成、打包、取证与压测脚本
 
 ---
 
-如果你改了代码并想合并回上游，欢迎提 Pull Request；不想合也没关系，GPL 允许你自行发布。唯一的请求是别用「CoPul」这个名字发布修改版，免得用户搞混该找谁报 bug。
+## 反馈
+
+问题与建议走 [Issues](https://gitee.com/stardust-xingchenya/corevessel-co-pul/issues)。
+
+报问题时请尽量附上：Windows 版本、CPU / 显卡 / 硬盘型号、是否以**管理员身份**运行、
+以及设置页 →「传感器诊断」的截图 —— 最后一项最有帮助，能直接看出是哪一层没拿到数据。
+
+如果你改了代码并想合并回上游，欢迎提 Pull Request；不想合也没关系，GPL 允许你自行发布。
+唯一的请求是别用「CoPul」这个名字发布修改版，免得用户搞混该找谁报 bug。
