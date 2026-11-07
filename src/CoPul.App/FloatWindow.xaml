@@ -9,7 +9,7 @@
         Title="CoPul 芯脉 · 悬浮窗"
         Height="34" SizeToContent="Width"
         WindowStyle="None" ResizeMode="NoResize"
-        ShowInTaskbar="False" Topmost="True" AllowsTransparency="False"
+        ShowInTaskbar="False" Topmost="True" AllowsTransparency="True"
         ShowActivated="False"
         Background="Transparent" WindowStartupLocation="Manual"
         FontFamily="{StaticResource FontUi}"
@@ -71,9 +71,22 @@
 
     <!--
         6.1 形态：无标题栏、无边框按钮、单行圆角长条。
-        AllowsTransparency 必须保持 False —— 开了会变成 layered window，DWM 的系统背景
-        直接失效、WPF 还会退掉硬件加速（A-30 同源）。背景靠 WindowGlass 把
-        Window.Background 与 CompositionTarget.BackgroundColor 一起刷透明来解决。
+
+        AllowsTransparency 自 M4.54 起必须是 **True** —— 这是跨进程鼠标穿透的前提。
+        旧结论"必须保持 False"是基于"layered 会让 WPF 退掉硬件加速、毛玻璃变样"的顾虑，
+        而实测（M4.54）：纯色/毛玻璃渲染、边距、圆角、文字色全都没变（sidecar 逐字段一致），
+        换来的却是穿透真的能穿到游戏里。两者权衡后选 True。
+
+        **不能运行时改**：WS_EX_LAYERED 由 WPF 自己管，窗口建好之后 SetWindowLongPtr 加这一位
+        会在 WM_STYLECHANGING 阶段被抹掉（实测写入 0x801A8，返回时回读就是 0x1A8），
+        所以只能在这里声明。
+
+        **不能调 SetLayeredWindowAttributes**：那会把窗口切到"常量 alpha"模式，
+        WPF 的逐像素位图随即被弃用 —— 实测悬浮窗变成一块纯灰空条，数字全没。
+        见 Interop/PassThrough.cs。
+
+        背景仍靠 WindowGlass 把 Window.Background 与 CompositionTarget.BackgroundColor
+        一起刷透明来解决。
 
         底色的实际值由代码按「主题 × 浓度档」算出来（FloatWindow.ApplyGlass），
         XAML 这里只是打开瞬间的初值：浅色 16% 白。

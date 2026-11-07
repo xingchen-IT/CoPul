@@ -161,6 +161,10 @@ public partial class FloatWindow : Window
             EnableSystemShadow();
             ApplyGlass(_glass);
             SyncMenuChecks();
+
+            // 配置里可能存着"启动即穿透"，句柄生效后补一次样式（M4.54）。
+            // 放在 ApplyGlass 之后：layered 会改合成路径，先让毛玻璃落定再看要不要降级。
+            SyncPassThrough();
         };
 
         // Loaded 时 HwndTarget 才稳定，这里补一次透明底（在 SourceInitialized 里设会被覆盖）。
@@ -527,6 +531,7 @@ public partial class FloatWindow : Window
                 _locked = _lockedBeforeThrough;
             }
 
+            SyncPassThrough();
             SyncMenuChecks();
             PersistAppearance();
         }
@@ -590,6 +595,35 @@ public partial class FloatWindow : Window
         Trace.Log("float", want
             ? "auto-through on（前台铺满屏 → 命中测试让路，避免点掉游戏全屏）"
             : "auto-through off（前台恢复 → 命中测试交回自己）");
+        SyncPassThrough();
+    }
+
+    /// <summary>
+    /// 把「现在该不该穿透」落到窗口样式上（M4.54）。
+    ///
+    /// <para>
+    /// 光靠 <c>WM_NCHITTEST</c> 返回 <c>HTTRANSPARENT</c> 是不够的 —— 那个只对**同一线程**
+    /// 的窗口有效，游戏在别的进程，点击走到进程边界就没了。真正跨进程穿透只有
+    /// <c>WS_EX_LAYERED | WS_EX_TRANSPARENT</c> 这一条路，对照实验见
+    /// <see cref="PassThrough"/> 的注释。
+    /// </para>
+    ///
+    /// <para>
+    /// <b>只在穿透期间 layering，退出立刻还原</b>：layered 窗口逐像素合成、拿不到 ClearType，
+    /// 平时没必要付这个代价。手动穿透和全屏自动让路取或 —— 和 <c>WM_NCHITTEST</c> 那个
+    /// 判断保持同一份真值，避免"命中测试说穿透、样式说没穿透"。
+    /// </para>
+    /// </summary>
+    private void SyncPassThrough()
+    {
+        if (!_hwndReady) return;                    // 句柄还没生效，SourceInitialized 里会补一次
+
+        bool on = _clickThrough || _autoThrough;
+        if (!PassThrough.Set(Handle, on)) return;   // 同向重复调用，什么都没改
+
+        Trace.Log("float", on
+            ? "pass-through on（LAYERED|TRANSPARENT → 跨进程可穿，文字抗锯齿降级）"
+            : "pass-through off（扩展样式已还原）");
     }
 
     /// <summary>全屏自动穿透的开关（设置页 / 托盘切换后调用）。</summary>
@@ -613,7 +647,9 @@ public partial class FloatWindow : Window
     /// 所以计数用**真实命中次数**：鼠标每动一次都会来一条 <c>WM_NCHITTEST</c>。
     /// </summary>
     public string InteractDiag =>
-        $"interact: lock={_locked} through={_clickThrough} autoFS={_autoThrough} hitTestHits={_hitTestHits} " +
+        $"interact: lock={_locked} through={_clickThrough} autoFS={_autoThrough} " +
+        $"passThrough={(_hwndReady && PassThrough.IsOn(Handle) ? 1 : 0)} " +
+        $"exStyle=0x{PassThrough.ExStyle(Handle):X} hitTestHits={_hitTestHits} " +
         $"ontop={_alwaysOnTop}(exStyle={_exTopmost}) raiseHits={_topmostHits} reason={_lastReason} " +
         $"zhooks={(_zWatch?.HookCount ?? 0)} above=0x{_lastAbove.ToInt64():X}" +
         $" aboveOwn={_aboveOwn} fgOwn={_fgOwn} aboveNow=[{Monitors.Describe(_lastAbove)}]" +
@@ -1742,12 +1778,18 @@ public partial class FloatWindow : Window
             handled = true;
             return DefWindowProc(hwnd, msg, wParam, (IntPtr)(-1));
         }
-        // WM_NCHITTEST（M4.21 鼠标穿透）：返回 HTTRANSPARENT，系统会把鼠标消息
-        // 继续投递给下层的窗口 —— 点悬浮窗等于点它下面的东西。
+        // WM_NCHITTEST（M4.21 鼠标穿透）：返回 HTTRANSPARENT，表示"这里没有我"。
         //
-        // 与任务栏那条用的是同一招，**不用 WS_EX_TRANSPARENT**：那个要配 LAYERED 才生效，
-        // 一配 WPF 就退软件合成、毛玻璃全变（M4.1 踩过）。HTTRANSPARENT 只改命中测试的结论，
-        // 不碰渲染，画面一个像素都不会变。切换也不需要重建窗口 —— 这条消息每次都读当前值。
+        // **注意这条只在同一线程内有效**（M4.54 修正了 M4.21 的理解）：微软对
+        // HTTRANSPARENT 的定义就是 "in the same thread"，游戏在别的进程，消息走到
+        // 进程边界就断了 —— 点击既不到游戏、也不被自己处理，凭空消失。跨进程真正的
+        // 穿透靠 PassThrough 给窗口加 LAYERED|TRANSPARENT（见 SyncPassThrough）。
+        //
+        // 这里保留这条是因为它无害且仍是同进程窗口间的正确做法（比如覆盖在本程序
+        // 自己的大窗口上）；而且 layered 万一没生效，它还能顶上一部分场景。
+        // **副作用**：layered|transparent 生效时系统在命中测试阶段就跳过本窗口，
+        // 这条消息根本不来 → _hitTestHits 不再增长。诊断里看到 hitTestHits 停住、
+        // 而 passThrough=true，是正常现象，不是故障。
         //
         // 代价：右键菜单也一起收不到了（消息根本不投递过来）。出口放在托盘图标、
         // 设置页和全局热键三处，缺一个都会把用户困住，见 ConfigStore.FloatClickThrough。
